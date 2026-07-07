@@ -48,16 +48,22 @@ func (s *ServicesService) ListServices() ([]ManagedServiceInfo, *dbus.Error) {
 	return rows, nil
 }
 
-func (s *ServicesService) SetServiceEnabled(name string, enabled bool) *dbus.Error {
+func (s *ServicesService) SetServiceEnabled(sender dbus.Sender, name string, enabled bool) *dbus.Error {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
+		return err
+	}
 	if err := setServiceEnabled(name, enabled); err != nil {
 		return dbus.MakeFailedError(err)
 	}
 	return nil
 }
 
-func (s *ServicesService) SetServiceRunning(name string, running bool) *dbus.Error {
+func (s *ServicesService) SetServiceRunning(sender dbus.Sender, name string, running bool) *dbus.Error {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
+		return err
+	}
 	if err := setServiceRunning(name, running); err != nil {
 		return dbus.MakeFailedError(err)
 	}

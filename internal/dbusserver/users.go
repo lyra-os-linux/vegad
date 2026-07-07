@@ -35,8 +35,11 @@ func (u *UsersService) ListUsers() ([]UserInfo, *dbus.Error) {
 	return rows, nil
 }
 
-func (u *UsersService) CreateUser(username string, isAdmin bool) *dbus.Error {
+func (u *UsersService) CreateUser(sender dbus.Sender, username string, isAdmin bool) *dbus.Error {
 	u.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.users.manage"); err != nil {
+		return err
+	}
 	if err := validateUsername(username); err != nil {
 		return dbus.MakeFailedError(err)
 	}
@@ -51,8 +54,11 @@ func (u *UsersService) CreateUser(username string, isAdmin bool) *dbus.Error {
 	return nil
 }
 
-func (u *UsersService) RemoveUser(username string) *dbus.Error {
+func (u *UsersService) RemoveUser(sender dbus.Sender, username string) *dbus.Error {
 	u.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.users.manage"); err != nil {
+		return err
+	}
 	if err := validateUsername(username); err != nil {
 		return dbus.MakeFailedError(err)
 	}
@@ -65,8 +71,11 @@ func (u *UsersService) RemoveUser(username string) *dbus.Error {
 	return nil
 }
 
-func (u *UsersService) SetAdmin(username string, isAdmin bool) *dbus.Error {
+func (u *UsersService) SetAdmin(sender dbus.Sender, username string, isAdmin bool) *dbus.Error {
 	u.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.users.manage"); err != nil {
+		return err
+	}
 	if err := validateUsername(username); err != nil {
 		return dbus.MakeFailedError(err)
 	}

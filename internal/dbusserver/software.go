@@ -51,6 +51,12 @@ func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 	}
 	results = append(results, flathub...)
 
+	aur, err := searchAur(query)
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	results = append(results, aur...)
+
 	return results, nil
 }
 
@@ -78,8 +84,25 @@ func (s *SoftwareService) startTransaction(work func(report progressFunc) error)
 	return txID
 }
 
-func (s *SoftwareService) Install(origin, id string) (uint32, *dbus.Error) {
+func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	switch origin {
+	case "official":
+		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
+			return 0, err
+		}
+	case "flathub":
+		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
+			return 0, err
+		}
+	case "aur":
+		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
+			return 0, err
+		}
+	default:
+		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
+	}
+
 	switch origin {
 	case "official":
 		return s.startTransaction(func(report progressFunc) error {
@@ -100,8 +123,11 @@ func (s *SoftwareService) Install(origin, id string) (uint32, *dbus.Error) {
 	}
 }
 
-func (s *SoftwareService) Remove(origin, id string) (uint32, *dbus.Error) {
+func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
+		return 0, err
+	}
 	switch origin {
 	case "official":
 		return s.startTransaction(func(report progressFunc) error {
@@ -145,8 +171,11 @@ func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 
 // UpdateAll runs a full Pacman sync+upgrade followed by a Flatpak update, as
 // a single transaction covering both origins.
-func (s *SoftwareService) UpdateAll() (uint32, *dbus.Error) {
+func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
+		return 0, err
+	}
 	return s.startTransaction(func(report progressFunc) error {
 		if err := withPacmanSnapshots("Atualização completa", func() error {
 			return updateAllPacman(report)
@@ -166,15 +195,24 @@ func (s *SoftwareService) ListRepos() ([]string, *dbus.Error) {
 	return repos, nil
 }
 
-func (s *SoftwareService) SetRepoEnabled(repo string, enabled bool) *dbus.Error {
+func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enabled bool) *dbus.Error {
 	s.activity.Touch()
-	return errNotImplemented("SetRepoEnabled")
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return err
+	}
+	if err := setPacmanRepoEnabled(repo, enabled); err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	return nil
 }
 
 // ClearCache clears Pacman's package cache and orphaned Flatpak runtimes as
 // a single transaction.
-func (s *SoftwareService) ClearCache() (uint32, *dbus.Error) {
+func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
+		return 0, err
+	}
 	return s.startTransaction(func(report progressFunc) error {
 		if err := withPacmanSnapshots("Limpeza de cache", func() error {
 			return clearPacmanCache(report)

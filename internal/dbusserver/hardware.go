@@ -36,8 +36,11 @@ func (h *HardwareService) Inventory() (HardwareInventory, *dbus.Error) {
 // SwitchNvidiaDriver accepts "nvidia-open-dkms", "nvidia-580xx-dkms" or
 // "nouveau" — validity for the detected GPU generation is enforced before
 // this is called.
-func (h *HardwareService) SwitchNvidiaDriver(driver string) *dbus.Error {
+func (h *HardwareService) SwitchNvidiaDriver(sender dbus.Sender, driver string) *dbus.Error {
 	h.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.hardware.switch-driver"); err != nil {
+		return err
+	}
 	switch driver {
 	case "nvidia-open-dkms", "nvidia-580xx-dkms", "nouveau":
 	default:

@@ -1,9 +1,11 @@
 package dbusserver
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -32,6 +34,80 @@ func installAurPackage(pkgbase string, report progressFunc) error {
 
 	report(85, "Instalando pacote resultante...")
 	return runPacmanTransaction([]string{"-U", "--noconfirm", "--", pkgfile}, report)
+}
+
+func searchAur(query string) ([]PackageRef, error) {
+	root := os.Getenv(aurSourceRootEnv)
+	if root == "" {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return nil, nil
+	}
+
+	var results []PackageRef
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sourceDir := filepath.Join(root, entry.Name())
+		pkgname, desc, ok := aurMetadata(sourceDir)
+		if !ok {
+			continue
+		}
+		needle := strings.ToLower(strings.Join([]string{entry.Name(), pkgname, desc}, " "))
+		if !strings.Contains(needle, query) {
+			continue
+		}
+		results = append(results, PackageRef{
+			Origin:      "aur",
+			Id:          entry.Name(),
+			Name:        firstNonEmpty(pkgname, entry.Name()),
+			Description: firstNonEmpty(desc, "Pacote AUR local"),
+			Installed:   false,
+		})
+	}
+	return results, nil
+}
+
+func aurMetadata(sourceDir string) (string, string, bool) {
+	pkgbuild := filepath.Join(sourceDir, "PKGBUILD")
+	data, err := os.ReadFile(pkgbuild)
+	if err != nil {
+		return "", "", false
+	}
+
+	var pkgname, desc string
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	reName := regexp.MustCompile(`^\s*pkgname\s*=\s*([^#\n]+)`)
+	reDesc := regexp.MustCompile(`^\s*pkgdesc\s*=\s*['"]?([^'"\n]+)`)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if pkgname == "" {
+			if m := reName.FindStringSubmatch(line); m != nil {
+				pkgname = strings.Trim(strings.TrimSpace(m[1]), "(')\"")
+			}
+		}
+		if desc == "" {
+			if m := reDesc.FindStringSubmatch(line); m != nil {
+				desc = strings.Trim(strings.TrimSpace(m[1]), "(')\"")
+			}
+		}
+		if pkgname != "" && desc != "" {
+			break
+		}
+	}
+	if pkgname == "" {
+		pkgname = filepath.Base(sourceDir)
+	}
+	return pkgname, desc, true
 }
 
 func runAurBuild(sourceDir string, report progressFunc) error {

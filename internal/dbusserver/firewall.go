@@ -93,8 +93,11 @@ func (f *FirewallService) ListServices() ([]FirewallServiceInfo, *dbus.Error) {
 	return rows, nil
 }
 
-func (f *FirewallService) SetServiceEnabled(name string, enabled bool) *dbus.Error {
+func (f *FirewallService) SetServiceEnabled(sender dbus.Sender, name string, enabled bool) *dbus.Error {
 	f.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.firewall.configure"); err != nil {
+		return err
+	}
 	if !commandAvailable("firewall-cmd") {
 		return dbus.MakeFailedError(fmt.Errorf("firewalld não está disponível"))
 	}

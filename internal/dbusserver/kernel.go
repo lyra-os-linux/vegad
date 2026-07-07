@@ -33,8 +33,11 @@ func (k *KernelService) ListInstalled() ([]string, *dbus.Error) {
 	return kernels, nil
 }
 
-func (k *KernelService) Install(kernel string) (uint32, *dbus.Error) {
+func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbus.Error) {
 	k.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
+		return 0, err
+	}
 	if !isSupportedKernelPackage(kernel) {
 		return 0, dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))
 	}
@@ -54,8 +57,11 @@ func (k *KernelService) Install(kernel string) (uint32, *dbus.Error) {
 	return txID, nil
 }
 
-func (k *KernelService) Remove(kernel string) *dbus.Error {
+func (k *KernelService) Remove(sender dbus.Sender, kernel string) *dbus.Error {
 	k.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
+		return err
+	}
 	if !isSupportedKernelPackage(kernel) {
 		return dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))
 	}

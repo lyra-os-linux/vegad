@@ -150,6 +150,11 @@ func (s *Server) Export() error {
 					{Name: "success", Type: "b", Direction: "out"},
 					{Name: "message", Type: "s", Direction: "out"},
 				}},
+				{Name: "BackupAlert", Args: []introspect.Arg{
+					{Name: "configId", Type: "s", Direction: "out"},
+					{Name: "consecutiveFailures", Type: "u", Direction: "out"},
+					{Name: "message", Type: "s", Direction: "out"},
+				}},
 			}},
 			{Name: BusName + ".Hardware", Methods: introspect.Methods(hardware)},
 			{Name: BusName + ".Kernel", Methods: introspect.Methods(kernel)},

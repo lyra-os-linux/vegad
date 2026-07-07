@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -229,4 +230,65 @@ func listPacmanRepos() ([]string, error) {
 		repos = append(repos, m[1])
 	}
 	return repos, scanner.Err()
+}
+
+func setPacmanRepoEnabled(repo string, enabled bool) error {
+	data, err := os.ReadFile("/etc/pacman.conf")
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	out := make([]string, 0, len(lines))
+	inTarget := false
+	found := false
+
+	sectionRe := regexp.MustCompile(`^\s*#?\s*\[([^\]]+)\]\s*$`)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if m := sectionRe.FindStringSubmatch(trimmed); m != nil {
+			if inTarget {
+				inTarget = false
+			}
+			isTarget := m[1] == repo
+			if isTarget {
+				found = true
+				inTarget = true
+				if enabled {
+					out = append(out, fmt.Sprintf("[%s]", repo))
+				} else {
+					out = append(out, fmt.Sprintf("# [%s]", repo))
+				}
+				continue
+			}
+		}
+
+		if inTarget {
+			if enabled {
+				out = append(out, strings.TrimPrefix(strings.TrimPrefix(line, "# "), "#"))
+			} else if strings.TrimSpace(line) == "" {
+				out = append(out, line)
+			} else if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				out = append(out, line)
+			} else {
+				out = append(out, "# "+line)
+			}
+			continue
+		}
+		out = append(out, line)
+	}
+
+	if !found {
+		return fmt.Errorf("repositório %q não encontrado em pacman.conf", repo)
+	}
+
+	tmp := filepath.Join(filepath.Dir("/etc/pacman.conf"), ".pacman.conf.vega")
+	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	if err := os.Rename(tmp, "/etc/pacman.conf"); err != nil {
+		return err
+	}
+	return nil
 }

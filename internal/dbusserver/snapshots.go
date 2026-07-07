@@ -32,8 +32,11 @@ func (s *SnapshotsService) ListSnapshots() ([]SnapshotInfo, *dbus.Error) {
 	return snapshots, nil
 }
 
-func (s *SnapshotsService) CreateSnapshot(description string) (uint32, *dbus.Error) {
+func (s *SnapshotsService) CreateSnapshot(sender dbus.Sender, description string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.create"); err != nil {
+		return 0, err
+	}
 	id, err := createSnapperSnapshot("single", description)
 	if err != nil {
 		return 0, dbus.MakeFailedError(err)
@@ -52,16 +55,22 @@ func (s *SnapshotsService) DiffPackages(snapshotID uint32) ([]string, *dbus.Erro
 	return lines, nil
 }
 
-func (s *SnapshotsService) Rollback(snapshotID uint32) *dbus.Error {
+func (s *SnapshotsService) Rollback(sender dbus.Sender, snapshotID uint32) *dbus.Error {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.rollback"); err != nil {
+		return err
+	}
 	if err := rollbackSnapperSnapshot(snapshotID); err != nil {
 		return dbus.MakeFailedError(err)
 	}
 	return nil
 }
 
-func (s *SnapshotsService) SetRetentionPolicy(keepCount uint32) *dbus.Error {
+func (s *SnapshotsService) SetRetentionPolicy(sender dbus.Sender, keepCount uint32) *dbus.Error {
 	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.configure"); err != nil {
+		return err
+	}
 	if err := setSnapperRetentionPolicy(keepCount); err != nil {
 		return dbus.MakeFailedError(err)
 	}

@@ -1,22 +1,28 @@
 # Maintainer: Lyra OS <team@lyraos.org>
 #
-# Local-development PKGBUILD. It packages the current monorepo checkout by
-# default; set VEGA_SOURCE_DIR to package another checkout.
+# Release-oriented PKGBUILD. It defaults to the tagged Vega source, but can
+# be pointed at another checkout/source via VEGA_SOURCE_URL and VEGA_SOURCE_DIR.
 
 pkgname=vegad
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Daemon privilegiado do Vega, centro de controle do Lyra OS"
 arch=('x86_64')
-url="https://lyraos.org/vega"
+url="https://github.com/britors/Vega"
 license=('GPL-3.0-only')
 depends=('systemd' 'dbus' 'polkit' 'pacman' 'snapper')
 makedepends=('go')
 install=vegad.install
-source=()
-sha256sums=()
+_source_url_default="git+https://github.com/britors/Vega.git#tag=v${pkgver}"
+source=("Vega::${VEGA_SOURCE_URL:-${_source_url_default}}")
+sha256sums=('SKIP')
 
-_srcroot="${VEGA_SOURCE_DIR:-$startdir/../..}"
+pkgver() {
+  cd "$srcdir/Vega"
+  git describe --tags --long --match 'v[0-9]*' 2>/dev/null | sed 's/^v//; s/-/./g' || printf '%s' "${pkgver}"
+}
+
+_srcroot="${VEGA_SOURCE_DIR:-$srcdir/Vega}"
 
 build() {
   cd "$_srcroot/vegad"
