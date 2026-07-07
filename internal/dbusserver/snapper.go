@@ -197,7 +197,7 @@ func listSnapperSnapshots() ([]SnapshotInfo, error) {
 		return nil, errSnapperUnavailable
 	}
 
-	out, err := snapperCombinedOutput("list", "--csvout")
+	out, err := snapperCombinedOutput("--csvout", "list")
 	if err != nil {
 		return nil, err
 	}
