@@ -1,0 +1,39 @@
+# Maintainer: Lyra OS <team@lyraos.org>
+#
+# Local-development PKGBUILD. It packages the current monorepo checkout by
+# default; set VEGA_SOURCE_DIR to package another checkout.
+
+pkgname=vegad
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Daemon privilegiado do Vega, centro de controle do Lyra OS"
+arch=('x86_64')
+url="https://lyraos.org/vega"
+license=('GPL-3.0-only')
+depends=('systemd' 'dbus' 'polkit' 'pacman' 'snapper')
+makedepends=('go')
+install=vegad.install
+source=()
+sha256sums=()
+
+_srcroot="${VEGA_SOURCE_DIR:-$startdir/../..}"
+
+build() {
+  cd "$_srcroot/vegad"
+  go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=${pkgver}" \
+    -o vegad ./cmd/vegad
+}
+
+package() {
+  cd "$_srcroot"
+
+  install -Dm755 vegad/vegad "$pkgdir/usr/lib/vega/vegad"
+  install -Dm644 packaging/vegad/vegad.service \
+    "$pkgdir/usr/lib/systemd/system/vegad.service"
+  install -Dm644 packaging/vegad/org.lyraos.Vega1.conf \
+    "$pkgdir/usr/share/dbus-1/system.d/org.lyraos.Vega1.conf"
+  install -Dm644 packaging/vegad/org.lyraos.vega.policy \
+    "$pkgdir/usr/share/polkit-1/actions/org.lyraos.vega.policy"
+  install -Dm644 packaging/vegad/sysusers.d/vega-build.conf \
+    "$pkgdir/usr/lib/sysusers.d/vega-build.conf"
+}
