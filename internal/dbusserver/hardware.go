@@ -1,8 +1,10 @@
 package dbusserver
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -63,10 +65,17 @@ func (h *HardwareService) FirmwareStatus() (string, *dbus.Error) {
 
 	out, err := runCommandOutput("fwupdmgr", "get-updates")
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+			// fwupdmgr uses exit code 2 for "nothing to do" (no updates
+			// available), not a real failure — the message text itself is
+			// locale-dependent so it can't be matched reliably.
+			return "Nenhuma atualização de firmware disponível", nil
+		}
 		return "", dbus.MakeFailedError(fmt.Errorf("fwupdmgr get-updates: %w — %s", err, out))
 	}
 
-	if out == "" || strings.Contains(strings.ToLower(out), "no updatable devices") {
+	if out == "" {
 		return "Nenhuma atualização de firmware disponível", nil
 	}
 	return out, nil
