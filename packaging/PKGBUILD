@@ -1,6 +1,6 @@
 # Maintainer: Lyra OS <team@lyraos.org>
 #
-# Release-oriented PKGBUILD. It defaults to the tagged Vega source, but can
+# AUR-oriented PKGBUILD. It defaults to the tagged Vega source, but can
 # be pointed at another checkout/source via VEGA_SOURCE_URL and VEGA_SOURCE_DIR.
 
 pkgname=vegad
