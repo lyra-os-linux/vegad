@@ -64,19 +64,31 @@ func createSnapperSnapshot(kind, description string, preNumber ...uint32) (uint3
 	return uint32(n), nil
 }
 
-func parseSnapperSnapshots(text string) ([]SnapshotInfo, error) {
+// readSnapperCSV tries a candidate delimiter and reports success only if it
+// actually split the header into more than one column — with LC_ALL=C the
+// output is comma-delimited, but snapper switches to ';' whenever the
+// active locale uses ',' as the decimal separator (used-space column), so
+// both must be tried. A naive "no read error" check isn't enough: parsing
+// comma-delimited text with ';' "succeeds" trivially, treating each whole
+// line as a single field, and silently drops every row downstream.
+func readSnapperCSV(text string, comma rune) ([][]string, bool) {
 	reader := csv.NewReader(strings.NewReader(text))
-	reader.Comma = ';'
+	reader.Comma = comma
 	reader.FieldsPerRecord = -1
 	rows, err := reader.ReadAll()
-	if err != nil || len(rows) == 0 {
-		reader = csv.NewReader(strings.NewReader(text))
-		reader.Comma = ','
-		reader.FieldsPerRecord = -1
-		rows, err = reader.ReadAll()
-		if err != nil || len(rows) == 0 {
-			return parseSnapperTable(text), nil
-		}
+	if err != nil || len(rows) == 0 || len(rows[0]) < 2 {
+		return nil, false
+	}
+	return rows, true
+}
+
+func parseSnapperSnapshots(text string) ([]SnapshotInfo, error) {
+	rows, ok := readSnapperCSV(text, ',')
+	if !ok {
+		rows, ok = readSnapperCSV(text, ';')
+	}
+	if !ok {
+		return parseSnapperTable(text), nil
 	}
 
 	header := map[string]int{}
