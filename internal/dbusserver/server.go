@@ -127,6 +127,9 @@ func (s *Server) Export() error {
 					{Name: "success", Type: "b", Direction: "out"},
 					{Name: "message", Type: "s", Direction: "out"},
 				}},
+				{Name: "UpdatesAvailable", Args: []introspect.Arg{
+					{Name: "count", Type: "u", Direction: "out"},
+				}},
 			}},
 			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots)},
 			{Name: BusName + ".Backup", Methods: introspect.Methods(backup), Signals: []introspect.Signal{

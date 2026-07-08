@@ -54,6 +54,10 @@ package() {
   install -Dm755 vegad/vegad "$pkgdir/usr/lib/vega/vegad"
   install -Dm644 packaging/vegad/vegad.service \
     "$pkgdir/usr/lib/systemd/system/vegad.service"
+  install -Dm644 packaging/vegad/vegad-update-check.service \
+    "$pkgdir/usr/lib/systemd/system/vegad-update-check.service"
+  install -Dm644 packaging/vegad/vegad-update-check.timer \
+    "$pkgdir/usr/lib/systemd/system/vegad-update-check.timer"
   install -Dm644 packaging/vegad/org.lyraos.Vega1.conf \
     "$pkgdir/usr/share/dbus-1/system.d/org.lyraos.Vega1.conf"
   install -Dm644 packaging/vegad/org.lyraos.Vega1.service \

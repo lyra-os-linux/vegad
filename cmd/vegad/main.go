@@ -13,6 +13,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "check-updates" {
+		if err := dbusserver.RunUpdateCheckJob(); err != nil {
+			log.Fatalf("vegad check-updates failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) >= 4 && os.Args[1] == "backup" && os.Args[2] == "run" {
 		configID := os.Args[3]
 		log.Printf("vegad backup job %s starting", configID)

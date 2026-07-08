@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -22,7 +23,14 @@ func snapperInstalled() bool {
 
 func snapperCommand(args ...string) *exec.Cmd {
 	fullArgs := append([]string{"-c", snapperConfig}, args...)
-	return exec.Command("snapper", fullArgs...)
+	cmd := exec.Command("snapper", fullArgs...)
+	// snapper's --csvout header/messages follow gettext, so under any
+	// non-English system locale (e.g. LANG=pt_BR.UTF-8) the column names
+	// parseSnapperSnapshots looks for ("number", "type", "date", ...) never
+	// match and every row gets silently skipped. Force C so the output is
+	// always parseable, regardless of the host's configured locale.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	return cmd
 }
 
 func snapperCombinedOutput(args ...string) ([]byte, error) {

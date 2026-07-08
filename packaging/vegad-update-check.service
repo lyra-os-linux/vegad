@@ -1,0 +1,6 @@
+[Unit]
+Description=Vega periodic update check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/vega/vegad check-updates

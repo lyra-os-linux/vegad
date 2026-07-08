@@ -1,0 +1,12 @@
+[Unit]
+Description=Vega periodic update check timer
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=4h
+RandomizedDelaySec=5min
+Persistent=true
+Unit=vegad-update-check.service
+
+[Install]
+WantedBy=timers.target
