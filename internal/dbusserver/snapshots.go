@@ -66,6 +66,17 @@ func (s *SnapshotsService) Rollback(sender dbus.Sender, snapshotID uint32) *dbus
 	return nil
 }
 
+func (s *SnapshotsService) DeleteSnapshot(sender dbus.Sender, snapshotID uint32) *dbus.Error {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
+		return err
+	}
+	if err := deleteSnapperSnapshot(snapshotID); err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	return nil
+}
+
 func (s *SnapshotsService) SetRetentionPolicy(sender dbus.Sender, keepCount uint32) *dbus.Error {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.configure"); err != nil {

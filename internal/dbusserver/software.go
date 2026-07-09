@@ -60,6 +60,18 @@ func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 	return results, nil
 }
 
+// GetAurPkgbuild fetches the PKGBUILD for an AUR package so the UI can show
+// it for review before the user confirms an install — read-only (no polkit
+// gate needed), same as Search/ListUpdates.
+func (s *SoftwareService) GetAurPkgbuild(id string) (string, *dbus.Error) {
+	s.activity.Touch()
+	pkgbuild, err := fetchAurPkgbuild(id)
+	if err != nil {
+		return "", dbus.MakeFailedError(err)
+	}
+	return pkgbuild, nil
+}
+
 // startTransaction allocates a transaction id and runs work in the
 // background, translating its outcome into TransactionFinished. work
 // receives a report func wired to TransactionProgress.

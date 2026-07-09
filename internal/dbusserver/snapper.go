@@ -279,6 +279,14 @@ func rollbackSnapperSnapshot(snapshotID uint32) error {
 	return err
 }
 
+func deleteSnapperSnapshot(snapshotID uint32) error {
+	if !snapperInstalled() {
+		return errSnapperUnavailable
+	}
+	_, err := snapperCombinedOutput("delete", strconv.FormatUint(uint64(snapshotID), 10))
+	return err
+}
+
 func setSnapperRetentionPolicy(keepCount uint32) error {
 	if !snapperInstalled() {
 		return errSnapperUnavailable

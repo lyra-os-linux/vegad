@@ -1,160 +1,121 @@
 package dbusserver
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 )
 
-const aurSourceRootEnv = "VEGA_AUR_SOURCE_ROOT"
+// aurBuildHome is vega-build's home directory (packaging/vegad/sysusers.d/vega-build.conf),
+// used as both the sandbox's writable path and the AUR helper's cache/config HOME.
+const aurBuildHome = "/var/lib/vega/build"
 
-func installAurPackage(pkgbase string, report progressFunc) error {
-	root := os.Getenv(aurSourceRootEnv)
-	if root == "" {
-		return fmt.Errorf("AUR indisponível: defina %s com a raiz dos checkouts", aurSourceRootEnv)
+// aurHelper picks whichever AUR helper is installed, preferring paru over
+// yay when both are present. Neither ships with Lyra OS by default — this is
+// an optdepend (packaging/vegad/PKGBUILD) the user installs to unlock the
+// "Comunidade" origin.
+func aurHelper() (string, error) {
+	for _, name := range []string{"paru", "yay"} {
+		if commandAvailable(name) {
+			return name, nil
+		}
 	}
-
-	sourceDir := filepath.Join(root, pkgbase)
-	if _, err := os.Stat(filepath.Join(sourceDir, "PKGBUILD")); err != nil {
-		return fmt.Errorf("PKGBUILD não encontrado em %s: %w", sourceDir, err)
-	}
-
-	report(0, "Iniciando build AUR isolado...")
-	if err := runAurBuild(sourceDir, report); err != nil {
-		return err
-	}
-
-	pkgfile, err := latestBuiltPackage(sourceDir, pkgbase)
-	if err != nil {
-		return err
-	}
-
-	report(85, "Instalando pacote resultante...")
-	return runPacmanTransaction([]string{"-U", "--noconfirm", "--", pkgfile}, report)
+	return "", fmt.Errorf("nenhum ajudante AUR encontrado — instale yay ou paru")
 }
 
+// vegaBuildSystemdRunArgs builds the systemd-run(1) properties that sandbox
+// an AUR helper invocation as the unprivileged vega-build user (never root —
+// PROMPT-VEGA.md §2.3). Search and PKGBUILD fetch never write outside
+// aurBuildHome and never need elevation, so they get the strictest
+// profile: NoNewPrivileges plus ProtectSystem=strict (whole root read-only
+// except aurBuildHome).
+//
+// A real install can't use that profile: it needs the helper's own
+// internal `sudo pacman` step, which (a) requires NoNewPrivileges off —
+// that setting blocks setuid binaries like sudo from gaining privileges
+// at all — and (b) writes wherever the package's file list says to
+// (/usr, /etc, /var/lib/pacman, ...), which is the entire point of
+// `pacman -U` and can't be pre-enumerated into a ReadWritePaths allowlist.
+// So ProtectSystem is dropped too for this one case; vega-build's own
+// Unix permissions (not this mount-namespace layer) are what keeps the
+// PKGBUILD's build()/package() steps from touching the rest of the
+// system — that boundary is unaffected either way.
+func vegaBuildSystemdRunArgs(allowSudo bool) []string {
+	args := []string{
+		"--wait", "--collect", "--pipe", "--quiet",
+		"-p", "User=vega-build",
+		"-p", "WorkingDirectory=" + aurBuildHome,
+		"-p", "Environment=HOME=" + aurBuildHome,
+		"-p", "PrivateTmp=yes",
+		"-p", "PrivateDevices=yes",
+		"-p", "ProtectHome=read-only",
+	}
+	if allowSudo {
+		args = append(args, "-p", "ReadWritePaths=/run")
+	} else {
+		args = append(args,
+			"-p", "NoNewPrivileges=yes",
+			"-p", "ProtectSystem=strict",
+			"-p", "ReadWritePaths="+aurBuildHome,
+		)
+	}
+	return args
+}
+
+// searchAur shells out to `<helper> -Ssa`, which queries the AUR RPC
+// directly (network) restricted to AUR-only hits — official repo hits are
+// already covered by searchPacman, so mixing them in here would just
+// duplicate results. Best-effort: an AUR helper error (no matches, RPC
+// hiccup) degrades to an empty result rather than failing the whole search,
+// same as when no helper is installed at all.
 func searchAur(query string) ([]PackageRef, error) {
-	root := os.Getenv(aurSourceRootEnv)
-	if root == "" {
+	helper, err := aurHelper()
+	if err != nil {
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(root)
+	installed, err := pacmanInstalledSet()
 	if err != nil {
 		return nil, err
 	}
 
-	query = strings.ToLower(strings.TrimSpace(query))
-	if query == "" {
-		return nil, nil
-	}
-
-	var results []PackageRef
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		sourceDir := filepath.Join(root, entry.Name())
-		pkgname, desc, ok := aurMetadata(sourceDir)
-		if !ok {
-			continue
-		}
-		needle := strings.ToLower(strings.Join([]string{entry.Name(), pkgname, desc}, " "))
-		if !strings.Contains(needle, query) {
-			continue
-		}
-		results = append(results, PackageRef{
-			Origin:      "aur",
-			Id:          entry.Name(),
-			Name:        firstNonEmpty(pkgname, entry.Name()),
-			Description: firstNonEmpty(desc, "Pacote AUR local"),
-			Installed:   false,
-		})
-	}
-	return results, nil
+	args := append(vegaBuildSystemdRunArgs(false), "--", helper, "-Ssa", "--color=never", "--", query)
+	out, _ := runCommandOutput("systemd-run", args...)
+	return parseSearchOutput([]byte(out), "aur", installed), nil
 }
 
-func aurMetadata(sourceDir string) (string, string, bool) {
-	pkgbuild := filepath.Join(sourceDir, "PKGBUILD")
-	data, err := os.ReadFile(pkgbuild)
-	if err != nil {
-		return "", "", false
-	}
-
-	var pkgname, desc string
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	reName := regexp.MustCompile(`^\s*pkgname\s*=\s*([^#\n]+)`)
-	reDesc := regexp.MustCompile(`^\s*pkgdesc\s*=\s*['"]?([^'"\n]+)`)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if pkgname == "" {
-			if m := reName.FindStringSubmatch(line); m != nil {
-				pkgname = strings.Trim(strings.TrimSpace(m[1]), "(')\"")
-			}
-		}
-		if desc == "" {
-			if m := reDesc.FindStringSubmatch(line); m != nil {
-				desc = strings.Trim(strings.TrimSpace(m[1]), "(')\"")
-			}
-		}
-		if pkgname != "" && desc != "" {
-			break
-		}
-	}
-	if pkgname == "" {
-		pkgname = filepath.Base(sourceDir)
-	}
-	return pkgname, desc, true
-}
-
-func runAurBuild(sourceDir string, report progressFunc) error {
-	args := []string{
-		"--wait",
-		"--collect",
-		"--pipe",
-		"--quiet",
-		"-p", "User=vega-build",
-		"-p", "WorkingDirectory=" + sourceDir,
-		"-p", "Environment=HOME=/var/lib/vega/build",
-		"-p", "PrivateTmp=yes",
-		"-p", "PrivateDevices=yes",
-		"-p", "NoNewPrivileges=yes",
-		"-p", "ProtectSystem=strict",
-		"-p", "ProtectHome=read-only",
-		"-p", "ReadWritePaths=" + sourceDir,
-		"-p", "ReadWritePaths=/var/lib/vega/build",
-		"-p", "ReadWritePaths=/tmp",
-		"--",
-		"makepkg",
-		"-f",
-		"--noconfirm",
-		"--nodeps",
-	}
-	return runStreamingCommand("systemd-run", args, report, "Iniciando build AUR...", "Build AUR concluído")
-}
-
-func latestBuiltPackage(sourceDir, pkgbase string) (string, error) {
-	matches, err := filepath.Glob(filepath.Join(sourceDir, pkgbase+"-[0-9]*.pkg.tar.zst"))
+// fetchAurPkgbuild clones/updates the AUR git checkout for pkgbase via
+// `<helper> -G` (fetch only, no build) and returns the PKGBUILD contents so
+// the UI can show it for review before the user confirms an install
+// (PROMPT-VEGA.md §2.3).
+func fetchAurPkgbuild(pkgbase string) (string, error) {
+	helper, err := aurHelper()
 	if err != nil {
 		return "", err
 	}
-	var selected string
-	var selectedInfo os.FileInfo
-	for _, match := range matches {
-		info, err := os.Stat(match)
-		if err != nil {
-			continue
-		}
-		if selected == "" || info.ModTime().After(selectedInfo.ModTime()) || (info.ModTime().Equal(selectedInfo.ModTime()) && strings.Compare(match, selected) > 0) {
-			selected = match
-			selectedInfo = info
-		}
+
+	args := append(vegaBuildSystemdRunArgs(false), "--", helper, "-G", "--", pkgbase)
+	if out, err := runCommandOutput("systemd-run", args...); err != nil {
+		return "", fmt.Errorf("%s -G %s: %w — %s", helper, pkgbase, err, out)
 	}
-	if selected == "" {
-		return "", fmt.Errorf("nenhum pacote AUR gerado em %s", sourceDir)
+
+	data, err := os.ReadFile(filepath.Join(aurBuildHome, pkgbase, "PKGBUILD"))
+	if err != nil {
+		return "", fmt.Errorf("PKGBUILD não encontrado após fetch de %s: %w", pkgbase, err)
 	}
-	return selected, nil
+	return string(data), nil
+}
+
+// installAurPackage runs `<helper> -S`, letting it handle fetch, sandboxed
+// build (as vega-build, never root) and the final `pacman -U` in one go —
+// the last step needs the sudoers NOPASSWD rule granted to vega-build
+// (packaging/vegad/sudoers.d/vega-build).
+func installAurPackage(pkgbase string, report progressFunc) error {
+	helper, err := aurHelper()
+	if err != nil {
+		return err
+	}
+
+	args := append(vegaBuildSystemdRunArgs(true), "--", helper, "-S", "--noconfirm", "--needed", "--cleanafter", "--", pkgbase)
+	return runStreamingCommand("systemd-run", args, report, "Iniciando instalação AUR ("+helper+")...", "Instalação AUR concluída")
 }

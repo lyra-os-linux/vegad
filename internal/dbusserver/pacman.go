@@ -44,6 +44,14 @@ func searchPacman(query string) ([]PackageRef, error) {
 		return nil, err
 	}
 
+	return parseSearchOutput(out, "official", installed), nil
+}
+
+// parseSearchOutput parses the shared "repo/name version [...]" + indented
+// description format used by both `pacman -Ss` and `yay`/`paru -Ssa` — the
+// AUR helpers wrap the same presentation convention, just with "aur/" as the
+// repo prefix, so one parser covers both (see aur.go's searchAur).
+func parseSearchOutput(out []byte, origin string, installed map[string]bool) []PackageRef {
 	var results []PackageRef
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	var pending *PackageRef
@@ -61,12 +69,12 @@ func searchPacman(query string) ([]PackageRef, error) {
 		if m == nil {
 			continue
 		}
-		pending = &PackageRef{Origin: "official", Id: m[2], Name: m[2], Installed: installed[m[2]]}
+		pending = &PackageRef{Origin: origin, Id: m[2], Name: m[2], Installed: installed[m[2]]}
 	}
 	if pending != nil {
 		results = append(results, *pending)
 	}
-	return results, nil
+	return results
 }
 
 // pacmanInstalledSet returns the set of currently installed package names
