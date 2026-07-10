@@ -122,6 +122,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	bluetooth := &BluetoothService{activity: s.activity}
+	if err := s.conn.Export(bluetooth, ObjectPath, BusName+".Bluetooth"); err != nil {
+		return err
+	}
+
 	storage := &StorageService{activity: s.activity}
 	if err := s.conn.Export(storage, ObjectPath, BusName+".Storage"); err != nil {
 		return err
@@ -192,6 +197,7 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Services", Methods: introspect.Methods(services)},
 			{Name: BusName + ".DateTime", Methods: introspect.Methods(dateTime)},
 			{Name: BusName + ".Network", Methods: introspect.Methods(network)},
+			{Name: BusName + ".Bluetooth", Methods: introspect.Methods(bluetooth)},
 			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
 			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
 		},
