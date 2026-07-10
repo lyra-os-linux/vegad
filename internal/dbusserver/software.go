@@ -28,6 +28,7 @@ type PackageRef struct {
 	Name        string
 	Description string
 	Installed   bool
+	Icon        string
 }
 
 // PackageDetails is the expanded view of a single package shown in the
@@ -218,6 +219,28 @@ func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 	results = append(results, official...)
 
 	flathub, err := listFlatpakUpdates()
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	results = append(results, flathub...)
+
+	return results, nil
+}
+
+// ListInstalled merges locally installed Pacman packages and system Flatpak
+// apps into one read-only list for the software inventory view.
+func (s *SoftwareService) ListInstalled() ([]PackageRef, *dbus.Error) {
+	s.activity.Touch()
+
+	var results []PackageRef
+
+	official, err := listPacmanInstalled()
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	results = append(results, official...)
+
+	flathub, err := listFlatpakInstalled()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}

@@ -73,6 +73,7 @@ func parseSearchOutput(out []byte, origin string, installed map[string]bool) []P
 			continue
 		}
 		pending = &PackageRef{Origin: origin, Id: m[2], Name: m[2], Installed: installed[m[2]]}
+		pending.Icon = findPackageIcon(m[2])
 	}
 	if pending != nil {
 		results = append(results, *pending)
@@ -97,6 +98,51 @@ func pacmanInstalledSet() (map[string]bool, error) {
 		}
 	}
 	return set, scanner.Err()
+}
+
+// listPacmanInstalled returns every locally installed Pacman package. Native
+// repo packages are labelled "official"; foreign packages are labelled "aur"
+// because that is how users usually encounter them in this UI.
+func listPacmanInstalled() ([]PackageRef, error) {
+	cmd := exec.Command("pacman", "-Qi")
+	cmd.Env = pacmanCommandEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	foreign := map[string]bool{}
+	foreignCmd := exec.Command("pacman", "-Qmq")
+	if foreignOut, foreignErr := foreignCmd.Output(); foreignErr == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(foreignOut)))
+		for scanner.Scan() {
+			if name := strings.TrimSpace(scanner.Text()); name != "" {
+				foreign[name] = true
+			}
+		}
+	}
+
+	var results []PackageRef
+	for _, block := range strings.Split(string(out), "\n\n") {
+		fields := parsePacmanInfoBlock([]byte(block))
+		name := fields["Name"]
+		if name == "" {
+			continue
+		}
+		origin := "official"
+		if foreign[name] {
+			origin = "aur"
+		}
+		results = append(results, PackageRef{
+			Origin:      origin,
+			Id:          name,
+			Name:        name,
+			Description: fields["Description"],
+			Installed:   true,
+			Icon:        findPackageIcon(name),
+		})
+	}
+	return results, nil
 }
 
 // syncPacmanDb runs `pacman -Sy`, refreshing the local sync databases from
@@ -171,9 +217,28 @@ func listPacmanUpdates() ([]PackageRef, error) {
 			Name:        m[1],
 			Description: fmt.Sprintf("%s → %s", m[2], m[3]),
 			Installed:   true,
+			Icon:        findPackageIcon(m[1]),
 		})
 	}
 	return results, scanner.Err()
+}
+
+func findPackageIcon(id string) string {
+	candidates := []string{
+		filepath.Join("/usr/share/pixmaps", id+".png"),
+		filepath.Join("/usr/share/pixmaps", id+".svg"),
+		filepath.Join("/usr/share/icons/hicolor/scalable/apps", id+".svg"),
+		filepath.Join("/usr/share/icons/hicolor/256x256/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/128x128/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/64x64/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/48x48/apps", id+".png"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // pacmanCommandEnv forces deterministic English field labels ("Version",

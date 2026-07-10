@@ -48,6 +48,15 @@ func (s *ServicesService) ListServices() ([]ManagedServiceInfo, *dbus.Error) {
 	return rows, nil
 }
 
+func (s *ServicesService) ListAllServices() ([]ManagedServiceInfo, *dbus.Error) {
+	s.activity.Touch()
+	rows, err := listAllSystemdServices()
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	return rows, nil
+}
+
 func (s *ServicesService) SetServiceEnabled(sender dbus.Sender, name string, enabled bool) *dbus.Error {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
@@ -106,6 +115,80 @@ func serviceInfo(name, label, description string) ManagedServiceInfo {
 		Active:      active,
 		Available:   available,
 	}
+}
+
+func listAllSystemdServices() ([]ManagedServiceInfo, error) {
+	if !commandAvailable("systemctl") {
+		return nil, fmt.Errorf("systemctl não está disponível")
+	}
+
+	enabledByUnit := map[string]bool{}
+	availableByUnit := map[string]bool{}
+	unitFiles, err := runCommandOutput("systemctl", "list-unit-files", "--type=service", "--no-legend", "--no-pager")
+	if err != nil {
+		return nil, fmt.Errorf("systemctl list-unit-files: %w — %s", err, unitFiles)
+	}
+	for _, line := range strings.Split(unitFiles, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.HasSuffix(fields[0], ".service") {
+			continue
+		}
+		name := fields[0]
+		state := fields[1]
+		availableByUnit[name] = true
+		enabledByUnit[name] = state == "enabled" || state == "enabled-runtime" || state == "static" || state == "alias"
+	}
+
+	activeByUnit := map[string]bool{}
+	descriptionByUnit := map[string]string{}
+	units, err := runCommandOutput("systemctl", "list-units", "--type=service", "--all", "--no-legend", "--no-pager")
+	if err != nil {
+		return nil, fmt.Errorf("systemctl list-units: %w — %s", err, units)
+	}
+	for _, line := range strings.Split(units, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "●" {
+			fields = fields[1:]
+		}
+		if len(fields) < 4 || !strings.HasSuffix(fields[0], ".service") {
+			continue
+		}
+		name := fields[0]
+		availableByUnit[name] = true
+		activeByUnit[name] = fields[2] == "active"
+		if len(fields) > 4 {
+			descriptionByUnit[name] = strings.Join(fields[4:], " ")
+		}
+	}
+
+	rows := make([]ManagedServiceInfo, 0, len(availableByUnit))
+	for name := range availableByUnit {
+		description := descriptionByUnit[name]
+		if description == "" {
+			description = "Serviço systemd"
+		}
+		rows = append(rows, ManagedServiceInfo{
+			Name:        name,
+			Label:       serviceLabelFromName(name),
+			Description: description,
+			Enabled:     enabledByUnit[name],
+			Active:      activeByUnit[name],
+			Available:   true,
+		})
+	}
+
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	return rows, nil
+}
+
+func serviceLabelFromName(name string) string {
+	label := strings.TrimSuffix(name, ".service")
+	label = strings.ReplaceAll(label, "-", " ")
+	label = strings.ReplaceAll(label, "_", " ")
+	if label == "" {
+		return name
+	}
+	return label
 }
 
 func setServiceEnabled(name string, enabled bool) error {

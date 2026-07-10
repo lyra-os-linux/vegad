@@ -40,6 +40,7 @@ func searchFlatpak(query string) ([]PackageRef, error) {
 			Name:        fields[0],
 			Description: fields[1],
 			Installed:   isInstalled,
+			Icon:        findFlatpakIcon(fields[2]),
 		})
 	}
 	return results, scanner.Err()
@@ -64,6 +65,31 @@ func flatpakInstalledApps() (map[string]string, error) {
 		apps[fields[0]] = fields[1]
 	}
 	return apps, scanner.Err()
+}
+
+func listFlatpakInstalled() ([]PackageRef, error) {
+	cmd := exec.Command("flatpak", "list", "--app", "--system", "--columns=application,name")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []PackageRef
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), "\t")
+		if len(fields) < 2 {
+			continue
+		}
+		results = append(results, PackageRef{
+			Origin:    "flathub",
+			Id:        fields[0],
+			Name:      fields[1],
+			Installed: true,
+			Icon:      findFlatpakIcon(fields[0]),
+		})
+	}
+	return results, scanner.Err()
 }
 
 // listFlatpakUpdates has no clean "list only" subcommand in this flatpak
@@ -94,10 +120,27 @@ func listFlatpakUpdates() ([]PackageRef, error) {
 				Name:        name,
 				Description: "Atualização disponível",
 				Installed:   true,
+				Icon:        findFlatpakIcon(id),
 			})
 		}
 	}
 	return results, nil
+}
+
+func findFlatpakIcon(appID string) string {
+	candidates := []string{
+		"/var/lib/flatpak/exports/share/icons/hicolor/scalable/apps/" + appID + ".svg",
+		"/var/lib/flatpak/exports/share/icons/hicolor/256x256/apps/" + appID + ".png",
+		"/var/lib/flatpak/exports/share/icons/hicolor/128x128/apps/" + appID + ".png",
+		"/var/lib/flatpak/exports/share/icons/hicolor/64x64/apps/" + appID + ".png",
+		"/var/lib/flatpak/exports/share/icons/hicolor/48x48/apps/" + appID + ".png",
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return findPackageIcon(appID)
 }
 
 // parseFlatpakInfoBlock parses the right-aligned "Key: Value" layout of
