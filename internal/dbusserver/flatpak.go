@@ -3,6 +3,7 @@ package dbusserver
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -97,6 +98,66 @@ func listFlatpakUpdates() ([]PackageRef, error) {
 		}
 	}
 	return results, nil
+}
+
+// parseFlatpakInfoBlock parses the right-aligned "Key: Value" layout of
+// `flatpak info`/`flatpak remote-info` under LC_ALL=C — unlike pacman's
+// left-aligned "Key : Value", the key itself is padded with leading spaces
+// and the separator has no space before the colon, so this needs its own
+// parser rather than reusing parsePacmanInfoBlock.
+func parseFlatpakInfoBlock(out []byte) map[string]string {
+	fields := map[string]string{}
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		idx := strings.Index(line, ": ")
+		if idx <= 0 {
+			continue
+		}
+		fields[line[:idx]] = strings.TrimSpace(line[idx+2:])
+	}
+	return fields
+}
+
+// fetchFlatpakDetails uses `flatpak info` for installed apps (has Installed
+// Size but not Download Size, since nothing needs downloading) and
+// `flatpak remote-info` against Flathub for everything else.
+func fetchFlatpakDetails(appID string) (PackageDetails, error) {
+	details := PackageDetails{Origin: "flathub", Id: appID}
+
+	installed, err := flatpakInstalledApps()
+	if err != nil {
+		return details, err
+	}
+
+	var cmd *exec.Cmd
+	if name, ok := installed[appID]; ok {
+		details.Installed = true
+		details.Name = name
+		cmd = exec.Command("flatpak", "info", "--system", "--", appID)
+	} else {
+		cmd = exec.Command("flatpak", "remote-info", "--system", "flathub", "--", appID)
+	}
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+
+	out, err := cmd.Output()
+	if err != nil {
+		return details, fmt.Errorf("flatpak info %s: %w", appID, err)
+	}
+	fields := parseFlatpakInfoBlock(out)
+	if details.Name == "" {
+		details.Name = appID
+	}
+	details.Licenses = splitPacmanList(fields["License"])
+	details.DownloadSize = fields["Download Size"]
+	if details.Installed {
+		details.InstalledVersion = fields["Version"]
+		details.InstalledSize = fields["Installed Size"]
+	} else {
+		details.AvailableVersion = fields["Version"]
+	}
+
+	return details, nil
 }
 
 // installFlatpak installs an app from Flathub into the system-wide

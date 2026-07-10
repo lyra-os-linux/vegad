@@ -30,6 +30,51 @@ type PackageRef struct {
 	Installed   bool
 }
 
+// PackageDetails is the expanded view of a single package shown in the
+// detail panel (issue #8) — unlike PackageRef, fetching this touches the
+// network/AUR helper, so it's only requested on demand, never as part of a
+// list.
+type PackageDetails struct {
+	Origin           string
+	Id               string
+	Name             string
+	Description      string
+	Installed        bool
+	InstalledVersion string
+	AvailableVersion string
+	DownloadSize     string
+	InstalledSize    string
+	Dependencies     []string
+	Licenses         []string
+	URL              string
+	Maintainer       string
+}
+
+// GetPackageDetails fetches the expanded metadata for one package — read-only
+// (no polkit gate needed), same as Search/ListUpdates.
+func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, *dbus.Error) {
+	s.activity.Touch()
+
+	var (
+		details PackageDetails
+		err     error
+	)
+	switch origin {
+	case "official":
+		details, err = fetchPacmanDetails(id)
+	case "flathub":
+		details, err = fetchFlatpakDetails(id)
+	case "aur":
+		details, err = fetchAurDetails(id)
+	default:
+		return PackageDetails{}, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
+	}
+	if err != nil {
+		return PackageDetails{}, dbus.MakeFailedError(err)
+	}
+	return details, nil
+}
+
 // Search queries Pacman's local sync databases and Flathub, merging both
 // into one flat list — deduplication across origins (PROMPT-VEGA.md §3.1)
 // is the UI's job, so it can offer the origin picker on the card. AUR

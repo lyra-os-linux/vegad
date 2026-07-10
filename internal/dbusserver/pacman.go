@@ -2,6 +2,7 @@ package dbusserver
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -144,6 +145,91 @@ func listPacmanUpdates() ([]PackageRef, error) {
 		})
 	}
 	return results, scanner.Err()
+}
+
+// pacmanCommandEnv forces deterministic English field labels ("Version",
+// "Depends On", ...) out of pacman/AUR-helper info commands — under a
+// non-English system locale pacman prints those localized (e.g. "Versão"),
+// which parsePacmanInfoBlock can't recognize. Same fix as snapper.go's
+// LC_ALL=C for --csvout headers.
+func pacmanCommandEnv() []string {
+	return append(os.Environ(), "LC_ALL=C")
+}
+
+// parsePacmanInfoBlock parses the "Key : Value" layout shared by `pacman
+// -Si`/`-Qi` and `yay`/`paru -Si` under LC_ALL=C. Wrapped continuation
+// lines (e.g. a long "Depends On" list) are indented and lack the " : "
+// separator, so they get appended to the previous key's value.
+func parsePacmanInfoBlock(out []byte) map[string]string {
+	fields := map[string]string{}
+	lastKey := ""
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			lastKey = ""
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			if idx := strings.Index(line, " : "); idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				fields[key] = strings.TrimSpace(line[idx+3:])
+				lastKey = key
+				continue
+			}
+		}
+		if lastKey != "" {
+			fields[lastKey] = strings.TrimSpace(fields[lastKey] + " " + strings.TrimSpace(line))
+		}
+	}
+	return fields
+}
+
+// splitPacmanList splits a space-separated pacman list field ("Depends On",
+// "Licenses", ...) into its entries, treating pacman's own "None" as empty.
+func splitPacmanList(value string) []string {
+	if value == "" || value == "None" {
+		return nil
+	}
+	return strings.Fields(value)
+}
+
+// fetchPacmanDetails runs `pacman -Si` for the sync-database view of a
+// package (works whether or not it's installed, no `-Sy` — same
+// no-network/no-privilege reasoning as listPacmanUpdates) and, if the
+// package is installed, layers `pacman -Qi` on top for the installed
+// version/size, which -Si never reports.
+func fetchPacmanDetails(id string) (PackageDetails, error) {
+	details := PackageDetails{Origin: "official", Id: id}
+
+	cmd := exec.Command("pacman", "-Si", "--", id)
+	cmd.Env = pacmanCommandEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return details, fmt.Errorf("pacman -Si %s: %w", id, err)
+	}
+	fields := parsePacmanInfoBlock(out)
+	details.Name = fields["Name"]
+	details.Description = fields["Description"]
+	details.URL = fields["URL"]
+	details.Licenses = splitPacmanList(fields["Licenses"])
+	details.Dependencies = splitPacmanList(fields["Depends On"])
+	details.AvailableVersion = fields["Version"]
+	details.DownloadSize = fields["Download Size"]
+
+	installed, err := pacmanInstalledSet()
+	if err == nil && installed[id] {
+		details.Installed = true
+		icmd := exec.Command("pacman", "-Qi", "--", id)
+		icmd.Env = pacmanCommandEnv()
+		if iout, ierr := icmd.Output(); ierr == nil {
+			ifields := parsePacmanInfoBlock(iout)
+			details.InstalledVersion = ifields["Version"]
+			details.InstalledSize = ifields["Installed Size"]
+		}
+	}
+
+	return details, nil
 }
 
 // installPacman runs `pacman -S` for a single package, reporting coarse

@@ -3,6 +3,7 @@ package dbusserver
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -82,6 +83,49 @@ func searchAur(query string) ([]PackageRef, error) {
 	args := append(vegaBuildSystemdRunArgs(false), "--", helper, "-Ssa", "--color=never", "--", query)
 	out, _ := runCommandOutput("systemd-run", args...)
 	return parseSearchOutput([]byte(out), "aur", installed), nil
+}
+
+// fetchAurDetails runs `<helper> -Si` (sandboxed read-only, same profile as
+// searchAur) against the AUR RPC for a single package's metadata. yay/paru
+// print the same "Key : Value" layout as pacman -Si, so parsePacmanInfoBlock
+// covers both.
+func fetchAurDetails(id string) (PackageDetails, error) {
+	details := PackageDetails{Origin: "aur", Id: id}
+
+	helper, err := aurHelper()
+	if err != nil {
+		return details, err
+	}
+
+	args := append(vegaBuildSystemdRunArgs(false), "-p", "Environment=LC_ALL=C",
+		"--", helper, "-Si", "--color=never", "--", id)
+	out, err := runCommandOutput("systemd-run", args...)
+	if err != nil {
+		return details, fmt.Errorf("%s -Si %s: %w — %s", helper, id, err, out)
+	}
+
+	fields := parsePacmanInfoBlock([]byte(out))
+	details.Name = fields["Name"]
+	details.Description = fields["Description"]
+	details.URL = fields["URL"]
+	details.Licenses = splitPacmanList(fields["Licenses"])
+	details.Dependencies = splitPacmanList(fields["Depends On"])
+	details.AvailableVersion = fields["Version"]
+	details.Maintainer = fields["Maintainer"]
+
+	installed, ierr := pacmanInstalledSet()
+	if ierr == nil && installed[id] {
+		details.Installed = true
+		icmd := exec.Command("pacman", "-Qi", "--", id)
+		icmd.Env = pacmanCommandEnv()
+		if iout, err2 := icmd.Output(); err2 == nil {
+			ifields := parsePacmanInfoBlock(iout)
+			details.InstalledVersion = ifields["Version"]
+			details.InstalledSize = ifields["Installed Size"]
+		}
+	}
+
+	return details, nil
 }
 
 // fetchAurPkgbuild clones/updates the AUR git checkout for pkgbase via
