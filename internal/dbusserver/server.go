@@ -107,6 +107,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	logs := &LogsService{activity: s.activity}
+	if err := s.conn.Export(logs, ObjectPath, BusName+".Logs"); err != nil {
+		return err
+	}
+
 	// dbus-next (and any well-behaved D-Bus client) calls Introspect() to
 	// discover method signatures before invoking them — godbus doesn't
 	// provide this automatically, so without it every call from such a
@@ -132,6 +137,7 @@ func (s *Server) Export() error {
 				}},
 			}},
 			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots)},
+			{Name: BusName + ".Logs", Methods: introspect.Methods(logs)},
 			{Name: BusName + ".Backup", Methods: introspect.Methods(backup), Signals: []introspect.Signal{
 				{Name: "BackupProgress", Args: []introspect.Arg{
 					{Name: "transactionId", Type: "u", Direction: "out"},
