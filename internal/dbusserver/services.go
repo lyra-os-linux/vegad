@@ -70,6 +70,17 @@ func (s *ServicesService) SetServiceRunning(sender dbus.Sender, name string, run
 	return nil
 }
 
+func (s *ServicesService) RestartService(sender dbus.Sender, name string) *dbus.Error {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
+		return err
+	}
+	if err := restartService(name); err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	return nil
+}
+
 func serviceInfo(name, label, description string) ManagedServiceInfo {
 	enabled := false
 	active := false
@@ -131,6 +142,16 @@ func setServiceRunning(name string, running bool) error {
 	}
 	if out, err := runCommandOutput("systemctl", action, name); err != nil {
 		return fmt.Errorf("systemctl %s %s: %w — %s", action, name, err, out)
+	}
+	return nil
+}
+
+func restartService(name string) error {
+	if !commandAvailable("systemctl") {
+		return fmt.Errorf("systemctl não está disponível")
+	}
+	if out, err := runCommandOutput("systemctl", "restart", name); err != nil {
+		return fmt.Errorf("systemctl restart %s: %w — %s", name, err, out)
 	}
 	return nil
 }
