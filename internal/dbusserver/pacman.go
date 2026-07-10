@@ -285,6 +285,20 @@ func clearPacmanCache(report progressFunc) error {
 	return runPacmanTransaction([]string{"-Scc", "--noconfirm"}, report)
 }
 
+// optimizeMirrors ranks pacman mirrors by download speed and rewrites
+// /etc/pacman.d/mirrorlist — reflector is an optdepend (packaging/vegad/
+// PKGBUILD), same fallback pattern as yay/paru for AUR.
+func optimizeMirrors(report progressFunc) error {
+	if !commandAvailable("reflector") {
+		return fmt.Errorf("reflector não está instalado — instale o pacote 'reflector' para otimizar mirrors")
+	}
+	return runStreamingCommand(
+		"reflector",
+		[]string{"--latest", "20", "--sort", "rate", "--save", "/etc/pacman.d/mirrorlist"},
+		report, "Testando velocidade dos mirrors...", "Lista de mirrors atualizada",
+	)
+}
+
 var (
 	pacmanStageInstalling = regexp.MustCompile(`^\((\d+)/(\d+)\) (installing|upgrading|removing) `)
 	pacmanStageDownload   = regexp.MustCompile(`^:: Retrieving packages`)

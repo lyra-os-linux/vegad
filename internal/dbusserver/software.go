@@ -263,6 +263,17 @@ func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enable
 	return nil
 }
 
+// OptimizeMirrors re-ranks Pacman mirrors by download speed via reflector.
+func (s *SoftwareService) OptimizeMirrors(sender dbus.Sender) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return 0, err
+	}
+	return s.startTransaction(func(report progressFunc) error {
+		return optimizeMirrors(report)
+	}), nil
+}
+
 // ClearCache clears Pacman's package cache and orphaned Flatpak runtimes as
 // a single transaction.
 func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {

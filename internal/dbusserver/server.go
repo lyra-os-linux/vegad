@@ -112,6 +112,26 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	dateTime := &DateTimeService{activity: s.activity}
+	if err := s.conn.Export(dateTime, ObjectPath, BusName+".DateTime"); err != nil {
+		return err
+	}
+
+	network := &NetworkService{activity: s.activity}
+	if err := s.conn.Export(network, ObjectPath, BusName+".Network"); err != nil {
+		return err
+	}
+
+	storage := &StorageService{activity: s.activity}
+	if err := s.conn.Export(storage, ObjectPath, BusName+".Storage"); err != nil {
+		return err
+	}
+
+	monitor := &MonitorService{activity: s.activity}
+	if err := s.conn.Export(monitor, ObjectPath, BusName+".Monitor"); err != nil {
+		return err
+	}
+
 	// dbus-next (and any well-behaved D-Bus client) calls Introspect() to
 	// discover method signatures before invoking them — godbus doesn't
 	// provide this automatically, so without it every call from such a
@@ -170,6 +190,10 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Users", Methods: introspect.Methods(users)},
 			{Name: BusName + ".Firewall", Methods: introspect.Methods(firewall)},
 			{Name: BusName + ".Services", Methods: introspect.Methods(services)},
+			{Name: BusName + ".DateTime", Methods: introspect.Methods(dateTime)},
+			{Name: BusName + ".Network", Methods: introspect.Methods(network)},
+			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
+			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
 		},
 	}
 	if err := s.conn.Export(introspect.NewIntrospectable(node), ObjectPath, "org.freedesktop.DBus.Introspectable"); err != nil {
