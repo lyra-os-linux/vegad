@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // progressFunc reports coarse (stage-based, not byte-accurate) progress for
@@ -102,11 +104,38 @@ func pacmanInstalledSet() (map[string]bool, error) {
 // touch the network and needs root — called by RunUpdateCheckJob, which
 // already runs as root via its own systemd unit, so nothing is lost by
 // syncing before checking.
+//
+// The periodic check job races any other pacman/AUR-helper transaction the
+// user might be running concurrently — pacman's own db lock file is the
+// language-independent signal for that (unlike its error text, which is
+// localized and unparseable). Rather than let that race fail the whole
+// systemd unit, back off a few times and, if the lock is still held after
+// pacmanLockMaxAttempts, skip this cycle quietly; the timer tries again in
+// OnUnitActiveSec anyway.
+// var, not const, so tests can point at a throwaway file instead of the
+// real pacman lock and drive the retry loop deterministically.
+var pacmanLockPath = "/var/lib/pacman/db.lck"
+var pacmanLockRetryDelay = 2 * time.Second
+
+const pacmanLockMaxAttempts = 5
+
 func syncPacmanDb() error {
-	cmd := exec.Command("pacman", "-Sy")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("pacman -Sy: %w — %s", err, strings.TrimSpace(string(out)))
+	for attempt := 1; attempt <= pacmanLockMaxAttempts; attempt++ {
+		if _, err := os.Stat(pacmanLockPath); err == nil {
+			if attempt == pacmanLockMaxAttempts {
+				log.Printf("vegad: pacman -Sy adiado — banco de pacotes ocupado por outra transação")
+				return nil
+			}
+			time.Sleep(pacmanLockRetryDelay)
+			continue
+		}
+
+		cmd := exec.Command("pacman", "-Sy")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pacman -Sy: %w — %s", err, strings.TrimSpace(string(out)))
+		}
+		return nil
 	}
 	return nil
 }

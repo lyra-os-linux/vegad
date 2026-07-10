@@ -1,6 +1,33 @@
 package dbusserver
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestSyncPacmanDbSkipsWhenLockHeld(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "db.lck")
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatalf("write fake lock: %v", err)
+	}
+
+	origPath, origDelay := pacmanLockPath, pacmanLockRetryDelay
+	pacmanLockPath = lockPath
+	pacmanLockRetryDelay = time.Millisecond
+	defer func() {
+		pacmanLockPath, pacmanLockRetryDelay = origPath, origDelay
+	}()
+
+	// Lock never goes away — syncPacmanDb should exhaust its retries and
+	// return nil (skip this cycle) rather than an error, so the periodic
+	// check job's systemd unit doesn't get marked as failed over a
+	// transient race with another pacman transaction.
+	if err := syncPacmanDb(); err != nil {
+		t.Fatalf("expected syncPacmanDb to give up quietly on a held lock, got error: %v", err)
+	}
+}
 
 func TestSearchPacmanFindsFirefox(t *testing.T) {
 	results, err := searchPacman("firefox")
