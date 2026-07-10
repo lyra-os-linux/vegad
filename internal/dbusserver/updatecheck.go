@@ -13,6 +13,10 @@ import (
 // Server, so it works on its own systemd timer schedule regardless of
 // whether the main daemon is currently running.
 func RunUpdateCheckJob() error {
+	if err := syncPacmanDb(); err != nil {
+		return err
+	}
+
 	official, err := listPacmanUpdates()
 	if err != nil {
 		return err

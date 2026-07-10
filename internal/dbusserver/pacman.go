@@ -96,12 +96,27 @@ func pacmanInstalledSet() (map[string]bool, error) {
 	return set, scanner.Err()
 }
 
+// syncPacmanDb runs `pacman -Sy`, refreshing the local sync databases from
+// the configured repos. Unlike searchPacman/listPacmanUpdates this does
+// touch the network and needs root — called by RunUpdateCheckJob, which
+// already runs as root via its own systemd unit, so nothing is lost by
+// syncing before checking.
+func syncPacmanDb() error {
+	cmd := exec.Command("pacman", "-Sy")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pacman -Sy: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // pacmanUpdateLine matches a `pacman -Qu` line, e.g. "firefox 151.0-1 -> 152.0.4-1".
 var pacmanUpdateLine = regexp.MustCompile(`^(\S+)\s+(\S+)\s+->\s+(\S+)`)
 
 // listPacmanUpdates reports pending updates among already-installed
 // packages, based on whatever is in the local sync databases (no `-Sy`, so
-// no network access and no privilege needed).
+// no network access and no privilege needed). Callers that need fresh
+// results (e.g. the periodic check job) must sync first — see syncPacmanDb.
 func listPacmanUpdates() ([]PackageRef, error) {
 	cmd := exec.Command("pacman", "-Qu")
 	out, err := cmd.Output()
