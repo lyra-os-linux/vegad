@@ -1,4 +1,4 @@
-package dbusserver
+package distro
 
 import (
 	"bufio"
@@ -13,10 +13,15 @@ import (
 	"time"
 )
 
-// progressFunc reports coarse (stage-based, not byte-accurate) progress for
-// a running transaction — pacman/flatpak's own textual output doesn't carry
-// a reliable machine-readable percentage, so callers get milestones instead.
-type progressFunc func(percent uint32, message string)
+// pacmanBackend drives Arch's Pacman as the PackageBackend. This is a
+// pragmatic first cut shelling out to the pacman(8) CLI; PROMPT-VEGA.md
+// §2.1 calls for libalpm directly, which a later pass can swap in behind
+// this same interface.
+type pacmanBackend struct{}
+
+func newPacmanBackend() *pacmanBackend { return &pacmanBackend{} }
+
+func (p *pacmanBackend) Name() string { return "Pacman" }
 
 // pacmanResultLine matches the first line of each `pacman -Ss` hit, e.g.:
 //
@@ -24,13 +29,10 @@ type progressFunc func(percent uint32, message string)
 //	extra/firefox-adblock-plus 4.41.0-1 (firefox-addons)
 var pacmanResultLine = regexp.MustCompile(`^(\S+)/(\S+)\s+(\S+)`)
 
-// searchPacman shells out to `pacman -Ss`, reading whatever is already in
-// the local sync databases — it does not run `-Sy` and therefore never
-// touches the network or mutates system state, so it needs no privilege.
-// This is a pragmatic first cut; PROMPT-VEGA.md §2.1 calls for libalpm
-// directly, which a later pass can swap in behind this same function
-// signature.
-func searchPacman(query string) ([]PackageRef, error) {
+// Search shells out to `pacman -Ss`, reading whatever is already in the
+// local sync databases — it does not run `-Sy` and therefore never touches
+// the network or mutates system state, so it needs no privilege.
+func (p *pacmanBackend) Search(query string) ([]PackageRef, error) {
 	installed, err := pacmanInstalledSet()
 	if err != nil {
 		return nil, err
@@ -73,7 +75,7 @@ func parseSearchOutput(out []byte, origin string, installed map[string]bool) []P
 			continue
 		}
 		pending = &PackageRef{Origin: origin, Id: m[2], Name: m[2], Installed: installed[m[2]]}
-		pending.Icon = findPackageIcon(m[2])
+		pending.Icon = FindPackageIcon(m[2])
 	}
 	if pending != nil {
 		results = append(results, *pending)
@@ -100,12 +102,12 @@ func pacmanInstalledSet() (map[string]bool, error) {
 	return set, scanner.Err()
 }
 
-// listPacmanInstalled returns every locally installed Pacman package. Native
-// repo packages are labelled "official"; foreign packages are labelled "aur"
+// ListInstalled returns every locally installed Pacman package. Native repo
+// packages are labelled "official"; foreign packages are labelled "aur"
 // because that is how users usually encounter them in this UI.
-func listPacmanInstalled() ([]PackageRef, error) {
+func (p *pacmanBackend) ListInstalled() ([]PackageRef, error) {
 	cmd := exec.Command("pacman", "-Qi")
-	cmd.Env = pacmanCommandEnv()
+	cmd.Env = commandEnvC()
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -139,17 +141,24 @@ func listPacmanInstalled() ([]PackageRef, error) {
 			Name:        name,
 			Description: fields["Description"],
 			Installed:   true,
-			Icon:        findPackageIcon(name),
+			Icon:        FindPackageIcon(name),
 		})
 	}
 	return results, nil
 }
 
-// syncPacmanDb runs `pacman -Sy`, refreshing the local sync databases from
-// the configured repos. Unlike searchPacman/listPacmanUpdates this does
-// touch the network and needs root — called by RunUpdateCheckJob, which
-// already runs as root via its own systemd unit, so nothing is lost by
-// syncing before checking.
+// pacmanLockPath is a var, not const, so tests can point at a throwaway
+// file instead of the real pacman lock and drive the retry loop
+// deterministically.
+var pacmanLockPath = "/var/lib/pacman/db.lck"
+var pacmanLockRetryDelay = 2 * time.Second
+
+const pacmanLockMaxAttempts = 5
+
+// SyncDatabase runs `pacman -Sy`, refreshing the local sync databases from
+// the configured repos. Unlike Search/ListUpdates this does touch the
+// network and needs root — only called by the periodic update-check job,
+// which already runs as root via its own systemd unit.
 //
 // The periodic check job races any other pacman/AUR-helper transaction the
 // user might be running concurrently — pacman's own db lock file is the
@@ -158,14 +167,7 @@ func listPacmanInstalled() ([]PackageRef, error) {
 // systemd unit, back off a few times and, if the lock is still held after
 // pacmanLockMaxAttempts, skip this cycle quietly; the timer tries again in
 // OnUnitActiveSec anyway.
-// var, not const, so tests can point at a throwaway file instead of the
-// real pacman lock and drive the retry loop deterministically.
-var pacmanLockPath = "/var/lib/pacman/db.lck"
-var pacmanLockRetryDelay = 2 * time.Second
-
-const pacmanLockMaxAttempts = 5
-
-func syncPacmanDb() error {
+func (p *pacmanBackend) SyncDatabase() error {
 	for attempt := 1; attempt <= pacmanLockMaxAttempts; attempt++ {
 		if _, err := os.Stat(pacmanLockPath); err == nil {
 			if attempt == pacmanLockMaxAttempts {
@@ -189,11 +191,11 @@ func syncPacmanDb() error {
 // pacmanUpdateLine matches a `pacman -Qu` line, e.g. "firefox 151.0-1 -> 152.0.4-1".
 var pacmanUpdateLine = regexp.MustCompile(`^(\S+)\s+(\S+)\s+->\s+(\S+)`)
 
-// listPacmanUpdates reports pending updates among already-installed
-// packages, based on whatever is in the local sync databases (no `-Sy`, so
-// no network access and no privilege needed). Callers that need fresh
-// results (e.g. the periodic check job) must sync first — see syncPacmanDb.
-func listPacmanUpdates() ([]PackageRef, error) {
+// ListUpdates reports pending updates among already-installed packages,
+// based on whatever is in the local sync databases (no `-Sy`, so no network
+// access and no privilege needed). Callers that need fresh results (e.g.
+// the periodic check job) must SyncDatabase first.
+func (p *pacmanBackend) ListUpdates() ([]PackageRef, error) {
 	cmd := exec.Command("pacman", "-Qu")
 	out, err := cmd.Output()
 	if err != nil {
@@ -217,13 +219,16 @@ func listPacmanUpdates() ([]PackageRef, error) {
 			Name:        m[1],
 			Description: fmt.Sprintf("%s → %s", m[2], m[3]),
 			Installed:   true,
-			Icon:        findPackageIcon(m[1]),
+			Icon:        FindPackageIcon(m[1]),
 		})
 	}
 	return results, scanner.Err()
 }
 
-func findPackageIcon(id string) string {
+// FindPackageIcon looks up a package's icon in the standard FHS icon
+// theme/pixmap paths — shared with the (distro-independent) Flatpak lookup
+// as a final fallback.
+func FindPackageIcon(id string) string {
 	candidates := []string{
 		filepath.Join("/usr/share/pixmaps", id+".png"),
 		filepath.Join("/usr/share/pixmaps", id+".svg"),
@@ -239,15 +244,6 @@ func findPackageIcon(id string) string {
 		}
 	}
 	return ""
-}
-
-// pacmanCommandEnv forces deterministic English field labels ("Version",
-// "Depends On", ...) out of pacman/AUR-helper info commands — under a
-// non-English system locale pacman prints those localized (e.g. "Versão"),
-// which parsePacmanInfoBlock can't recognize. Same fix as snapper.go's
-// LC_ALL=C for --csvout headers.
-func pacmanCommandEnv() []string {
-	return append(os.Environ(), "LC_ALL=C")
 }
 
 // parsePacmanInfoBlock parses the "Key : Value" layout shared by `pacman
@@ -279,25 +275,27 @@ func parsePacmanInfoBlock(out []byte) map[string]string {
 	return fields
 }
 
-// splitPacmanList splits a space-separated pacman list field ("Depends On",
-// "Licenses", ...) into its entries, treating pacman's own "None" as empty.
-func splitPacmanList(value string) []string {
+// SplitPackageList splits a space-separated pacman-style list field
+// ("Depends On", "Licenses", ...) into its entries, treating pacman's own
+// "None" as empty. Shared with flatpak.go's license parsing since both
+// formats use the same convention.
+func SplitPackageList(value string) []string {
 	if value == "" || value == "None" {
 		return nil
 	}
 	return strings.Fields(value)
 }
 
-// fetchPacmanDetails runs `pacman -Si` for the sync-database view of a
-// package (works whether or not it's installed, no `-Sy` — same
-// no-network/no-privilege reasoning as listPacmanUpdates) and, if the
-// package is installed, layers `pacman -Qi` on top for the installed
-// version/size, which -Si never reports.
-func fetchPacmanDetails(id string) (PackageDetails, error) {
+// GetDetails runs `pacman -Si` for the sync-database view of a package
+// (works whether or not it's installed, no `-Sy` — same no-network/no-privilege
+// reasoning as ListUpdates) and, if the package is installed, layers
+// `pacman -Qi` on top for the installed version/size, which -Si never
+// reports.
+func (p *pacmanBackend) GetDetails(id string) (PackageDetails, error) {
 	details := PackageDetails{Origin: "official", Id: id}
 
 	cmd := exec.Command("pacman", "-Si", "--", id)
-	cmd.Env = pacmanCommandEnv()
+	cmd.Env = commandEnvC()
 	out, err := cmd.Output()
 	if err != nil {
 		return details, fmt.Errorf("pacman -Si %s: %w", id, err)
@@ -306,8 +304,8 @@ func fetchPacmanDetails(id string) (PackageDetails, error) {
 	details.Name = fields["Name"]
 	details.Description = fields["Description"]
 	details.URL = fields["URL"]
-	details.Licenses = splitPacmanList(fields["Licenses"])
-	details.Dependencies = splitPacmanList(fields["Depends On"])
+	details.Licenses = SplitPackageList(fields["Licenses"])
+	details.Dependencies = SplitPackageList(fields["Depends On"])
 	details.AvailableVersion = fields["Version"]
 	details.DownloadSize = fields["Download Size"]
 
@@ -315,7 +313,7 @@ func fetchPacmanDetails(id string) (PackageDetails, error) {
 	if err == nil && installed[id] {
 		details.Installed = true
 		icmd := exec.Command("pacman", "-Qi", "--", id)
-		icmd.Env = pacmanCommandEnv()
+		icmd.Env = commandEnvC()
 		if iout, ierr := icmd.Output(); ierr == nil {
 			ifields := parsePacmanInfoBlock(iout)
 			details.InstalledVersion = ifields["Version"]
@@ -326,34 +324,31 @@ func fetchPacmanDetails(id string) (PackageDetails, error) {
 	return details, nil
 }
 
-// installPacman runs `pacman -S` for a single package, reporting coarse
-// progress as pacman announces its stages on stdout.
-func installPacman(pkg string, report progressFunc) error {
+// Install runs `pacman -S` for a single package, reporting coarse progress
+// as pacman announces its stages on stdout.
+func (p *pacmanBackend) Install(pkg string, report ProgressFunc) error {
 	return runPacmanTransaction([]string{"-S", "--noconfirm", "--", pkg}, report)
 }
 
-// removePacman runs `pacman -R` for a single package.
-func removePacman(pkg string, report progressFunc) error {
+// Remove runs `pacman -R` for a single package.
+func (p *pacmanBackend) Remove(pkg string, report ProgressFunc) error {
 	return runPacmanTransaction([]string{"-R", "--noconfirm", "--", pkg}, report)
 }
 
-// updateAllPacman runs a full sync + upgrade (`pacman -Syu`) — unlike
-// search/list, this does touch the network and mutate system state, which
-// is exactly what the user asked for by clicking "Atualizar tudo"
-// (PROMPT-VEGA.md §3.1).
-func updateAllPacman(report progressFunc) error {
+// UpdateAll runs a full sync + upgrade (`pacman -Syu`).
+func (p *pacmanBackend) UpdateAll(report ProgressFunc) error {
 	return runPacmanTransaction([]string{"-Syu", "--noconfirm"}, report)
 }
 
-// clearPacmanCache runs `pacman -Scc`, removing all cached package files.
-func clearPacmanCache(report progressFunc) error {
+// ClearCache runs `pacman -Scc`, removing all cached package files.
+func (p *pacmanBackend) ClearCache(report ProgressFunc) error {
 	return runPacmanTransaction([]string{"-Scc", "--noconfirm"}, report)
 }
 
-// optimizeMirrors ranks pacman mirrors by download speed and rewrites
+// OptimizeMirrors ranks pacman mirrors by download speed and rewrites
 // /etc/pacman.d/mirrorlist — reflector is an optdepend (packaging/vegad/
 // PKGBUILD), same fallback pattern as yay/paru for AUR.
-func optimizeMirrors(report progressFunc) error {
+func (p *pacmanBackend) OptimizeMirrors(report ProgressFunc) error {
 	if !commandAvailable("reflector") {
 		return fmt.Errorf("reflector não está instalado — instale o pacote 'reflector' para otimizar mirrors")
 	}
@@ -374,7 +369,7 @@ var (
 // progress is a pragmatic stand-in for the byte-accurate percentages a
 // direct libalpm binding would give (PROMPT-VEGA.md §2.1 calls for libalpm
 // eventually).
-func runPacmanTransaction(args []string, report progressFunc) error {
+func runPacmanTransaction(args []string, report ProgressFunc) error {
 	report(0, "Iniciando...")
 
 	cmd := exec.Command("pacman", args...)
@@ -420,9 +415,9 @@ func runPacmanTransaction(args []string, report progressFunc) error {
 	return nil
 }
 
-// listPacmanRepos parses /etc/pacman.conf for `[section]` headers, skipping
-// the special [options] section.
-func listPacmanRepos() ([]string, error) {
+// ListRepos parses /etc/pacman.conf for `[section]` headers, skipping the
+// special [options] section.
+func (p *pacmanBackend) ListRepos() ([]string, error) {
 	f, err := os.Open("/etc/pacman.conf")
 	if err != nil {
 		return nil, err
@@ -449,7 +444,7 @@ func listPacmanRepos() ([]string, error) {
 	return repos, scanner.Err()
 }
 
-func setPacmanRepoEnabled(repo string, enabled bool) error {
+func (p *pacmanBackend) SetRepoEnabled(repo string, enabled bool) error {
 	data, err := os.ReadFile("/etc/pacman.conf")
 	if err != nil {
 		return err

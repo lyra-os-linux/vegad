@@ -5,19 +5,29 @@ import (
 	"log"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/distro"
 )
 
-// RunUpdateCheckJob lists pending Pacman/Flatpak updates and, if any are
-// found, emits UpdatesAvailable on the system bus. It is invoked directly by
-// vegad-update-check.service (see cmd/vegad), not through the bus-activated
-// Server, so it works on its own systemd timer schedule regardless of
-// whether the main daemon is currently running.
+// RunUpdateCheckJob lists pending package-manager/Flatpak updates and, if
+// any are found, emits UpdatesAvailable on the system bus. It is invoked
+// directly by vegad-update-check.service (see cmd/vegad), not through the
+// bus-activated Server, so it works on its own systemd timer schedule
+// regardless of whether the main daemon is currently running.
 func RunUpdateCheckJob() error {
-	if err := syncPacmanDb(); err != nil {
+	id, err := distro.Detect()
+	if err != nil {
+		return err
+	}
+	provider, err := distro.NewProvider(id)
+	if err != nil {
 		return err
 	}
 
-	official, err := listPacmanUpdates()
+	if err := provider.Package().SyncDatabase(); err != nil {
+		return err
+	}
+
+	official, err := provider.Package().ListUpdates()
 	if err != nil {
 		return err
 	}

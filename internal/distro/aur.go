@@ -1,4 +1,4 @@
-package dbusserver
+package distro
 
 import (
 	"fmt"
@@ -10,6 +10,15 @@ import (
 // aurBuildHome is vega-build's home directory (packaging/vegad/sysusers.d/vega-build.conf),
 // used as both the sandbox's writable path and the AUR helper's cache/config HOME.
 const aurBuildHome = "/var/lib/vega/build"
+
+// aurBackend drives Arch's AUR as the CommunityBackend, via whichever AUR
+// helper (yay/paru) is installed. This is Arch-only — there is no AUR
+// equivalent on openSUSE, so Provider.Community() is simply nil there.
+type aurBackend struct{}
+
+func newAurBackend() *aurBackend { return &aurBackend{} }
+
+func (a *aurBackend) Name() string { return "AUR" }
 
 // aurHelper picks whichever AUR helper is installed, preferring paru over
 // yay when both are present. Neither ships with Lyra OS by default — this is
@@ -63,13 +72,13 @@ func vegaBuildSystemdRunArgs(allowSudo bool) []string {
 	return args
 }
 
-// searchAur shells out to `<helper> -Ssa`, which queries the AUR RPC
-// directly (network) restricted to AUR-only hits — official repo hits are
-// already covered by searchPacman, so mixing them in here would just
+// Search shells out to `<helper> -Ssa`, which queries the AUR RPC directly
+// (network) restricted to AUR-only hits — official repo hits are already
+// covered by pacmanBackend.Search, so mixing them in here would just
 // duplicate results. Best-effort: an AUR helper error (no matches, RPC
 // hiccup) degrades to an empty result rather than failing the whole search,
 // same as when no helper is installed at all.
-func searchAur(query string) ([]PackageRef, error) {
+func (a *aurBackend) Search(query string) ([]PackageRef, error) {
 	helper, err := aurHelper()
 	if err != nil {
 		return nil, nil
@@ -85,11 +94,11 @@ func searchAur(query string) ([]PackageRef, error) {
 	return parseSearchOutput([]byte(out), "aur", installed), nil
 }
 
-// fetchAurDetails runs `<helper> -Si` (sandboxed read-only, same profile as
-// searchAur) against the AUR RPC for a single package's metadata. yay/paru
+// GetDetails runs `<helper> -Si` (sandboxed read-only, same profile as
+// Search) against the AUR RPC for a single package's metadata. yay/paru
 // print the same "Key : Value" layout as pacman -Si, so parsePacmanInfoBlock
 // covers both.
-func fetchAurDetails(id string) (PackageDetails, error) {
+func (a *aurBackend) GetDetails(id string) (PackageDetails, error) {
 	details := PackageDetails{Origin: "aur", Id: id}
 
 	helper, err := aurHelper()
@@ -108,8 +117,8 @@ func fetchAurDetails(id string) (PackageDetails, error) {
 	details.Name = fields["Name"]
 	details.Description = fields["Description"]
 	details.URL = fields["URL"]
-	details.Licenses = splitPacmanList(fields["Licenses"])
-	details.Dependencies = splitPacmanList(fields["Depends On"])
+	details.Licenses = SplitPackageList(fields["Licenses"])
+	details.Dependencies = SplitPackageList(fields["Depends On"])
 	details.AvailableVersion = fields["Version"]
 	details.Maintainer = fields["Maintainer"]
 
@@ -117,7 +126,7 @@ func fetchAurDetails(id string) (PackageDetails, error) {
 	if ierr == nil && installed[id] {
 		details.Installed = true
 		icmd := exec.Command("pacman", "-Qi", "--", id)
-		icmd.Env = pacmanCommandEnv()
+		icmd.Env = commandEnvC()
 		if iout, err2 := icmd.Output(); err2 == nil {
 			ifields := parsePacmanInfoBlock(iout)
 			details.InstalledVersion = ifields["Version"]
@@ -128,11 +137,11 @@ func fetchAurDetails(id string) (PackageDetails, error) {
 	return details, nil
 }
 
-// fetchAurPkgbuild clones/updates the AUR git checkout for pkgbase via
+// GetBuildScript clones/updates the AUR git checkout for pkgbase via
 // `<helper> -G` (fetch only, no build) and returns the PKGBUILD contents so
 // the UI can show it for review before the user confirms an install
 // (PROMPT-VEGA.md §2.3).
-func fetchAurPkgbuild(pkgbase string) (string, error) {
+func (a *aurBackend) GetBuildScript(pkgbase string) (string, error) {
 	helper, err := aurHelper()
 	if err != nil {
 		return "", err
@@ -150,11 +159,11 @@ func fetchAurPkgbuild(pkgbase string) (string, error) {
 	return string(data), nil
 }
 
-// installAurPackage runs `<helper> -S`, letting it handle fetch, sandboxed
-// build (as vega-build, never root) and the final `pacman -U` in one go —
-// the last step needs the sudoers NOPASSWD rule granted to vega-build
+// Install runs `<helper> -S`, letting it handle fetch, sandboxed build (as
+// vega-build, never root) and the final `pacman -U` in one go — the last
+// step needs the sudoers NOPASSWD rule granted to vega-build
 // (packaging/vegad/sudoers.d/vega-build).
-func installAurPackage(pkgbase string, report progressFunc) error {
+func (a *aurBackend) Install(pkgbase string, report ProgressFunc) error {
 	helper, err := aurHelper()
 	if err != nil {
 		return err

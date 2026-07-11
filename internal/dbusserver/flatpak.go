@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/lyraos/vegad/internal/distro"
 )
 
 // searchFlatpak shells out to `flatpak search`, which queries the locally
@@ -140,7 +142,7 @@ func findFlatpakIcon(appID string) string {
 			return candidate
 		}
 	}
-	return findPackageIcon(appID)
+	return distro.FindPackageIcon(appID)
 }
 
 // parseFlatpakInfoBlock parses the right-aligned "Key: Value" layout of
@@ -191,7 +193,7 @@ func fetchFlatpakDetails(appID string) (PackageDetails, error) {
 	if details.Name == "" {
 		details.Name = appID
 	}
-	details.Licenses = splitPacmanList(fields["License"])
+	details.Licenses = distro.SplitPackageList(fields["License"])
 	details.DownloadSize = fields["Download Size"]
 	if details.Installed {
 		details.InstalledVersion = fields["Version"]

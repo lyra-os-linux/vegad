@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/distro"
 	"github.com/lyraos/vegad/internal/version"
 )
 
@@ -24,6 +25,22 @@ func (s *SystemService) Version() (string, *dbus.Error) {
 func (s *SystemService) Ping() (bool, *dbus.Error) {
 	s.activity.Touch()
 	return true, nil
+}
+
+// Distro reports the running distro's human-readable name (e.g. "openSUSE
+// Leap 16.0", "Arch Linux") for display on the About screen.
+func (s *SystemService) Distro() (string, *dbus.Error) {
+	s.activity.Touch()
+	return distro.PrettyName(), nil
+}
+
+// Logo reports the filesystem path of the running distro's own vendor logo
+// (resolved via the freedesktop os-release LOGO icon-theme convention), for
+// display next to the distro name on the About screen. Returns "" if none
+// is installed.
+func (s *SystemService) Logo() (string, *dbus.Error) {
+	s.activity.Touch()
+	return distro.LogoPath(), nil
 }
 
 // DiskUsage reports used/total space (human-readable, e.g. "126G"/"476G")

@@ -7,48 +7,57 @@ import (
 	"sync/atomic"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/distro"
 )
 
 // SoftwareService backs org.lyraos.Vega1.Software (PROMPT-VEGA.md §3.1):
-// unified search/install/update across Pacman ("Oficial"), Flathub and AUR
-// ("Comunidade"). Long transactions run in a goroutine and report progress
-// via the TransactionProgress/TransactionFinished signals instead of the
-// caller polling.
+// unified search/install/update across the distro's package manager
+// ("Oficial", via distro.PackageBackend), Flathub and the community layer
+// ("Comunidade", via distro.CommunityBackend — nil on distros without one).
+// Long transactions run in a goroutine and report progress via the
+// TransactionProgress/TransactionFinished signals instead of the caller
+// polling.
 type SoftwareService struct {
 	activity *Activity
 	conn     *dbus.Conn
+	provider distro.Provider
 	nextTxID atomic.Uint32
 }
 
 // PackageRef identifies a package within one origin ("official", "flathub",
 // "aur") so the UI can dedupe the same app found across origins.
-type PackageRef struct {
-	Origin      string
-	Id          string
-	Name        string
-	Description string
-	Installed   bool
-	Icon        string
-}
+type PackageRef = distro.PackageRef
 
 // PackageDetails is the expanded view of a single package shown in the
 // detail panel (issue #8) — unlike PackageRef, fetching this touches the
 // network/AUR helper, so it's only requested on demand, never as part of a
 // list.
-type PackageDetails struct {
-	Origin           string
-	Id               string
-	Name             string
-	Description      string
-	Installed        bool
-	InstalledVersion string
-	AvailableVersion string
-	DownloadSize     string
-	InstalledSize    string
-	Dependencies     []string
-	Licenses         []string
-	URL              string
-	Maintainer       string
+type PackageDetails = distro.PackageDetails
+
+// errNoCommunityLayer is returned for the "aur" origin on distros whose
+// Provider.Community() is nil (no AUR-equivalent layer, e.g. openSUSE Leap).
+func errNoCommunityLayer() error {
+	return fmt.Errorf("esta distribuição não possui uma camada de pacotes da comunidade")
+}
+
+// PackageManagerName reports the active distro's official package manager
+// label ("Pacman", "Zypper", ...) so the UI doesn't have to hardcode one —
+// read-only, no polkit gate needed.
+func (s *SoftwareService) PackageManagerName() (string, *dbus.Error) {
+	s.activity.Touch()
+	return s.provider.Package().Name(), nil
+}
+
+// CommunityLayerName reports the active distro's community package layer
+// label ("AUR"), or "" on distros without one (Provider.Community() == nil,
+// e.g. openSUSE Leap) — read-only, no polkit gate needed.
+func (s *SoftwareService) CommunityLayerName() (string, *dbus.Error) {
+	s.activity.Touch()
+	community := s.provider.Community()
+	if community == nil {
+		return "", nil
+	}
+	return community.Name(), nil
 }
 
 // GetPackageDetails fetches the expanded metadata for one package — read-only
@@ -62,11 +71,15 @@ func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, 
 	)
 	switch origin {
 	case "official":
-		details, err = fetchPacmanDetails(id)
+		details, err = s.provider.Package().GetDetails(id)
 	case "flathub":
 		details, err = fetchFlatpakDetails(id)
 	case "aur":
-		details, err = fetchAurDetails(id)
+		community := s.provider.Community()
+		if community == nil {
+			return PackageDetails{}, dbus.MakeFailedError(errNoCommunityLayer())
+		}
+		details, err = community.GetDetails(id)
 	default:
 		return PackageDetails{}, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -76,16 +89,17 @@ func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, 
 	return details, nil
 }
 
-// Search queries Pacman's local sync databases and Flathub, merging both
-// into one flat list — deduplication across origins (PROMPT-VEGA.md §3.1)
-// is the UI's job, so it can offer the origin picker on the card. AUR
-// ("Comunidade") search isn't wired up yet.
+// Search queries the distro's local package sync databases and Flathub,
+// merging both into one flat list — deduplication across origins
+// (PROMPT-VEGA.md §3.1) is the UI's job, so it can offer the origin picker
+// on the card. The community origin ("aur") is skipped on distros without
+// one (Provider.Community() == nil), same as when no helper is installed.
 func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 
 	var results []PackageRef
 
-	official, err := searchPacman(query)
+	official, err := s.provider.Package().Search(query)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -97,11 +111,13 @@ func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 	}
 	results = append(results, flathub...)
 
-	aur, err := searchAur(query)
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+	if community := s.provider.Community(); community != nil {
+		aur, err := community.Search(query)
+		if err != nil {
+			return nil, dbus.MakeFailedError(err)
+		}
+		results = append(results, aur...)
 	}
-	results = append(results, aur...)
 
 	return results, nil
 }
@@ -111,7 +127,11 @@ func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 // gate needed), same as Search/ListUpdates.
 func (s *SoftwareService) GetAurPkgbuild(id string) (string, *dbus.Error) {
 	s.activity.Touch()
-	pkgbuild, err := fetchAurPkgbuild(id)
+	community := s.provider.Community()
+	if community == nil {
+		return "", dbus.MakeFailedError(errNoCommunityLayer())
+	}
+	pkgbuild, err := community.GetBuildScript(id)
 	if err != nil {
 		return "", dbus.MakeFailedError(err)
 	}
@@ -145,15 +165,7 @@ func (s *SoftwareService) startTransaction(work func(report progressFunc) error)
 func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
 	switch origin {
-	case "official":
-		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
-			return 0, err
-		}
-	case "flathub":
-		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
-			return 0, err
-		}
-	case "aur":
+	case "official", "flathub", "aur":
 		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
 			return 0, err
 		}
@@ -164,16 +176,20 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 	switch origin {
 	case "official":
 		return s.startTransaction(func(report progressFunc) error {
-			return withPacmanSnapshots("Instalação oficial: "+id, func() error {
-				return installPacman(id, report)
+			return withSnapshots("Instalação oficial: "+id, func() error {
+				return s.provider.Package().Install(id, report)
 			})
 		}), nil
 	case "flathub":
 		return s.startTransaction(func(report progressFunc) error { return installFlatpak(id, report) }), nil
 	case "aur":
+		community := s.provider.Community()
+		if community == nil {
+			return 0, dbus.MakeFailedError(errNoCommunityLayer())
+		}
 		return s.startTransaction(func(report progressFunc) error {
-			return withPacmanSnapshots("Instalação AUR: "+id, func() error {
-				return installAurPackage(id, report)
+			return withSnapshots("Instalação AUR: "+id, func() error {
+				return community.Install(id, report)
 			})
 		}), nil
 	default:
@@ -189,16 +205,16 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 	switch origin {
 	case "official":
 		return s.startTransaction(func(report progressFunc) error {
-			return withPacmanSnapshots("Remoção oficial: "+id, func() error {
-				return removePacman(id, report)
+			return withSnapshots("Remoção oficial: "+id, func() error {
+				return s.provider.Package().Remove(id, report)
 			})
 		}), nil
 	case "flathub":
 		return s.startTransaction(func(report progressFunc) error { return removeFlatpak(id, report) }), nil
 	case "aur":
 		return s.startTransaction(func(report progressFunc) error {
-			return withPacmanSnapshots("Remoção AUR: "+id, func() error {
-				return removePacman(id, report)
+			return withSnapshots("Remoção AUR: "+id, func() error {
+				return s.provider.Package().Remove(id, report)
 			})
 		}), nil
 	default:
@@ -206,13 +222,14 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 	}
 }
 
-// ListUpdates merges pending Pacman and Flatpak updates into one list.
+// ListUpdates merges pending updates from the distro's package manager and
+// Flatpak into one list.
 func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 
 	var results []PackageRef
 
-	official, err := listPacmanUpdates()
+	official, err := s.provider.Package().ListUpdates()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -227,14 +244,14 @@ func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 	return results, nil
 }
 
-// ListInstalled merges locally installed Pacman packages and system Flatpak
+// ListInstalled merges locally installed distro packages and system Flatpak
 // apps into one read-only list for the software inventory view.
 func (s *SoftwareService) ListInstalled() ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 
 	var results []PackageRef
 
-	official, err := listPacmanInstalled()
+	official, err := s.provider.Package().ListInstalled()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -249,18 +266,19 @@ func (s *SoftwareService) ListInstalled() ([]PackageRef, *dbus.Error) {
 	return results, nil
 }
 
-// UpdateAll runs a full Pacman sync+upgrade followed by a Flatpak update, as
-// a single transaction covering both origins.
+// UpdateAll runs a full sync+upgrade of the distro's package manager
+// followed by a Flatpak update, as a single transaction covering both
+// origins.
 func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
 	return s.startTransaction(func(report progressFunc) error {
-		if err := withPacmanSnapshots("Atualização completa", func() error {
-			return updateAllPacman(report)
+		if err := withSnapshots("Atualização completa", func() error {
+			return s.provider.Package().UpdateAll(report)
 		}); err != nil {
-			return fmt.Errorf("pacman: %w", err)
+			return fmt.Errorf("%s: %w", s.provider.Package().Name(), err)
 		}
 		return updateAllFlatpak(report)
 	}), nil
@@ -268,7 +286,7 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 
 func (s *SoftwareService) ListRepos() ([]string, *dbus.Error) {
 	s.activity.Touch()
-	repos, err := listPacmanRepos()
+	repos, err := s.provider.Package().ListRepos()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -280,35 +298,37 @@ func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enable
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return err
 	}
-	if err := setPacmanRepoEnabled(repo, enabled); err != nil {
+	if err := s.provider.Package().SetRepoEnabled(repo, enabled); err != nil {
 		return dbus.MakeFailedError(err)
 	}
 	return nil
 }
 
-// OptimizeMirrors re-ranks Pacman mirrors by download speed via reflector.
+// OptimizeMirrors re-ranks package mirrors by download speed, where the
+// active distro's PackageBackend supports it (returns distro.ErrUnsupported
+// otherwise, e.g. openSUSE Leap).
 func (s *SoftwareService) OptimizeMirrors(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return 0, err
 	}
 	return s.startTransaction(func(report progressFunc) error {
-		return optimizeMirrors(report)
+		return s.provider.Package().OptimizeMirrors(report)
 	}), nil
 }
 
-// ClearCache clears Pacman's package cache and orphaned Flatpak runtimes as
-// a single transaction.
+// ClearCache clears the distro package manager's cache and orphaned Flatpak
+// runtimes as a single transaction.
 func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
 	return s.startTransaction(func(report progressFunc) error {
-		if err := withPacmanSnapshots("Limpeza de cache", func() error {
-			return clearPacmanCache(report)
+		if err := withSnapshots("Limpeza de cache", func() error {
+			return s.provider.Package().ClearCache(report)
 		}); err != nil {
-			return fmt.Errorf("pacman: %w", err)
+			return fmt.Errorf("%s: %w", s.provider.Package().Name(), err)
 		}
 		if err := clearFlatpakCache(report); err != nil {
 			return fmt.Errorf("flatpak: %w", err)
@@ -317,7 +337,7 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	}), nil
 }
 
-func withPacmanSnapshots(action string, work func() error) error {
+func withSnapshots(action string, work func() error) error {
 	preID, preErr := createSnapperSnapshot("pre", action)
 	if preErr != nil && !errors.Is(preErr, errSnapperUnavailable) {
 		log.Printf("vegad: snapshot pre falhou (%s): %v", action, preErr)

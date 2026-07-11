@@ -10,14 +10,16 @@ import (
 	"strings"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/distro"
 )
 
 // HardwareService backs org.lyraos.Vega1.Hardware (PROMPT-VEGA.md §3.3):
-// inventory, NVIDIA driver switching (via hwdb/nvidia-generations.json) and
+// inventory, NVIDIA driver switching (via distro.HardwareBackend) and
 // fwupd/LVFS firmware status.
 type HardwareService struct {
 	activity *Activity
 	conn     *dbus.Conn
+	provider distro.Provider
 }
 
 type HardwareInventory struct {
@@ -35,22 +37,30 @@ func (h *HardwareService) Inventory() (HardwareInventory, *dbus.Error) {
 	}, nil
 }
 
-// SwitchNvidiaDriver accepts "nvidia-open-dkms", "nvidia-580xx-dkms" or
-// "nouveau" — validity for the detected GPU generation is enforced before
-// this is called.
+// SwitchNvidiaDriver accepts whatever distro.HardwareBackend.AvailableNvidiaDrivers
+// reports for the active distro (e.g. "nvidia-open-dkms"/"nvidia-580xx-dkms"/
+// "nouveau" on Arch) — validity for the detected GPU generation is enforced
+// before this is called.
 func (h *HardwareService) SwitchNvidiaDriver(sender dbus.Sender, driver string) *dbus.Error {
 	h.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.hardware.switch-driver"); err != nil {
 		return err
 	}
-	switch driver {
-	case "nvidia-open-dkms", "nvidia-580xx-dkms", "nouveau":
-	default:
+
+	hw := h.provider.Hardware()
+	valid := false
+	for _, candidate := range hw.AvailableNvidiaDrivers() {
+		if candidate == driver {
+			valid = true
+			break
+		}
+	}
+	if !valid {
 		return dbus.MakeFailedError(fmt.Errorf("driver NVIDIA inválido: %s", driver))
 	}
 
-	if err := withPacmanSnapshots("Troca de driver NVIDIA: "+driver, func() error {
-		return switchNvidiaDriver(driver)
+	if err := withSnapshots("Troca de driver NVIDIA: "+driver, func() error {
+		return hw.SwitchNvidiaDriver(driver, func(uint32, string) {})
 	}); err != nil {
 		return dbus.MakeFailedError(err)
 	}
@@ -131,51 +141,4 @@ func gpuDescription() string {
 		}
 	}
 	return "GPU indisponível"
-}
-
-func switchNvidiaDriver(driver string) error {
-	installed, err := pacmanInstalledSet()
-	if err != nil {
-		return err
-	}
-
-	noOp := func(uint32, string) {}
-
-	removePackages := []string{}
-	installPackages := []string{}
-
-	switch driver {
-	case "nouveau":
-		for _, pkg := range []string{"nvidia-open-dkms", "nvidia-580xx-dkms", "nvidia", "nvidia-utils", "nvidia-settings"} {
-			if installed[pkg] {
-				removePackages = append(removePackages, pkg)
-			}
-		}
-		installPackages = append(installPackages, "xf86-video-nouveau")
-	default:
-		for _, pkg := range []string{"nvidia-open-dkms", "nvidia-580xx-dkms", "nvidia", "nvidia-utils", "nvidia-settings"} {
-			if pkg != driver && installed[pkg] {
-				removePackages = append(removePackages, pkg)
-			}
-		}
-		installPackages = append(installPackages, driver)
-	}
-
-	if len(removePackages) > 0 {
-		args := append([]string{"-R", "--noconfirm", "--"}, removePackages...)
-		if err := runPacmanTransaction(args, noOp); err != nil {
-			return err
-		}
-	}
-
-	for _, pkg := range installPackages {
-		if installed[pkg] {
-			continue
-		}
-		if err := runPacmanTransaction([]string{"-S", "--noconfirm", "--", pkg}, noOp); err != nil {
-			return err
-		}
-	}
-
-	return rebuildBootArtifacts()
 }

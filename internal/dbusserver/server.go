@@ -8,12 +8,14 @@
 package dbusserver
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
+	"github.com/lyraos/vegad/internal/distro"
 )
 
 const (
@@ -49,14 +51,24 @@ func (a *Activity) idleFor() time.Duration {
 type Server struct {
 	conn     *dbus.Conn
 	activity *Activity
+	provider distro.Provider
 }
 
 func New() (*Server, error) {
+	id, err := distro.Detect()
+	if err != nil {
+		return nil, fmt.Errorf("vegad: %w", err)
+	}
+	provider, err := distro.NewProvider(id)
+	if err != nil {
+		return nil, fmt.Errorf("vegad: %w", err)
+	}
+
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
 		return nil, err
 	}
-	return &Server{conn: conn, activity: &Activity{last: time.Now()}}, nil
+	return &Server{conn: conn, activity: &Activity{last: time.Now()}, provider: provider}, nil
 }
 
 // Export registers every subsystem interface at ObjectPath and requests
@@ -67,7 +79,7 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	software := &SoftwareService{activity: s.activity, conn: s.conn}
+	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider}
 	if err := s.conn.Export(software, ObjectPath, BusName+".Software"); err != nil {
 		return err
 	}
@@ -82,12 +94,12 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	hardware := &HardwareService{activity: s.activity}
+	hardware := &HardwareService{activity: s.activity, provider: s.provider}
 	if err := s.conn.Export(hardware, ObjectPath, BusName+".Hardware"); err != nil {
 		return err
 	}
 
-	kernel := &KernelService{activity: s.activity}
+	kernel := &KernelService{activity: s.activity, conn: s.conn, provider: s.provider}
 	if err := s.conn.Export(kernel, ObjectPath, BusName+".Kernel"); err != nil {
 		return err
 	}

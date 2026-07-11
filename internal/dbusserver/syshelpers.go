@@ -7,7 +7,15 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/lyraos/vegad/internal/distro"
 )
+
+// progressFunc reports coarse (stage-based, not byte-accurate) progress for
+// a running package/kernel/hardware transaction — same shape as
+// distro.ProgressFunc, aliased so calls into a distro.*Backend never need an
+// explicit conversion.
+type progressFunc = distro.ProgressFunc
 
 func commandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
