@@ -148,11 +148,12 @@ func (z *zypperBackend) SyncDatabase() error {
 	return nil
 }
 
-// ListUpdates reports pending updates among installed packages from
-// whatever is in the local repo metadata (no refresh, so no network access
-// needed). Callers that need fresh results must SyncDatabase first.
-func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
-	out, err := runCommandOutput("zypper", "--non-interactive", "list-updates")
+// zypperParseUpdates runs `zypper list-updates` (optionally with extra args
+// such as --all) and parses its "S | Repository | Name | Current Version |
+// Available Version | Arch" table.
+func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
+	args := append([]string{"--non-interactive", "list-updates"}, extraArgs...)
+	out, err := runCommandOutput("zypper", args...)
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); ok {
 			return nil, nil
@@ -190,6 +191,44 @@ func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
 		})
 	}
 	return results, scanner.Err()
+}
+
+// ListUpdates reports pending updates among installed packages from
+// whatever is in the local repo metadata (no refresh, so no network access
+// needed). Callers that need fresh results must SyncDatabase first.
+//
+// Plain `zypper list-updates` — like `zypper update` — silently drops
+// updates that would require a vendor change (e.g. a proprietary driver
+// package offered by both the distro's repo and the vendor's own repo).
+// Those don't error out or show up anywhere; they just vanish, and `zypper
+// update` reports "will not be installed" with no further explanation. This
+// runs list-updates a second time with --all (which includes them) and
+// flags whatever's missing from the plain run so the UI can tell the user
+// they need manual resolution instead of quietly never appearing.
+func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
+	safe, err := zypperParseUpdates()
+	if err != nil {
+		return nil, err
+	}
+	all, err := zypperParseUpdates("--all")
+	if err != nil {
+		return nil, err
+	}
+
+	safeNames := make(map[string]bool, len(safe))
+	for _, pkg := range safe {
+		safeNames[pkg.Id] = true
+	}
+
+	results := safe
+	for _, pkg := range all {
+		if safeNames[pkg.Id] {
+			continue
+		}
+		pkg.Description += " — requer troca de fornecedor, não coberto por \"Atualizar tudo\""
+		results = append(results, pkg)
+	}
+	return results, nil
 }
 
 // parseZypperInfoBlock parses the "Key : Value" layout of `zypper info`'s
