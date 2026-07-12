@@ -7,8 +7,8 @@
   are intentionally not covered here, see dbus/org.lyraos.Vega1.*.xml.
 -->
 <policyconfig>
-  <vendor>Lyra OS</vendor>
-  <vendor_url>https://lyraos.org</vendor_url>
+  <vendor>Vega</vendor>
+  <vendor_url>https://github.com/britors/Vega</vendor_url>
   <icon_name>vega</icon_name>
 
   <action id="org.lyraos.vega.software.install">

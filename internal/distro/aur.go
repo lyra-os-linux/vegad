@@ -21,7 +21,7 @@ func newAurBackend() *aurBackend { return &aurBackend{} }
 func (a *aurBackend) Name() string { return "AUR" }
 
 // aurHelper picks whichever AUR helper is installed, preferring paru over
-// yay when both are present. Neither ships with Lyra OS by default — this is
+// yay when both are present. Neither ships by default — this is
 // an optdepend (packaging/vegad/PKGBUILD) the user installs to unlock the
 // "Comunidade" origin.
 func aurHelper() (string, error) {
