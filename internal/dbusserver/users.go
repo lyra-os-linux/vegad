@@ -13,8 +13,8 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// UsersService backs org.lyraos.Vega1.Users (PROMPT-VEGA.md §3.6): account
-// creation/removal, password, wheel (admin) membership and simplified
+// UsersService backs org.lyraos.Vega1.Users: account creation/removal,
+// password, wheel (admin) membership and simplified
 // sudo rules.
 type UsersService struct {
 	activity *Activity

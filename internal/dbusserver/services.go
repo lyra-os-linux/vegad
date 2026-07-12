@@ -8,8 +8,7 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// ServicesService backs org.lyraos.Vega1.Services (PROMPT-VEGA.md §3.7):
-// a curated list of user-facing systemd units with enable/disable and
+// ServicesService backs org.lyraos.Vega1.Services: a curated list of user-facing systemd units with enable/disable and
 // start/stop controls.
 type ServicesService struct {
 	activity *Activity

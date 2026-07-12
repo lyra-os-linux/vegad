@@ -1,5 +1,5 @@
 // Package dbusserver wires vegad onto the D-Bus system bus and exports the
-// org.lyraos.Vega1.* interfaces described in PROMPT-VEGA.md §2.2.
+// org.lyraos.Vega1.* interfaces.
 //
 // vegad is bus-activated (systemd Type=dbus): it does not run idle
 // permanently. Every exported method call touches the shared Activity

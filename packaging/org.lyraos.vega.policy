@@ -2,7 +2,7 @@
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <!--
-  Granular polkit actions for vegad (PROMPT-VEGA.md §2.2). One action per
+  Granular polkit actions for vegad. One action per
   privileged D-Bus method — read-only methods (Search, ListX, Status, ...)
   are intentionally not covered here, see dbus/org.lyraos.Vega1.*.xml.
 -->

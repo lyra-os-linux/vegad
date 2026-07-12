@@ -7,8 +7,8 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// SnapshotsService backs org.lyraos.Vega1.Snapshots (PROMPT-VEGA.md §3.2):
-// orchestrates snapper for the "Voltar no tempo" timeline, manual
+// SnapshotsService backs org.lyraos.Vega1.Snapshots: orchestrates snapper
+// for the "Voltar no tempo" timeline, manual
 // snapshots and retention policy. vegad does not reimplement snapper —
 // it drives snapper's own D-Bus API.
 type SnapshotsService struct {

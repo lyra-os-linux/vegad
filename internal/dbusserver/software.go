@@ -10,8 +10,7 @@ import (
 	"github.com/lyraos/vegad/internal/distro"
 )
 
-// SoftwareService backs org.lyraos.Vega1.Software (PROMPT-VEGA.md §3.1):
-// unified search/install/update across the distro's package manager
+// SoftwareService backs org.lyraos.Vega1.Software: unified search/install/update across the distro's package manager
 // ("Oficial", via distro.PackageBackend), Flathub and the community layer
 // ("Comunidade", via distro.CommunityBackend — nil on distros without one).
 // Long transactions run in a goroutine and report progress via the
@@ -91,7 +90,7 @@ func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, 
 
 // Search queries the distro's local package sync databases and Flathub,
 // merging both into one flat list — deduplication across origins
-// (PROMPT-VEGA.md §3.1) is the UI's job, so it can offer the origin picker
+// is the UI's job, so it can offer the origin picker
 // on the card. The community origin ("aur") is skipped on distros without
 // one (Provider.Community() == nil), same as when no helper is installed.
 func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {

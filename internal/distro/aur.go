@@ -34,8 +34,8 @@ func aurHelper() (string, error) {
 }
 
 // vegaBuildSystemdRunArgs builds the systemd-run(1) properties that sandbox
-// an AUR helper invocation as the unprivileged vega-build user (never root —
-// PROMPT-VEGA.md §2.3). Search and PKGBUILD fetch never write outside
+// an AUR helper invocation as the unprivileged vega-build user (never root).
+// Search and PKGBUILD fetch never write outside
 // aurBuildHome and never need elevation, so they get the strictest
 // profile: NoNewPrivileges plus ProtectSystem=strict (whole root read-only
 // except aurBuildHome).
@@ -139,8 +139,7 @@ func (a *aurBackend) GetDetails(id string) (PackageDetails, error) {
 
 // GetBuildScript clones/updates the AUR git checkout for pkgbase via
 // `<helper> -G` (fetch only, no build) and returns the PKGBUILD contents so
-// the UI can show it for review before the user confirms an install
-// (PROMPT-VEGA.md §2.3).
+// the UI can show it for review before the user confirms an install.
 func (a *aurBackend) GetBuildScript(pkgbase string) (string, error) {
 	helper, err := aurHelper()
 	if err != nil {

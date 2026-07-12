@@ -8,8 +8,8 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// FirewallService backs org.lyraos.Vega1.Firewall (PROMPT-VEGA.md §3.5):
-// orchestrates firewalld, exposing friendly service names instead of raw
+// FirewallService backs org.lyraos.Vega1.Firewall: orchestrates firewalld,
+// exposing friendly service names instead of raw
 // port numbers.
 type FirewallService struct {
 	activity *Activity

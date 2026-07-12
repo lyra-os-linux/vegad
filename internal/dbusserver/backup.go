@@ -32,8 +32,8 @@ var (
 	backupIDRe           = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-// BackupService backs org.lyraos.Vega1.Backup (PROMPT-VEGA-MODULO-BACKUP.md
-// §4): orchestrates restic subprocesses per backup configuration. Configs
+// BackupService backs org.lyraos.Vega1.Backup: orchestrates restic
+// subprocesses per backup configuration. Configs
 // live under /etc/vega/backup by default; the path can be overridden in
 // tests/dev with VEGA_BACKUP_STATE_DIR.
 type BackupService struct {

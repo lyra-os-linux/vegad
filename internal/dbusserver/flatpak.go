@@ -232,7 +232,7 @@ func updateAllFlatpak(report progressFunc) error {
 }
 
 // clearFlatpakCache removes runtimes/extensions no longer required by any
-// installed app (PROMPT-VEGA.md §3.1 "runtimes Flatpak órfãos").
+// installed app.
 func clearFlatpakCache(report progressFunc) error {
 	return runStreamingCommand(
 		"flatpak", []string{"uninstall", "--unused", "-y", "--noninteractive", "--system"},

@@ -14,9 +14,8 @@ import (
 )
 
 // pacmanBackend drives Arch's Pacman as the PackageBackend. This is a
-// pragmatic first cut shelling out to the pacman(8) CLI; PROMPT-VEGA.md
-// §2.1 calls for libalpm directly, which a later pass can swap in behind
-// this same interface.
+// pragmatic first cut shelling out to the pacman(8) CLI; a later pass
+// could swap in libalpm directly behind this same interface.
 type pacmanBackend struct{}
 
 func newPacmanBackend() *pacmanBackend { return &pacmanBackend{} }
@@ -367,8 +366,7 @@ var (
 // runPacmanTransaction runs pacman with the given args, reporting progress
 // derived from its "(n/total) installing foo" style lines. Text-based
 // progress is a pragmatic stand-in for the byte-accurate percentages a
-// direct libalpm binding would give (PROMPT-VEGA.md §2.1 calls for libalpm
-// eventually).
+// direct libalpm binding would give eventually.
 func runPacmanTransaction(args []string, report ProgressFunc) error {
 	report(0, "Iniciando...")
 

@@ -13,8 +13,8 @@ import (
 	"github.com/lyraos/vegad/internal/distro"
 )
 
-// HardwareService backs org.lyraos.Vega1.Hardware (PROMPT-VEGA.md §3.3):
-// inventory, NVIDIA driver switching (via distro.HardwareBackend) and
+// HardwareService backs org.lyraos.Vega1.Hardware: inventory, NVIDIA
+// driver switching (via distro.HardwareBackend) and
 // fwupd/LVFS firmware status.
 type HardwareService struct {
 	activity *Activity

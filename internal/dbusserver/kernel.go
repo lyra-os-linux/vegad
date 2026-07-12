@@ -13,8 +13,8 @@ import (
 	"github.com/lyraos/vegad/internal/distro"
 )
 
-// KernelService backs org.lyraos.Vega1.Kernel (PROMPT-VEGA.md §3.4):
-// switches between linux-zen and linux-lts, regenerating GRUB. Must never
+// KernelService backs org.lyraos.Vega1.Kernel: switches between kernel
+// variants, regenerating the bootloader config. Must never
 // remove the running kernel or leave the system with zero kernels. Kernel
 // package naming and boot-artifact regeneration are distro-specific
 // (distro.KernelBackend); GRUB vs systemd-boot detection below is not — both
