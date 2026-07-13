@@ -19,6 +19,7 @@ const (
 	// (apt/dpkg) are identical for our purposes, so one Provider serves
 	// the whole family.
 	Debian
+	Fedora
 )
 
 func (d ID) String() string {
@@ -29,6 +30,8 @@ func (d ID) String() string {
 		return "opensuse-leap"
 	case Debian:
 		return "debian"
+	case Fedora:
+		return "fedora"
 	default:
 		return "unknown"
 	}
@@ -85,6 +88,8 @@ func idFromName(name string) (ID, bool) {
 		return OpenSUSELeap, true
 	case "debian", "ubuntu":
 		return Debian, true
+	case "fedora":
+		return Fedora, true
 	default:
 		return Unknown, false
 	}

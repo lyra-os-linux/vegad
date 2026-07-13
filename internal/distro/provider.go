@@ -102,6 +102,8 @@ func NewProvider(d ID) (Provider, error) {
 		return newOpenSUSEProvider(), nil
 	case Debian:
 		return newDebianProvider(), nil
+	case Fedora:
+		return newFedoraProvider(), nil
 	default:
 		return nil, fmt.Errorf("distro: nenhum provider disponível para %q", d)
 	}
