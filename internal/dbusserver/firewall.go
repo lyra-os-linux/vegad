@@ -8,26 +8,35 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// FirewallService backs org.lyraos.Vega1.Firewall: orchestrates firewalld,
-// exposing friendly service names instead of raw
-// port numbers.
+// FirewallService backs org.lyraos.Vega1.Firewall: orchestrates whichever
+// firewall manager is present — firewalld (Arch/openSUSE) or ufw
+// (Debian/Ubuntu, see ufw.go) — exposing friendly service names instead of
+// raw port numbers. Dispatch is by tool presence, not by distro ID, same
+// pattern SnapshotsService already uses for snapper/Timeshift.
 type FirewallService struct {
 	activity *Activity
 	conn     *dbus.Conn
 }
 
 type FirewallServiceInfo struct {
-	Name    string // firewalld service id, e.g. "samba"
+	Name    string // firewalld service id ("samba") or ufw app name ("Samba")
 	Label   string // friendly label, e.g. "Compartilhamento de arquivos"
 	Enabled bool
 }
 
 func (f *FirewallService) Status() (bool, string, *dbus.Error) {
 	f.activity.Touch()
-	if !commandAvailable("firewall-cmd") {
-		return false, "", dbus.MakeFailedError(fmt.Errorf("firewalld não está disponível"))
+	if commandAvailable("firewall-cmd") {
+		return firewalldStatus()
 	}
+	if ufwInstalled() {
+		active, zone := ufwStatus()
+		return active, zone, nil
+	}
+	return false, "", dbus.MakeFailedError(fmt.Errorf("nenhum firewall gerenciável (firewalld ou ufw) está disponível"))
+}
 
+func firewalldStatus() (bool, string, *dbus.Error) {
 	out, err := runCommandOutput("firewall-cmd", "--state")
 	if err != nil {
 		if strings.Contains(strings.ToLower(out), "not running") {
@@ -45,33 +54,41 @@ func (f *FirewallService) Status() (bool, string, *dbus.Error) {
 	return strings.TrimSpace(out) == "running", zone, nil
 }
 
+var firewalldCatalog = []struct {
+	name  string
+	label string
+}{
+	{name: "ssh", label: "Acesso remoto (SSH)"},
+	{name: "samba", label: "Compartilhamento de arquivos"},
+	{name: "mdns", label: "Descoberta na rede"},
+	{name: "dhcpv6-client", label: "Cliente DHCPv6"},
+	{name: "cockpit", label: "Painel Cockpit"},
+	{name: "printer", label: "Impressoras"},
+}
+
 func (f *FirewallService) ListServices() ([]FirewallServiceInfo, *dbus.Error) {
 	f.activity.Touch()
-	enabled := map[string]bool{}
-	if !commandAvailable("firewall-cmd") {
-		return []FirewallServiceInfo{}, nil
+
+	if commandAvailable("firewall-cmd") {
+		return firewalldListServices(), nil
 	}
+	if ufwInstalled() {
+		return ufwListServices(), nil
+	}
+	return []FirewallServiceInfo{}, nil
+}
+
+func firewalldListServices() []FirewallServiceInfo {
+	enabled := map[string]bool{}
 	if out, err := runCommandOutput("firewall-cmd", "--list-services"); err == nil {
 		for _, service := range strings.Fields(out) {
 			enabled[service] = true
 		}
 	}
 
-	catalog := []struct {
-		name  string
-		label string
-	}{
-		{name: "ssh", label: "Acesso remoto (SSH)"},
-		{name: "samba", label: "Compartilhamento de arquivos"},
-		{name: "mdns", label: "Descoberta na rede"},
-		{name: "dhcpv6-client", label: "Cliente DHCPv6"},
-		{name: "cockpit", label: "Painel Cockpit"},
-		{name: "printer", label: "Impressoras"},
-	}
-
 	var rows []FirewallServiceInfo
 	seen := map[string]bool{}
-	for _, item := range catalog {
+	for _, item := range firewalldCatalog {
 		rows = append(rows, FirewallServiceInfo{
 			Name:    item.name,
 			Label:   item.label,
@@ -90,7 +107,7 @@ func (f *FirewallService) ListServices() ([]FirewallServiceInfo, *dbus.Error) {
 		})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-	return rows, nil
+	return rows
 }
 
 func (f *FirewallService) SetServiceEnabled(sender dbus.Sender, name string, enabled bool) *dbus.Error {
@@ -98,10 +115,20 @@ func (f *FirewallService) SetServiceEnabled(sender dbus.Sender, name string, ena
 	if err := requirePolkit(sender, "org.lyraos.vega.firewall.configure"); err != nil {
 		return err
 	}
-	if !commandAvailable("firewall-cmd") {
-		return dbus.MakeFailedError(fmt.Errorf("firewalld não está disponível"))
-	}
 
+	if commandAvailable("firewall-cmd") {
+		return firewalldSetServiceEnabled(name, enabled)
+	}
+	if ufwInstalled() {
+		if err := ufwSetServiceEnabled(name, enabled); err != nil {
+			return dbus.MakeFailedError(fmt.Errorf("ufw: %w", err))
+		}
+		return nil
+	}
+	return dbus.MakeFailedError(fmt.Errorf("nenhum firewall gerenciável (firewalld ou ufw) está disponível"))
+}
+
+func firewalldSetServiceEnabled(name string, enabled bool) *dbus.Error {
 	action := "--remove-service"
 	if enabled {
 		action = "--add-service"

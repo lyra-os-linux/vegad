@@ -35,9 +35,17 @@ func commandEnvC() []string {
 // bars typically use carriage returns rather than newlines, so this can't
 // track exact percentages, only "it's moving" milestones.
 func runStreamingCommand(name string, args []string, report ProgressFunc, startMsg, doneMsg string) error {
-	report(0, startMsg)
+	return runStreamingCmd(exec.Command(name, args...), report, startMsg, doneMsg)
+}
 
-	cmd := exec.Command(name, args...)
+// runStreamingCmd is runStreamingCommand's shared core, taking an
+// already-built *exec.Cmd so callers that need a custom Env (e.g. apt's
+// DEBIAN_FRONTEND=noninteractive) don't have to duplicate the
+// streaming/progress logic.
+func runStreamingCmd(cmd *exec.Cmd, report ProgressFunc, startMsg, doneMsg string) error {
+	report(0, startMsg)
+	name := cmd.Path
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

@@ -14,6 +14,11 @@ const (
 	Unknown ID = iota
 	Arch
 	OpenSUSELeap
+	// Debian covers both Debian and Ubuntu (and derivatives resolved via
+	// ID_LIKE, e.g. Pop!_OS, Linux Mint) — the package-manager mechanics
+	// (apt/dpkg) are identical for our purposes, so one Provider serves
+	// the whole family.
+	Debian
 )
 
 func (d ID) String() string {
@@ -22,6 +27,8 @@ func (d ID) String() string {
 		return "arch"
 	case OpenSUSELeap:
 		return "opensuse-leap"
+	case Debian:
+		return "debian"
 	default:
 		return "unknown"
 	}
@@ -76,6 +83,8 @@ func idFromName(name string) (ID, bool) {
 		return Arch, true
 	case "opensuse-leap", "suse", "opensuse":
 		return OpenSUSELeap, true
+	case "debian", "ubuntu":
+		return Debian, true
 	default:
 		return Unknown, false
 	}
