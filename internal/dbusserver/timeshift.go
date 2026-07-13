@@ -22,9 +22,9 @@ import (
 //     timeshiftID below for how this backend fabricates one.
 //   - In its default rsync mode (the realistic case on stock Ubuntu, which
 //     ships ext4 rather than Btrfs) it requires a backup device to already
-//     be configured through Timeshift's own first-run wizard —
-//     timeshiftConfigured checks for that instead of assuming zero-config
-//     like snapper on a Btrfs root.
+//     be configured through Timeshift's own first-run wizard — mutation
+//     paths verify that setup, while listing delegates discovery to the
+//     Timeshift CLI so valid Btrfs and legacy configurations are not hidden.
 //   - It has no per-package diff like `snapper diff` (it's a whole-filesystem
 //     rsync/btrfs copy, not integrated with the package manager) —
 //     DiffPackages' Timeshift path returns an explanatory message, not an
@@ -34,25 +34,70 @@ import (
 //     setTimeshiftRetentionPolicy.
 
 var errTimeshiftUnavailable = errors.New("timeshift não está disponível neste sistema")
-var errTimeshiftNotConfigured = errors.New("timeshift está instalado mas não tem um dispositivo de backup configurado — rode o assistente do Timeshift primeiro")
+var errTimeshiftNotConfigured = errors.New("timeshift está instalado mas ainda não foi configurado — rode o assistente do Timeshift primeiro")
 
-const timeshiftConfigPath = "/etc/timeshift/timeshift.json"
+const (
+	timeshiftConfigPath       = "/etc/timeshift/timeshift.json"
+	timeshiftLegacyConfigPath = "/etc/timeshift.json"
+)
 
 func timeshiftInstalled() bool {
 	return commandAvailable("timeshift")
 }
 
 func timeshiftConfigured() bool {
-	data, err := os.ReadFile(timeshiftConfigPath)
+	path, ok := findTimeshiftConfigPath()
+	if !ok {
+		return false
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
+	return timeshiftConfigConfigured(data)
+}
+
+func findTimeshiftConfigPath() (string, bool) {
+	return findTimeshiftConfigPathFrom([]string{timeshiftConfigPath, timeshiftLegacyConfigPath})
+}
+
+func findTimeshiftConfigPathFrom(paths []string) (string, bool) {
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func timeshiftConfigConfigured(data []byte) bool {
 	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return false
 	}
 	uuid, _ := cfg["backup_device_uuid"].(string)
-	return strings.TrimSpace(uuid) != ""
+	if strings.TrimSpace(uuid) != "" {
+		return true
+	}
+
+	// Some BTRFS configurations do not retain backup_device_uuid in the
+	// same way as RSYNC configurations.  do_first_run=false is Timeshift's
+	// own persisted marker that its setup wizard has completed, and is a
+	// safer fallback than rejecting a usable setup before invoking its CLI.
+	firstRun, hasFirstRun := cfg["do_first_run"]
+	return hasFirstRun && configExplicitlyFalse(firstRun)
+}
+
+func configExplicitlyFalse(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return !typed
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		return err == nil && !parsed
+	default:
+		return false
+	}
 }
 
 func timeshiftCommand(args ...string) *exec.Cmd {
@@ -78,6 +123,16 @@ func timeshiftCombinedOutput(args ...string) ([]byte, error) {
 // pattern rather than fixed column offsets, since `timeshift --list`'s
 // table is column-aligned with variable padding, not delimiter-separated.
 var timeshiftNameRe = regexp.MustCompile(`\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}`)
+var timeshiftSnapshotCountRe = regexp.MustCompile(`(?m)\b([1-9][0-9]*) snapshots?\b`)
+
+var timeshiftTags = map[string]bool{
+	"O": true,
+	"B": true,
+	"H": true,
+	"D": true,
+	"W": true,
+	"M": true,
+}
 
 const timeshiftNameLayout = "2006-01-02_15-04-05"
 
@@ -127,15 +182,16 @@ func parseTimeshiftSnapshots(out string) []SnapshotInfo {
 			continue
 		}
 
-		rest := strings.TrimSpace(line[loc[1]:])
-		tag, description := "", ""
-		if rest != "" {
-			fields := strings.SplitN(rest, " ", 2)
-			tag = fields[0]
-			if len(fields) == 2 {
-				description = strings.TrimSpace(fields[1])
+		fields := strings.Fields(line[loc[1]:])
+		tag := ""
+		descriptionAt := 0
+		for descriptionAt < len(fields) && timeshiftTags[fields[descriptionAt]] {
+			if tag == "" {
+				tag = fields[descriptionAt]
 			}
+			descriptionAt++
 		}
+		description := strings.Join(fields[descriptionAt:], " ")
 
 		ts, _ := time.ParseInLocation(timeshiftNameLayout, name, time.Local)
 		snapshots = append(snapshots, SnapshotInfo{
@@ -153,14 +209,19 @@ func listTimeshiftSnapshots() ([]SnapshotInfo, error) {
 	if !timeshiftInstalled() {
 		return nil, errTimeshiftUnavailable
 	}
-	if !timeshiftConfigured() {
-		return nil, errTimeshiftNotConfigured
-	}
+	// Let Timeshift resolve and validate its own configuration. In
+	// particular, BTRFS setups and older releases do not always expose the
+	// same JSON fields/paths as RSYNC. A Vega-side pre-check used to reject
+	// these valid setups before `timeshift --list` could find their backups.
 	out, err := timeshiftCombinedOutput("--list")
 	if err != nil {
 		return nil, err
 	}
-	return parseTimeshiftSnapshots(string(out)), nil
+	snapshots := parseTimeshiftSnapshots(string(out))
+	if len(snapshots) == 0 && timeshiftSnapshotCountRe.Match(out) {
+		return nil, fmt.Errorf("timeshift informou snapshots existentes, mas o formato da listagem não pôde ser interpretado")
+	}
+	return snapshots, nil
 }
 
 // timeshiftNameForID re-lists snapshots and matches by the same Unix-time
@@ -246,13 +307,17 @@ func setTimeshiftRetentionPolicy(keepCount uint32) error {
 		return errTimeshiftNotConfigured
 	}
 
-	data, err := os.ReadFile(timeshiftConfigPath)
+	configPath, ok := findTimeshiftConfigPath()
+	if !ok {
+		return errTimeshiftNotConfigured
+	}
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("timeshift: lendo %s: %w", timeshiftConfigPath, err)
+		return fmt.Errorf("timeshift: lendo %s: %w", configPath, err)
 	}
 	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("timeshift: parseando %s: %w", timeshiftConfigPath, err)
+		return fmt.Errorf("timeshift: parseando %s: %w", configPath, err)
 	}
 
 	count := strconv.FormatUint(uint64(keepCount), 10)
@@ -264,7 +329,7 @@ func setTimeshiftRetentionPolicy(keepCount uint32) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(timeshiftConfigPath, out, 0644)
+	return os.WriteFile(configPath, out, 0644)
 }
 
 // timeshiftDiffPackages has no real equivalent to snapper's package-aware
