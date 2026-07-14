@@ -12,7 +12,8 @@ import (
 // firewall manager is present — firewalld (Arch/openSUSE) or ufw
 // (Debian/Ubuntu, see ufw.go) — exposing friendly service names instead of
 // raw port numbers. Dispatch is by tool presence, not by distro ID, same
-// pattern SnapshotsService already uses for snapper/Timeshift.
+// pattern SnapshotsService used to use for snapper/Timeshift before the
+// Timeshift backend was dropped (see snapshots.go).
 type FirewallService struct {
 	activity *Activity
 	conn     *dbus.Conn

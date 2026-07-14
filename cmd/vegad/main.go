@@ -14,8 +14,8 @@ import (
 )
 
 // defaultSystemPATH covers where every CLI vegad shells out to (apt, df,
-// dpkg-query, journalctl, systemctl, snapper/timeshift, firewall-cmd/ufw,
-// ...) normally lives. systemd's Type=dbus activation grants services its
+// dpkg-query, journalctl, systemctl, snapper, firewall-cmd/ufw, ...)
+// normally lives. systemd's Type=dbus activation grants services its
 // own sane default PATH, but on SysVinit distros (e.g. MX Linux) the system
 // bus activates org.lyraos.Vega1 by having the classic dbus-daemon fork+exec
 // the binary directly (see packaging/vegad/org.lyraos.Vega1.service's
