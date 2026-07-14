@@ -77,15 +77,6 @@ func TestFindTimeshiftConfigPathFromSupportsLegacyFallback(t *testing.T) {
 	}
 }
 
-func TestTimeshiftSnapshotCountDetection(t *testing.T) {
-	if !timeshiftSnapshotCountRe.MatchString("3 snapshots, 198.9 GB free") {
-		t.Fatal("expected non-empty Timeshift summary to be detected")
-	}
-	if timeshiftSnapshotCountRe.MatchString("0 snapshots, 198.9 GB free") {
-		t.Fatal("zero snapshots must not be treated as a parser failure")
-	}
-}
-
 func TestListTimeshiftSnapshotsUsesCLIAsSourceOfTruth(t *testing.T) {
 	installFakeTimeshift(t, "1 snapshots, 100 GB free\n0 > 2026-07-13_10-30-45 O backup real\n")
 
@@ -103,6 +94,18 @@ func TestListTimeshiftSnapshotsReportsParserDrift(t *testing.T) {
 
 	if _, err := listTimeshiftSnapshots(); err == nil {
 		t.Fatal("expected parser drift to be reported instead of returning an empty list")
+	}
+}
+
+// A successful (exit 0) `timeshift --list` with zero parsable rows and no
+// recognizable summary line is exactly the silent-empty-list symptom from
+// issue #48: real Timeshift only exits 0 when it has at least one snapshot
+// to print, so this state must be reported, not returned as an empty list.
+func TestListTimeshiftSnapshotsReportsDriftEvenWithoutSummaryLine(t *testing.T) {
+	installFakeTimeshift(t, "Device : /dev/sda2\nSome future table layout with no matching rows\n")
+
+	if _, err := listTimeshiftSnapshots(); err == nil {
+		t.Fatal("expected zero parsed rows on a successful run to be reported as an error")
 	}
 }
 

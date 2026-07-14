@@ -123,7 +123,6 @@ func timeshiftCombinedOutput(args ...string) ([]byte, error) {
 // pattern rather than fixed column offsets, since `timeshift --list`'s
 // table is column-aligned with variable padding, not delimiter-separated.
 var timeshiftNameRe = regexp.MustCompile(`\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}`)
-var timeshiftSnapshotCountRe = regexp.MustCompile(`(?m)\b([1-9][0-9]*) snapshots?\b`)
 
 var timeshiftTags = map[string]bool{
 	"O": true,
@@ -218,8 +217,16 @@ func listTimeshiftSnapshots() ([]SnapshotInfo, error) {
 		return nil, err
 	}
 	snapshots := parseTimeshiftSnapshots(string(out))
-	if len(snapshots) == 0 && timeshiftSnapshotCountRe.Match(out) {
-		return nil, fmt.Errorf("timeshift informou snapshots existentes, mas o formato da listagem não pôde ser interpretado")
+	if len(snapshots) == 0 {
+		// Per Timeshift's own AppConsole (list-snapshots case), a genuinely
+		// empty repo makes `--list` exit non-zero with "No snapshots found"
+		// — handled by the err check above. Reaching this line on a
+		// successful (exit 0) run therefore means the table format
+		// diverged from what parseTimeshiftSnapshots expects, not that
+		// there really are no snapshots. Report it instead of silently
+		// showing an empty list, since that's indistinguishable from "no
+		// backups yet" in the UI otherwise.
+		return nil, fmt.Errorf("timeshift terminou sem erro mas nenhum snapshot pôde ser interpretado na saída — formato de listagem inesperado: %s", strings.TrimSpace(string(out)))
 	}
 	return snapshots, nil
 }
