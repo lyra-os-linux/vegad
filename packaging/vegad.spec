@@ -1,4 +1,4 @@
-# Empacotamento de teste local/CI para openSUSE Leap. Ainda não publicado
+# Empacotamento para Linux. Ainda não publicado
 # em nenhum repositório oficial (OBS ou similar) — ver packaging/opensuse/
 # no topo do repositório para o script de instalação manual equivalente.
 #
@@ -35,9 +35,6 @@ Daemon privilegiado do Vega para openSUSE Leap. Expõe operações de sistema
 (pacotes via Zypper, snapshots Btrfs/Snapper, kernel, hardware, rede,
 firewall, usuários) via D-Bus, autorizadas por polkit. Ativado sob demanda
 pelo D-Bus (Type=dbus), não roda como serviço permanente.
-
-Empacotamento ainda não validado ponta a ponta num Leap real — trate como
-build de teste.
 
 %prep
 %setup -q -c -n vega-src

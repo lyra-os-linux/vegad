@@ -1,11 +1,8 @@
 package dbusserver
 
 import (
-	"bufio"
-	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/lyraos/vegad/internal/distro"
@@ -41,26 +38,6 @@ func readTrimmedFile(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
-}
-
-func firstLineMatching(path string, pattern *regexp.Regexp) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if pattern.MatchString(line) {
-			return line, nil
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", err
-	}
-	return "", fmt.Errorf("nenhuma linha compatível em %s", path)
 }
 
 func normalizeWhitespace(value string) string {

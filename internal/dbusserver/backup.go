@@ -218,7 +218,7 @@ func (b *BackupService) RunBackupNow(sender dbus.Sender, configID string) (uint3
 	if err := requirePolkit(sender, "org.lyraos.vega.backup.run"); err != nil {
 		return 0, err
 	}
-	return b.startTransaction(b.emitBackupProgress, b.emitBackupFinished, func(report progressFunc) error {
+	return b.startTransaction("Backup: "+configID, b.emitBackupProgress, b.emitBackupFinished, func(report progressFunc) error {
 		err := RunBackupJob(configID, report)
 		if err == nil {
 			resetBackupFailureCount(configID)
@@ -268,7 +268,7 @@ func (b *BackupService) RestoreSnapshot(sender dbus.Sender, snapshotID, targetPa
 		return 0, dbus.MakeFailedError(err)
 	}
 
-	return b.startTransaction(b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
+	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
 			return err
 		}
@@ -393,7 +393,7 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 	if err != nil {
 		return 0, dbus.MakeFailedError(err)
 	}
-	return b.startTransaction(b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
+	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
 			if errors.Is(err, errBackupDeferred) {
 				return err
@@ -443,6 +443,7 @@ func (b *BackupService) emitBackupAlert(configID string, consecutiveFailures int
 }
 
 func (b *BackupService) startTransaction(
+	why string,
 	emitProgress func(uint32, uint32, string) error,
 	emitFinished func(uint32, bool, string) error,
 	work func(report progressFunc) error,
@@ -454,7 +455,7 @@ func (b *BackupService) startTransaction(
 		}
 	}
 	go func() {
-		err := work(report)
+		err := withShutdownInhibit(why, func() error { return work(report) })
 		success := err == nil
 		message := "Concluído"
 		if err != nil {
@@ -829,6 +830,11 @@ Description=Vega backup job for %s
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/vega/vegad backup run %s
+# Backups can run long against slow/remote destinations. The shutdown
+# inhibitor (see internal/dbusserver/inhibit.go) gives logind a short grace
+# window while this runs. It does not guarantee completion of a long backup;
+# restic operations must remain resumable after interruption.
+TimeoutStopSec=1800
 `, cfg.Id, cfg.Id)
 	if err := os.WriteFile(servicePath, []byte(serviceUnit), 0o644); err != nil {
 		return err

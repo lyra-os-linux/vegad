@@ -139,8 +139,10 @@ func (s *SoftwareService) GetAurPkgbuild(id string) (string, *dbus.Error) {
 
 // startTransaction allocates a transaction id and runs work in the
 // background, translating its outcome into TransactionFinished. work
-// receives a report func wired to TransactionProgress.
-func (s *SoftwareService) startTransaction(work func(report progressFunc) error) uint32 {
+// receives a report func wired to TransactionProgress. why identifies the
+// operation to systemd-logind for the duration of work, so a shutdown
+// request doesn't cut a package transaction short (see withShutdownInhibit).
+func (s *SoftwareService) startTransaction(why string, work func(report progressFunc) error) uint32 {
 	txID := s.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
 		if err := s.emitTransactionProgress(txID, percent, message); err != nil {
@@ -148,7 +150,7 @@ func (s *SoftwareService) startTransaction(work func(report progressFunc) error)
 		}
 	}
 	go func() {
-		err := work(report)
+		err := withShutdownInhibit(why, func() error { return work(report) })
 		success := err == nil
 		message := "Concluído"
 		if err != nil {
@@ -174,19 +176,19 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 
 	switch origin {
 	case "official":
-		return s.startTransaction(func(report progressFunc) error {
+		return s.startTransaction("Instalação oficial: "+id, func(report progressFunc) error {
 			return withSnapshots("Instalação oficial: "+id, func() error {
 				return s.provider.Package().Install(id, report)
 			})
 		}), nil
 	case "flathub":
-		return s.startTransaction(func(report progressFunc) error { return installFlatpak(id, report) }), nil
+		return s.startTransaction("Instalação Flathub: "+id, func(report progressFunc) error { return installFlatpak(id, report) }), nil
 	case "aur":
 		community := s.provider.Community()
 		if community == nil {
 			return 0, dbus.MakeFailedError(errNoCommunityLayer())
 		}
-		return s.startTransaction(func(report progressFunc) error {
+		return s.startTransaction("Instalação AUR: "+id, func(report progressFunc) error {
 			return withSnapshots("Instalação AUR: "+id, func() error {
 				return community.Install(id, report)
 			})
@@ -203,15 +205,15 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 	}
 	switch origin {
 	case "official":
-		return s.startTransaction(func(report progressFunc) error {
+		return s.startTransaction("Remoção oficial: "+id, func(report progressFunc) error {
 			return withSnapshots("Remoção oficial: "+id, func() error {
 				return s.provider.Package().Remove(id, report)
 			})
 		}), nil
 	case "flathub":
-		return s.startTransaction(func(report progressFunc) error { return removeFlatpak(id, report) }), nil
+		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc) error { return removeFlatpak(id, report) }), nil
 	case "aur":
-		return s.startTransaction(func(report progressFunc) error {
+		return s.startTransaction("Remoção AUR: "+id, func(report progressFunc) error {
 			return withSnapshots("Remoção AUR: "+id, func() error {
 				return s.provider.Package().Remove(id, report)
 			})
@@ -273,7 +275,7 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
-	return s.startTransaction(func(report progressFunc) error {
+	return s.startTransaction("Atualização completa", func(report progressFunc) error {
 		if err := withSnapshots("Atualização completa", func() error {
 			return s.provider.Package().UpdateAll(report)
 		}); err != nil {
@@ -311,7 +313,7 @@ func (s *SoftwareService) OptimizeMirrors(sender dbus.Sender) (uint32, *dbus.Err
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return 0, err
 	}
-	return s.startTransaction(func(report progressFunc) error {
+	return s.startTransaction("Otimização de mirrors", func(report progressFunc) error {
 		return s.provider.Package().OptimizeMirrors(report)
 	}), nil
 }
@@ -323,7 +325,7 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
-	return s.startTransaction(func(report progressFunc) error {
+	return s.startTransaction("Limpeza de cache", func(report progressFunc) error {
 		if err := withSnapshots("Limpeza de cache", func() error {
 			return s.provider.Package().ClearCache(report)
 		}); err != nil {

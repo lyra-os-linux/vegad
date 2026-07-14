@@ -23,9 +23,12 @@ func main() {
 	if len(os.Args) >= 4 && os.Args[1] == "backup" && os.Args[2] == "run" {
 		configID := os.Args[3]
 		log.Printf("vegad backup job %s starting", configID)
-		if err := dbusserver.RunBackupJob(configID, func(percent uint32, message string) {
-			log.Printf("backup %s: %d%% %s", configID, percent, message)
-		}); err != nil {
+		err := dbusserver.WithShutdownInhibit("Backup: "+configID, func() error {
+			return dbusserver.RunBackupJob(configID, func(percent uint32, message string) {
+				log.Printf("backup %s: %d%% %s", configID, percent, message)
+			})
+		})
+		if err != nil {
 			log.Fatalf("vegad backup job %s failed: %v", configID, err)
 		}
 		log.Printf("vegad backup job %s finished", configID)
