@@ -7,12 +7,46 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/lyraos/vegad/internal/dbusserver"
 	"github.com/lyraos/vegad/internal/version"
 )
 
+// defaultSystemPATH covers where every CLI vegad shells out to (apt, df,
+// dpkg-query, journalctl, systemctl, snapper/timeshift, firewall-cmd/ufw,
+// ...) normally lives. systemd's Type=dbus activation grants services its
+// own sane default PATH, but on SysVinit distros (e.g. MX Linux) the system
+// bus activates org.lyraos.Vega1 by having the classic dbus-daemon fork+exec
+// the binary directly (see packaging/vegad/org.lyraos.Vega1.service's
+// Exec=), inheriting dbus-daemon's own minimal boot-time environment —
+// which can have PATH unset entirely, breaking every exec.Command call in
+// this daemon at once.
+const defaultSystemPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+func ensureSystemPATH() {
+	current := os.Getenv("PATH")
+	if current == "" {
+		os.Setenv("PATH", defaultSystemPATH)
+		return
+	}
+
+	have := make(map[string]bool)
+	for _, dir := range strings.Split(current, ":") {
+		have[dir] = true
+	}
+	for _, dir := range strings.Split(defaultSystemPATH, ":") {
+		if !have[dir] {
+			current += ":" + dir
+			have[dir] = true
+		}
+	}
+	os.Setenv("PATH", current)
+}
+
 func main() {
+	ensureSystemPATH()
+
 	if len(os.Args) >= 2 && os.Args[1] == "check-updates" {
 		if err := dbusserver.RunUpdateCheckJob(); err != nil {
 			log.Fatalf("vegad check-updates failed: %v", err)
