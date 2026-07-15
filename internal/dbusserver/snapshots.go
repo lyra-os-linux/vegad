@@ -8,12 +8,9 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// SnapshotsService backs org.lyraos.Vega1.Snapshots: drives snapper
-// (Arch/openSUSE, Btrfs) for the "Voltar no tempo" timeline, manual
-// snapshots and retention policy. vegad does not reimplement snapper — it
-// drives its CLI. Timeshift (Debian/Ubuntu/Fedora) was dropped as a backend
-// (issue #48): its `--list` table format never matched a real installation
-// and left every non-snapper distro unable to list existing snapshots.
+// SnapshotsService drives an already installed snapshot tool. Snapper takes
+// precedence; Timeshift is used as an optional fallback and is never installed
+// or required by vegad.
 type SnapshotsService struct {
 	activity *Activity
 	conn     *dbus.Conn
@@ -26,22 +23,25 @@ type SnapshotInfo struct {
 	Description string
 }
 
-var errNoSnapshotTool = errors.New("snapper não está disponível neste sistema")
+var errNoSnapshotTool = errors.New("snapper ou timeshift não está disponível neste sistema")
 
-// Available reports whether snapper is present, so the frontend can hide
-// the Snapshots module entirely on distros without it instead of showing a
-// menu entry that always errors.
+// Available reports whether one of the optional backends is already present.
 func (s *SnapshotsService) Available() (bool, *dbus.Error) {
 	s.activity.Touch()
-	return snapperInstalled(), nil
+	return snapperInstalled() || timeshiftInstalled(), nil
 }
 
 func (s *SnapshotsService) ListSnapshots() ([]SnapshotInfo, *dbus.Error) {
 	s.activity.Touch()
-	if !snapperInstalled() {
+	var snapshots []SnapshotInfo
+	var err error
+	if snapperInstalled() {
+		snapshots, err = listSnapperSnapshots()
+	} else if timeshiftInstalled() {
+		snapshots, err = listTimeshiftSnapshots()
+	} else {
 		return nil, dbus.MakeFailedError(errNoSnapshotTool)
 	}
-	snapshots, err := listSnapperSnapshots()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -53,10 +53,15 @@ func (s *SnapshotsService) CreateSnapshot(sender dbus.Sender, description string
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.create"); err != nil {
 		return 0, err
 	}
-	if !snapperInstalled() {
+	var id uint32
+	var err error
+	if snapperInstalled() {
+		id, err = createSnapperSnapshot("single", description)
+	} else if timeshiftInstalled() {
+		id, err = createTimeshiftSnapshot(description)
+	} else {
 		return 0, dbus.MakeFailedError(errNoSnapshotTool)
 	}
-	id, err := createSnapperSnapshot("single", description)
 	if err != nil {
 		return 0, dbus.MakeFailedError(err)
 	}
@@ -67,8 +72,11 @@ func (s *SnapshotsService) CreateSnapshot(sender dbus.Sender, description string
 // restored, so the confirmation screen can show it before rollback.
 func (s *SnapshotsService) DiffPackages(snapshotID uint32) ([]string, *dbus.Error) {
 	s.activity.Touch()
-	if !snapperInstalled() {
+	if !snapperInstalled() && !timeshiftInstalled() {
 		return nil, dbus.MakeFailedError(errNoSnapshotTool)
+	}
+	if timeshiftInstalled() && !snapperInstalled() {
+		return []string{"Timeshift não fornece um diff de pacotes; revise o snapshot e o destino antes do rollback."}, nil
 	}
 	lines, err := snapperDiffLines(snapshotID)
 	if err != nil {
@@ -82,11 +90,16 @@ func (s *SnapshotsService) Rollback(sender dbus.Sender, snapshotID uint32) *dbus
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.rollback"); err != nil {
 		return err
 	}
-	if !snapperInstalled() {
+	var rollbackErr error
+	if snapperInstalled() {
+		rollbackErr = rollbackSnapperSnapshot(snapshotID)
+	} else if timeshiftInstalled() {
+		rollbackErr = rollbackTimeshiftSnapshot(snapshotID)
+	} else {
 		return dbus.MakeFailedError(errNoSnapshotTool)
 	}
-	if err := rollbackSnapperSnapshot(snapshotID); err != nil {
-		return dbus.MakeFailedError(err)
+	if rollbackErr != nil {
+		return dbus.MakeFailedError(rollbackErr)
 	}
 	return nil
 }
@@ -96,11 +109,16 @@ func (s *SnapshotsService) DeleteSnapshot(sender dbus.Sender, snapshotID uint32)
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
 		return err
 	}
-	if !snapperInstalled() {
+	var deleteErr error
+	if snapperInstalled() {
+		deleteErr = deleteSnapperSnapshot(snapshotID)
+	} else if timeshiftInstalled() {
+		deleteErr = deleteTimeshiftSnapshot(snapshotID)
+	} else {
 		return dbus.MakeFailedError(errNoSnapshotTool)
 	}
-	if err := deleteSnapperSnapshot(snapshotID); err != nil {
-		return dbus.MakeFailedError(err)
+	if deleteErr != nil {
+		return dbus.MakeFailedError(deleteErr)
 	}
 	return nil
 }
@@ -111,6 +129,9 @@ func (s *SnapshotsService) SetRetentionPolicy(sender dbus.Sender, keepCount uint
 		return err
 	}
 	if !snapperInstalled() {
+		if timeshiftInstalled() {
+			return dbus.MakeFailedError(errors.New("Timeshift gerencia retenção por agenda e não oferece um limite global pela CLI"))
+		}
 		return dbus.MakeFailedError(errNoSnapshotTool)
 	}
 	if err := setSnapperRetentionPolicy(keepCount); err != nil {
