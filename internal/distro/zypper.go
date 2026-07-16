@@ -340,13 +340,13 @@ func (z *zypperBackend) OptimizeMirrors(report ProgressFunc) error {
 	return ErrUnsupported
 }
 
-func (z *zypperBackend) ListRepos() ([]string, error) {
+func (z *zypperBackend) ListRepos() ([]RepositoryRef, error) {
 	out, err := runCommandOutput("zypper", "--non-interactive", "repos")
 	if err != nil {
 		return nil, fmt.Errorf("zypper repos: %w — %s", err, out)
 	}
 
-	var repos []string
+	var repos []RepositoryRef
 	seenHeader := false
 	scanner := bufio.NewScanner(strings.NewReader(out))
 	for scanner.Scan() {
@@ -359,10 +359,13 @@ func (z *zypperBackend) ListRepos() ([]string, error) {
 			continue
 		}
 		fields := splitZypperTableLine(line)
-		if len(fields) < 2 || fields[1] == "" {
+		if len(fields) < 4 || fields[1] == "" {
 			continue
 		}
-		repos = append(repos, fields[1])
+		repos = append(repos, RepositoryRef{
+			Name:    fields[1],
+			Enabled: strings.EqualFold(fields[3], "yes") || strings.EqualFold(fields[3], "sim"),
+		})
 	}
 	return repos, scanner.Err()
 }

@@ -415,19 +415,19 @@ func runPacmanTransaction(args []string, report ProgressFunc) error {
 
 // ListRepos parses /etc/pacman.conf for `[section]` headers, skipping the
 // special [options] section.
-func (p *pacmanBackend) ListRepos() ([]string, error) {
+func (p *pacmanBackend) ListRepos() ([]RepositoryRef, error) {
 	f, err := os.Open("/etc/pacman.conf")
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var repos []string
-	sectionRe := regexp.MustCompile(`^\[([^\]]+)\]$`)
+	var repos []RepositoryRef
+	sectionRe := regexp.MustCompile(`^#?\s*\[([^\]]+)\]$`)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line == "" {
 			continue
 		}
 		m := sectionRe.FindStringSubmatch(line)
@@ -437,7 +437,10 @@ func (p *pacmanBackend) ListRepos() ([]string, error) {
 		if m[1] == "options" {
 			continue
 		}
-		repos = append(repos, m[1])
+		repos = append(repos, RepositoryRef{
+			Name:    m[1],
+			Enabled: !strings.HasPrefix(line, "#"),
+		})
 	}
 	return repos, scanner.Err()
 }

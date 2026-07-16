@@ -335,20 +335,20 @@ func aptRepoLine(line string) (content string, enabled bool, isRepo bool) {
 	return "", false, false
 }
 
-func (a *aptBackend) ListRepos() ([]string, error) {
+func (a *aptBackend) ListRepos() ([]RepositoryRef, error) {
 	paths, err := aptSourceListPaths()
 	if err != nil {
 		return nil, err
 	}
-	var repos []string
+	var repos []RepositoryRef
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		for _, line := range strings.Split(string(data), "\n") {
-			if content, _, ok := aptRepoLine(line); ok {
-				repos = append(repos, content)
+			if content, enabled, ok := aptRepoLine(line); ok {
+				repos = append(repos, RepositoryRef{Name: content, Enabled: enabled})
 			}
 		}
 	}

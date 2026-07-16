@@ -285,7 +285,7 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	}), nil
 }
 
-func (s *SoftwareService) ListRepos() ([]string, *dbus.Error) {
+func (s *SoftwareService) ListRepos() ([]distro.RepositoryRef, *dbus.Error) {
 	s.activity.Touch()
 	repos, err := s.provider.Package().ListRepos()
 	if err != nil {

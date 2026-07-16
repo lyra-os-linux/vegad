@@ -280,13 +280,13 @@ func (d *dnfBackend) OptimizeMirrors(report ProgressFunc) error {
 // / status" table. Only the first whitespace-separated field (the repo id,
 // which never contains spaces) is taken, since the name/status columns
 // aren't delimited the way zypper's "|" table is.
-func (d *dnfBackend) ListRepos() ([]string, error) {
+func (d *dnfBackend) ListRepos() ([]RepositoryRef, error) {
 	out, err := runCommandOutput("dnf", "-q", "repolist", "--all")
 	if err != nil {
 		return nil, fmt.Errorf("dnf repolist: %w — %s", err, out)
 	}
 
-	var repos []string
+	var repos []RepositoryRef
 	scanner := bufio.NewScanner(strings.NewReader(out))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -297,7 +297,10 @@ func (d *dnfBackend) ListRepos() ([]string, error) {
 		if len(fields) == 0 {
 			continue
 		}
-		repos = append(repos, fields[0])
+		repos = append(repos, RepositoryRef{
+			Name:    fields[0],
+			Enabled: strings.EqualFold(fields[len(fields)-1], "enabled"),
+		})
 	}
 	return repos, scanner.Err()
 }

@@ -21,7 +21,7 @@ type PackageBackend interface {
 	Remove(id string, report ProgressFunc) error
 	UpdateAll(report ProgressFunc) error
 	ClearCache(report ProgressFunc) error
-	ListRepos() ([]string, error)
+	ListRepos() ([]RepositoryRef, error)
 	SetRepoEnabled(repo string, enabled bool) error
 
 	// OptimizeMirrors re-ranks/refreshes mirrors, where the concept exists

@@ -9,6 +9,13 @@ package distro
 // a running package transaction.
 type ProgressFunc func(percent uint32, message string)
 
+// RepositoryRef identifies a configured package repository and its current
+// state as reported by the distribution package manager.
+type RepositoryRef struct {
+	Name    string
+	Enabled bool
+}
+
 // PackageRef identifies a package within one origin ("official", "flathub",
 // "aur") so the UI can dedupe the same app found across origins.
 type PackageRef struct {
