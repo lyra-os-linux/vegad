@@ -149,11 +149,6 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	display := &DisplayService{activity: s.activity}
-	if err := s.conn.Export(display, ObjectPath, BusName+".Display"); err != nil {
-		return err
-	}
-
 	// dbus-next (and any well-behaved D-Bus client) calls Introspect() to
 	// discover method signatures before invoking them — godbus doesn't
 	// provide this automatically, so without it every call from such a
@@ -217,7 +212,6 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Bluetooth", Methods: introspect.Methods(bluetooth)},
 			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
 			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
-			{Name: BusName + ".Display", Methods: introspect.Methods(display)},
 		},
 	}
 	if err := s.conn.Export(introspect.NewIntrospectable(node), ObjectPath, "org.freedesktop.DBus.Introspectable"); err != nil {

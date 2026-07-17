@@ -27,10 +27,12 @@ type SystemMetrics struct {
 	DiskWriteBytes uint64
 	NetRxBytes     uint64
 	NetTxBytes     uint64
+	CPUPerCore     []float64
 }
 
 type ProcessInfo struct {
 	PID        uint32
+	PPID       uint32
 	Name       string
 	User       string
 	CPUPercent float64
@@ -41,7 +43,7 @@ type ProcessInfo struct {
 func (m *MonitorService) Metrics() (SystemMetrics, *dbus.Error) {
 	m.activity.Touch()
 	metrics := SystemMetrics{}
-	metrics.CPUPercent = cpuPercentSnapshot()
+	metrics.CPUPercent, metrics.CPUPerCore = cpuPercentSnapshot()
 	fillMemory(&metrics)
 	metrics.DiskReadBytes, metrics.DiskWriteBytes = diskCounters()
 	metrics.NetRxBytes, metrics.NetTxBytes = networkCounters()
@@ -92,16 +94,30 @@ func (m *MonitorService) KillProcess(sender dbus.Sender, pid uint32) *dbus.Error
 	return nil
 }
 
-func cpuPercentSnapshot() float64 {
-	first, ok := readCPUStat()
+// cpuPercentSnapshot samples /proc/stat twice 120ms apart, once, and derives
+// both the aggregate percentage and every core's from that single window —
+// sampling each core separately would need a 120ms sleep per core.
+func cpuPercentSnapshot() (float64, []float64) {
+	firstTotal, firstCores, ok := readCPUStat()
 	if !ok {
-		return 0
+		return 0, nil
 	}
 	time.Sleep(120 * time.Millisecond)
-	second, ok := readCPUStat()
+	secondTotal, secondCores, ok := readCPUStat()
 	if !ok {
-		return 0
+		return 0, nil
 	}
+	cores := make([]float64, 0, len(firstCores))
+	for i := range firstCores {
+		if i >= len(secondCores) {
+			break
+		}
+		cores = append(cores, cpuStatPercent(firstCores[i], secondCores[i]))
+	}
+	return cpuStatPercent(firstTotal, secondTotal), cores
+}
+
+func cpuStatPercent(first, second cpuStat) float64 {
 	total := float64(second.total - first.total)
 	idle := float64(second.idle - first.idle)
 	if total <= 0 {
@@ -115,27 +131,55 @@ type cpuStat struct {
 	idle  uint64
 }
 
-func readCPUStat() (cpuStat, bool) {
+// readCPUStat reads the aggregate "cpu" line plus every per-core "cpuN"
+// line — they're always contiguous at the top of /proc/stat, so the first
+// line without a "cpu" prefix ends the block.
+func readCPUStat() (cpuStat, []cpuStat, bool) {
 	data, err := os.ReadFile("/proc/stat")
 	if err != nil {
-		return cpuStat{}, false
+		return cpuStat{}, nil, false
 	}
-	line := strings.SplitN(string(data), "\n", 2)[0]
-	fields := strings.Fields(line)
-	if len(fields) < 5 {
-		return cpuStat{}, false
+	return parseProcStat(string(data))
+}
+
+func parseProcStat(data string) (cpuStat, []cpuStat, bool) {
+	var aggregate cpuStat
+	aggregateSet := false
+	var cores []cpuStat
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], "cpu") {
+			break
+		}
+		if len(fields) < 5 {
+			continue
+		}
+		stat := parseCPUFields(fields[1:])
+		if fields[0] == "cpu" {
+			aggregate = stat
+			aggregateSet = true
+		} else {
+			cores = append(cores, stat)
+		}
 	}
+	if !aggregateSet {
+		return cpuStat{}, nil, false
+	}
+	return aggregate, cores, true
+}
+
+func parseCPUFields(fields []string) cpuStat {
 	var total uint64
-	for _, field := range fields[1:] {
+	for _, field := range fields {
 		value, _ := strconv.ParseUint(field, 10, 64)
 		total += value
 	}
-	idle, _ := strconv.ParseUint(fields[4], 10, 64)
-	if len(fields) > 5 {
-		iowait, _ := strconv.ParseUint(fields[5], 10, 64)
+	idle, _ := strconv.ParseUint(fields[3], 10, 64)
+	if len(fields) > 4 {
+		iowait, _ := strconv.ParseUint(fields[4], 10, 64)
 		idle += iowait
 	}
-	return cpuStat{total: total, idle: idle}, true
+	return cpuStat{total: total, idle: idle}
 }
 
 func fillMemory(metrics *SystemMetrics) {
@@ -228,6 +272,7 @@ func readProcess(pid uint32, ticks float64, uptime float64) (ProcessInfo, bool) 
 	if len(fields) < 22 {
 		return ProcessInfo{}, false
 	}
+	ppid64, _ := strconv.ParseUint(fields[1], 10, 32)
 	utime, _ := strconv.ParseFloat(fields[11], 64)
 	stime, _ := strconv.ParseFloat(fields[12], 64)
 	starttime, _ := strconv.ParseFloat(fields[19], 64)
@@ -259,7 +304,7 @@ func readProcess(pid uint32, ticks float64, uptime float64) (ProcessInfo, bool) 
 	if u, err := user.LookupId(uid); err == nil {
 		username = u.Username
 	}
-	return ProcessInfo{PID: pid, Name: name, User: username, CPUPercent: cpu, Memory: mem, State: state}, true
+	return ProcessInfo{PID: pid, PPID: uint32(ppid64), Name: name, User: username, CPUPercent: cpu, Memory: mem, State: state}, true
 }
 
 func uptimeSeconds() float64 {

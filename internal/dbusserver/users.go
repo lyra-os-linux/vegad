@@ -137,10 +137,17 @@ func readUserInfos() ([]UserInfo, error) {
 		if err != nil {
 			continue
 		}
+		username := fields[0]
+		// nobody sits at a high UID (65534 on most distros) precisely so it
+		// falls outside the normal 1000+ range and isn't mistaken for a
+		// real account — exclude it by name instead of relying on that UID
+		// convention, since it's not guaranteed across distros.
+		if username == "nobody" {
+			continue
+		}
 		if uid != 0 && uid < 1000 {
 			continue
 		}
-		username := fields[0]
 		rows = append(rows, UserInfo{Username: username, IsAdmin: admins[username] || username == "root"})
 	}
 	if err := scanner.Err(); err != nil {
