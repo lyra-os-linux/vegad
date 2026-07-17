@@ -1,11 +1,11 @@
 # Maintainer: Rodrigo Brito <rodrigo@w3ti.com.br>
 #
-# AUR-oriented PKGBUILD. It builds the tagged Vega release, but can be
-# pointed at another checkout/source via VEGA_SOURCE_URL and VEGA_SOURCE_DIR
-# for local builds.
+# PKGBUILD used to build the Arch package (release-arch.yml and local
+# builds). It builds the tagged Vega release, but can be pointed at another
+# checkout/source via VEGA_SOURCE_URL and VEGA_SOURCE_DIR for local builds.
 
 pkgname=vegad
-pkgver=2.0.3
+pkgver=3.0.0
 pkgrel=1
 pkgdesc="Daemon privilegiado do Vega, centro de controle para Linux"
 arch=('x86_64')
