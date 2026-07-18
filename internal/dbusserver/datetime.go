@@ -170,7 +170,18 @@ func currentKeymap() string {
 			for _, line := range strings.Split(out, "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "X11 Layout:") {
-					return strings.TrimSpace(strings.TrimPrefix(line, "X11 Layout:"))
+					value := strings.TrimSpace(strings.TrimPrefix(line, "X11 Layout:"))
+					// localectl prints placeholders like "(unset)" or "n/a"
+					// when no X11 keymap is configured (common on
+					// Wayland-only/minimal installs) — treating those as a
+					// real layout would send garbage back through
+					// Apply()'s "não vazio = aplicar" keymap field on a
+					// round-trip. Empty means "unknown", not "br": we
+					// genuinely don't know the real layout here.
+					if value == "" || value == "(unset)" || value == "n/a" {
+						return ""
+					}
+					return value
 				}
 			}
 		}

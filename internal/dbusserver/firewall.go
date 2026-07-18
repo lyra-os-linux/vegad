@@ -64,7 +64,7 @@ var firewalldCatalog = []struct {
 	{name: "mdns", label: "Descoberta na rede"},
 	{name: "dhcpv6-client", label: "Cliente DHCPv6"},
 	{name: "cockpit", label: "Painel Cockpit"},
-	{name: "printer", label: "Impressoras"},
+	{name: "ipp", label: "Impressoras"},
 }
 
 func (f *FirewallService) ListServices() ([]FirewallServiceInfo, *dbus.Error) {

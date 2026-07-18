@@ -1,0 +1,25 @@
+module vegad_bootloader 1.0.0;
+
+# Corrige a issue #118: Kernel.ApplyBootConfig falha com "permission
+# denied" escrevendo /etc/default/grub, mesmo rodando como root, porque o
+# vegad roda em init_t (ainda não tem domínio dedicado) e a política
+# padrão não concede escrita em bootloader_etc_t pra esse domínio — só
+# leitura (via o atributo "configfile", que já cobre open/read/lock/
+# ioctl). Confirmado com `sesearch --allow -s init_t -t
+# bootloader_etc_t` antes de escrever esta regra: não existia nenhuma
+# permissão de escrita, nem um boolean pronto pra isso.
+#
+# Regra mínima e específica (init_t + bootloader_etc_t + write), no
+# estilo audit2allow — não cria um domínio próprio pro vegad (isso seria
+# um endurecimento maior, mais isolado, mas bem mais trabalho: exigiria
+# tipo de execução dedicado, regras de transição a partir do systemd,
+# etc.). Essa regra concede a permissão a TODO processo em init_t, não só
+# ao vegad — aceitável pra corrigir o bug relatado, mas vale revisitar se
+# um domínio vegad_t dedicado for justificado no futuro.
+require {
+	type init_t;
+	type bootloader_etc_t;
+	class file write;
+}
+
+allow init_t bootloader_etc_t:file write;
