@@ -1,0 +1,11 @@
+[Unit]
+Description=Executa periodicamente a exportação do journal do vegad para /var/log/vega/vegad.log
+Documentation=https://lyraos.org/vega
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

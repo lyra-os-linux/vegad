@@ -1,0 +1,14 @@
+[Unit]
+Description=Exporta o journal do vegad para /var/log/vega/vegad.log
+Documentation=https://lyraos.org/vega
+
+[Service]
+Type=oneshot
+# --cursor-file guarda a posição já exportada entre execuções, então cada
+# rodada só acrescenta as entradas novas desde a última vez — sem isso,
+# cada execução do timer duplicaria o log inteiro no arquivo. journalctl
+# continua sendo a fonte de verdade (StandardOutput padrão do vegad.service
+# não muda, e o módulo Log do Sistema do vega-cli continua lendo o journal
+# direto) — este serviço só espelha uma cópia persistente em arquivo.
+ExecStart=/bin/sh -c 'journalctl -u vegad.service --no-pager -o short-iso \
+  --cursor-file=/var/log/vega/vegad.log.cursor >> /var/log/vega/vegad.log'

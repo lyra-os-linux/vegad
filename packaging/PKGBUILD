@@ -22,6 +22,7 @@ optdepends=(
   'yay: instalação de pacotes AUR (origem Comunidade) no módulo Software'
   'paru: alternativa a yay para pacotes AUR (origem Comunidade)'
   'reflector: otimização de mirrors do Pacman no módulo Software'
+  'logrotate: rotação de /var/log/vega/vegad.log'
 )
 provides=('lyraed')
 conflicts=('lyraed')
@@ -61,4 +62,17 @@ package() {
     "$pkgdir/usr/lib/tmpfiles.d/vega-build.conf"
   install -Dm440 packaging/vegad/sudoers.d/vega-build \
     "$pkgdir/etc/sudoers.d/vega-build"
+
+  # Exportação periódica do journal do vegad para /var/log/vega/vegad.log
+  # (issue de log em arquivo) — journalctl continua sendo a fonte de
+  # verdade (o módulo Log do Sistema do vega-cli lê o journal direto), isso
+  # só mantém uma cópia persistente em arquivo, com rotação via logrotate.
+  install -Dm644 packaging/vegad/tmpfiles.d/vega-log.conf \
+    "$pkgdir/usr/lib/tmpfiles.d/vega-log.conf"
+  install -Dm644 packaging/vegad/vegad-log-export.service \
+    "$pkgdir/usr/lib/systemd/system/vegad-log-export.service"
+  install -Dm644 packaging/vegad/vegad-log-export.timer \
+    "$pkgdir/usr/lib/systemd/system/vegad-log-export.timer"
+  install -Dm644 packaging/vegad/logrotate.d/vegad \
+    "$pkgdir/etc/logrotate.d/vegad"
 }
