@@ -15,7 +15,7 @@ func TestSearchFlatpakFindsFirefox(t *testing.T) {
 		t.Skip("o remote Flathub do sistema é necessário para este teste de integração")
 	}
 
-	results, err := searchFlatpak("firefox")
+	results, err := searchFlatpak("firefox", nil)
 	if err != nil {
 		t.Fatalf("searchFlatpak: %v", err)
 	}

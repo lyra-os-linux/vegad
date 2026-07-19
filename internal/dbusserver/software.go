@@ -61,8 +61,9 @@ func (s *SoftwareService) CommunityLayerName() (string, *dbus.Error) {
 
 // GetPackageDetails fetches the expanded metadata for one package — read-only
 // (no polkit gate needed), same as Search/ListUpdates.
-func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, *dbus.Error) {
+func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id string) (PackageDetails, *dbus.Error) {
 	s.activity.Touch()
+	u := desktopUserOrNil(s.conn, sender, "GetPackageDetails")
 
 	var (
 		details PackageDetails
@@ -72,7 +73,7 @@ func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, 
 	case "official":
 		details, err = s.provider.Package().GetDetails(id)
 	case "flathub":
-		details, err = fetchFlatpakDetails(id)
+		details, err = fetchFlatpakDetails(id, u)
 	case "aur":
 		community := s.provider.Community()
 		if community == nil {
@@ -93,8 +94,9 @@ func (s *SoftwareService) GetPackageDetails(origin, id string) (PackageDetails, 
 // is the UI's job, so it can offer the origin picker
 // on the card. The community origin ("aur") is skipped on distros without
 // one (Provider.Community() == nil), same as when no helper is installed.
-func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
+func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
+	u := desktopUserOrNil(s.conn, sender, "Search")
 
 	var results []PackageRef
 
@@ -104,7 +106,7 @@ func (s *SoftwareService) Search(query string) ([]PackageRef, *dbus.Error) {
 	}
 	results = append(results, official...)
 
-	flathub, err := searchFlatpak(query)
+	flathub, err := searchFlatpak(query, u)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -211,7 +213,14 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			})
 		}), nil
 	case "flathub":
-		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc) error { return removeFlatpak(id, report) }), nil
+		u := desktopUserOrNil(s.conn, sender, "Remove")
+		scope := "system"
+		if apps, err := flatpakInstalledApps(u); err == nil {
+			if app, ok := apps[id]; ok {
+				scope = app.Scope
+			}
+		}
+		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc) error { return removeFlatpak(id, scope, u, report) }), nil
 	case "aur":
 		return s.startTransaction("Remoção AUR: "+id, func(report progressFunc) error {
 			return withSnapshots("Remoção AUR: "+id, func() error {
@@ -225,8 +234,9 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 
 // ListUpdates merges pending updates from the distro's package manager and
 // Flatpak into one list.
-func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
+func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
+	u := desktopUserOrNil(s.conn, sender, "ListUpdates")
 
 	var results []PackageRef
 
@@ -236,7 +246,7 @@ func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 	}
 	results = append(results, official...)
 
-	flathub, err := listFlatpakUpdates()
+	flathub, err := listFlatpakUpdates(u)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -247,8 +257,9 @@ func (s *SoftwareService) ListUpdates() ([]PackageRef, *dbus.Error) {
 
 // ListInstalled merges locally installed distro packages and system Flatpak
 // apps into one read-only list for the software inventory view.
-func (s *SoftwareService) ListInstalled() ([]PackageRef, *dbus.Error) {
+func (s *SoftwareService) ListInstalled(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
+	u := desktopUserOrNil(s.conn, sender, "ListInstalled")
 
 	var results []PackageRef
 
@@ -258,7 +269,7 @@ func (s *SoftwareService) ListInstalled() ([]PackageRef, *dbus.Error) {
 	}
 	results = append(results, official...)
 
-	flathub, err := listFlatpakInstalled()
+	flathub, err := listFlatpakInstalled(u)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -275,13 +286,14 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
+	u := desktopUserOrNil(s.conn, sender, "UpdateAll")
 	return s.startTransaction("Atualização completa", func(report progressFunc) error {
 		if err := withSnapshots("Atualização completa", func() error {
 			return s.provider.Package().UpdateAll(report)
 		}); err != nil {
 			return fmt.Errorf("%s: %w", s.provider.Package().Name(), err)
 		}
-		return updateAllFlatpak(report)
+		return updateAllFlatpak(u, report)
 	}), nil
 }
 
@@ -325,13 +337,14 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
+	u := desktopUserOrNil(s.conn, sender, "ClearCache")
 	return s.startTransaction("Limpeza de cache", func(report progressFunc) error {
 		if err := withSnapshots("Limpeza de cache", func() error {
 			return s.provider.Package().ClearCache(report)
 		}); err != nil {
 			return fmt.Errorf("%s: %w", s.provider.Package().Name(), err)
 		}
-		if err := clearFlatpakCache(report); err != nil {
+		if err := clearFlatpakCache(u, report); err != nil {
 			return fmt.Errorf("flatpak: %w", err)
 		}
 		return nil

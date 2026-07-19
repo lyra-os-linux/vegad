@@ -31,7 +31,10 @@ func RunUpdateCheckJob() error {
 	if err != nil {
 		return err
 	}
-	flathub, err := listFlatpakUpdates()
+	// Runs as its own short-lived process on a systemd timer, with no D-Bus
+	// caller to resolve a desktop user from — only the system-wide Flatpak
+	// installation is checked here (see listFlatpakUpdates).
+	flathub, err := listFlatpakUpdates(nil)
 	if err != nil {
 		return err
 	}
