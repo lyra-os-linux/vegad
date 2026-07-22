@@ -16,6 +16,10 @@ Summary:        Daemon privilegiado do Vega, centro de controle para Linux
 License:        GPL-3.0-only
 URL:            https://github.com/britors/Vega
 Source0:        vega-src-%{version}.tar.gz
+# vendor.tar.gz gerado pelo _service go_modules (rede exigida, que a VM de
+# build do OBS não tem — sem isso, "go build" trava tentando baixar
+# github.com/godbus/dbus/v5 do proxy.golang.org e falha).
+Source1:        vendor.tar.gz
 
 BuildRequires:  go
 BuildRequires:  checkpolicy
@@ -44,10 +48,13 @@ pelo D-Bus (Type=dbus), não roda como serviço permanente.
 
 %prep
 %setup -q -n vega-src-%{version}
+# vendor/ precisa ficar irmão do go.mod (vegad/vendor/, não na raiz do
+# tarball) — é onde -mod=vendor abaixo espera encontrá-lo.
+tar xzf %{SOURCE1} -C vegad
 
 %build
 cd vegad
-go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
+GOFLAGS=-mod=vendor go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
   -o vegad ./cmd/vegad
 
 # Módulo SELinux da issue #118: init_t (domínio do vegad, ainda sem
@@ -94,6 +101,7 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
   %{buildroot}%{_datadir}/selinux/packages/vegad_bootloader.pp
 
 %files
+%dir %{_prefix}/lib/vega
 %{_prefix}/lib/vega/vegad
 %{_prefix}/lib/systemd/system/vegad.service
 %{_prefix}/lib/systemd/system/vegad-update-check.service

@@ -91,6 +91,7 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
   %{buildroot}%{_datadir}/selinux/packages/vegad_bootloader.pp
 
 %files
+%dir %{_prefix}/lib/vega
 %{_prefix}/lib/vega/vegad
 %{_prefix}/lib/systemd/system/vegad.service
 %{_prefix}/lib/systemd/system/vegad-update-check.service
