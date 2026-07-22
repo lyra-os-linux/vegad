@@ -103,6 +103,8 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
 %{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
 %{_datadir}/polkit-1/actions/org.lyraos.vega.policy
+%dir %{_datadir}/selinux
+%dir %{_datadir}/selinux/packages
 %{_datadir}/selinux/packages/vegad_bootloader.pp
 
 # vegad.service não tem [Install] (bus-activated, não systemctl enable) —
