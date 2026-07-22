@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -382,5 +383,76 @@ func (z *zypperBackend) SetRepoEnabled(repo string, enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("zypper modifyrepo %s: %w — %s", repo, err, out)
 	}
+	return nil
+}
+
+// zypperKeyBlockRe matches the "New repository or package signing key
+// received" block zypper prints (and, in --non-interactive mode, rejects by
+// default) when a repo's metadata is signed by a key it doesn't trust yet.
+var (
+	zypperKeyFingerprintRe = regexp.MustCompile(`(?m)^\s*Key Fingerprint:\s*(.+)$`)
+	zypperKeyNameRe        = regexp.MustCompile(`(?m)^\s*Key Name:\s*(.+)$`)
+)
+
+// parseZypperUntrustedKey extracts the key details from zypper's rejected-key
+// output, or returns ok=false if out doesn't look like that specific failure
+// (a plain network/typo error should just be returned as a normal error).
+func parseZypperUntrustedKey(repo, out string) (*UntrustedKeyError, bool) {
+	fpMatch := zypperKeyFingerprintRe.FindStringSubmatch(out)
+	if fpMatch == nil {
+		return nil, false
+	}
+	fingerprint := strings.TrimSpace(fpMatch[1])
+	name := ""
+	if nameMatch := zypperKeyNameRe.FindStringSubmatch(out); nameMatch != nil {
+		name = strings.TrimSpace(nameMatch[1])
+	}
+	// zypper's block doesn't print a separate short key ID — the last 8 hex
+	// group of the fingerprint is the conventional short ID, and it's only
+	// used here as an opaque token round-tripped back into TrustRepoKey
+	// (which re-runs --gpg-auto-import-keys, not keyed on this value).
+	fields := strings.Fields(fingerprint)
+	keyId := fingerprint
+	if len(fields) > 0 {
+		keyId = fields[len(fields)-1]
+	}
+	return &UntrustedKeyError{Repo: repo, KeyId: keyId, Fingerprint: fingerprint, UserId: name}, true
+}
+
+// AddRepo registers repo name via `zypper addrepo` and immediately tries to
+// refresh it. A brand-new/untrusted signing key makes the refresh fail in
+// --non-interactive mode (zypper auto-rejects rather than prompting) — that
+// specific failure is surfaced as *UntrustedKeyError so the caller can offer
+// the user a TrustRepoKey retry instead of a dead-end error.
+func (z *zypperBackend) AddRepo(name, url string, report ProgressFunc) error {
+	report(0, "Adicionando repositório...")
+	out, err := runCommandOutput("zypper", "--non-interactive", "addrepo", "--refresh", "--", url, name)
+	if err != nil {
+		return fmt.Errorf("zypper addrepo %s: %w — %s", name, err, out)
+	}
+
+	report(50, "Atualizando metadados do repositório...")
+	refreshOut, err := runCommandOutput("zypper", "--non-interactive", "refresh", "--", name)
+	if err != nil {
+		if keyErr, ok := parseZypperUntrustedKey(name, refreshOut); ok {
+			return keyErr
+		}
+		return fmt.Errorf("zypper refresh %s: %w — %s", name, err, refreshOut)
+	}
+	report(100, "Repositório adicionado")
+	return nil
+}
+
+// TrustRepoKey re-runs the refresh with --gpg-auto-import-keys, which
+// accepts whatever new signing key(s) the repo presents instead of
+// rejecting them — the actual "trust" action a human would otherwise
+// approve interactively at this same prompt.
+func (z *zypperBackend) TrustRepoKey(repo, keyId string, report ProgressFunc) error {
+	report(0, "Confiando na chave e atualizando repositório...")
+	out, err := runCommandOutput("zypper", "--non-interactive", "--gpg-auto-import-keys", "refresh", "--", repo)
+	if err != nil {
+		return fmt.Errorf("zypper --gpg-auto-import-keys refresh %s: %w — %s", repo, err, out)
+	}
+	report(100, "Repositório confiável e atualizado")
 	return nil
 }

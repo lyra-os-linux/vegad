@@ -5,6 +5,8 @@
 // directly — it asks the active Provider instead.
 package distro
 
+import "fmt"
+
 // ProgressFunc reports coarse (stage-based, not byte-accurate) progress for
 // a running package transaction.
 type ProgressFunc func(percent uint32, message string)
@@ -14,6 +16,25 @@ type ProgressFunc func(percent uint32, message string)
 type RepositoryRef struct {
 	Name    string
 	Enabled bool
+}
+
+// UntrustedKeyError is returned by AddRepo (and a retried TrustRepoKey) when
+// the repository's signing key was found but isn't trusted yet — the caller
+// (dbusserver) turns this into a RepoKeyPending signal instead of a plain
+// failure, so the UI can show the fingerprint/userId and let the user
+// approve importing it via TrustRepoKey. This is trust-on-first-use, the
+// same level of verification pacman/zypper/dnf already give when a human
+// approves the equivalent prompt at the terminal — not a stronger guarantee
+// that the key actually belongs to whoever publishes the repo.
+type UntrustedKeyError struct {
+	Repo        string
+	KeyId       string
+	Fingerprint string
+	UserId      string
+}
+
+func (e *UntrustedKeyError) Error() string {
+	return fmt.Sprintf("repositório %q assinado por chave não confiada %s (%s)", e.Repo, e.KeyId, e.UserId)
 }
 
 // PackageRef identifies a package within one origin ("official", "flathub",

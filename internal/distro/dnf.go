@@ -3,6 +3,7 @@ package distro
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -319,4 +320,110 @@ func (d *dnfBackend) SetRepoEnabled(repo string, enabled bool) error {
 		return fmt.Errorf("dnf config-manager %s %s: %w — %s", flag, repo, err, out)
 	}
 	return nil
+}
+
+// dnfRepoFile is the .repo file AddRepo/TrustRepoKey write directly (rather
+// than `dnf config-manager --add-repo`, which derives its own repo id from
+// the URL and won't honor a user-chosen name) — same repo-id-conflicts-with-
+// config-manager tradeoff noted for pacmanBackend.SetRepoEnabled's direct
+// pacman.conf edits.
+func dnfRepoFile(name string) string {
+	return "/etc/yum.repos.d/" + name + ".repo"
+}
+
+// dnfRepoKeyURL is the conventional location RPM repo tooling (including
+// OBS) publishes a repo's signing key at, next to its signed metadata —
+// confirmed against a real, unrelated OBS project (openSUSE:Factory) while
+// building this: <repo-url>/repodata/repomd.xml.key.
+func dnfRepoKeyURL(url string) string {
+	return strings.TrimRight(url, "/") + "/repodata/repomd.xml.key"
+}
+
+func writeDnfRepoFile(name, url string, gpgCheck bool, gpgKeyURL string) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[%s]\n", name)
+	fmt.Fprintf(&b, "name=%s\n", name)
+	fmt.Fprintf(&b, "baseurl=%s\n", url)
+	b.WriteString("enabled=1\n")
+	if gpgCheck {
+		b.WriteString("gpgcheck=1\n")
+		b.WriteString("repo_gpgcheck=1\n")
+		fmt.Fprintf(&b, "gpgkey=%s\n", gpgKeyURL)
+	} else {
+		b.WriteString("gpgcheck=0\n")
+		b.WriteString("repo_gpgcheck=0\n")
+	}
+	return os.WriteFile(dnfRepoFile(name), []byte(b.String()), 0o644)
+}
+
+// AddRepo writes name's .repo file directly. If the repo publishes a
+// signing key at the conventional repomd.xml.key location, the key is
+// fetched and previewed (not imported) — *UntrustedKeyError carries its
+// fingerprint/userId for the caller to show the user before TrustRepoKey
+// actually imports it. A repo with no key there is added unsigned
+// (gpgcheck=0), not blocked — dnf has no way to discover a key at an
+// arbitrary, unadvertised location.
+func (d *dnfBackend) AddRepo(name, url string, report ProgressFunc) error {
+	report(0, "Verificando chave de assinatura do repositório...")
+	keyURL := dnfRepoKeyURL(url)
+	keyData, found := fetchRepoKey(keyURL)
+	if !found {
+		report(50, "Nenhuma chave encontrada — adicionando repositório sem verificação")
+		if err := writeDnfRepoFile(name, url, false, ""); err != nil {
+			return fmt.Errorf("escrever %s: %w", dnfRepoFile(name), err)
+		}
+		report(100, "Repositório adicionado (não verificado)")
+		return nil
+	}
+
+	fingerprint, userId, err := inspectGPGKey(keyData)
+	if err != nil {
+		return fmt.Errorf("dnf addrepo %s: %w", name, err)
+	}
+	return &UntrustedKeyError{Repo: name, KeyId: keyURL, Fingerprint: fingerprint, UserId: userId}
+}
+
+// TrustRepoKey finalizes the .repo file with gpgcheck enabled, pointing
+// gpgkey at keyId (AddRepo passes the key URL itself as keyId, since that's
+// what dnf's gpgkey= line needs — unlike zypper's opaque round-tripped
+// token, this one is load-bearing) and imports the key via rpm so the next
+// dnf operation against this repo doesn't re-prompt.
+func (d *dnfBackend) TrustRepoKey(repo, keyId string, report ProgressFunc) error {
+	report(0, "Confiando na chave...")
+	out, err := runCommandOutput("rpm", "--import", keyId)
+	if err != nil {
+		return fmt.Errorf("rpm --import %s: %w — %s", keyId, err, out)
+	}
+
+	report(60, "Atualizando repositório...")
+	baseurl, findErr := dnfRepoBaseURL(repo)
+	if findErr != nil {
+		return findErr
+	}
+	if err := writeDnfRepoFile(repo, baseurl, true, keyId); err != nil {
+		return fmt.Errorf("escrever %s: %w", dnfRepoFile(repo), err)
+	}
+
+	out, err = runCommandOutput("dnf", "-q", "makecache", "--repo", repo)
+	if err != nil {
+		return fmt.Errorf("dnf makecache --repo %s: %w — %s", repo, err, out)
+	}
+	report(100, "Repositório confiável e atualizado")
+	return nil
+}
+
+// dnfRepoBaseURL re-reads the baseurl= line AddRepo just wrote to repo's
+// .repo file, so TrustRepoKey doesn't need that value passed back in from
+// the D-Bus caller (which only round-trips repo/keyId, per RepoKeyPending).
+func dnfRepoBaseURL(repo string) (string, error) {
+	data, err := os.ReadFile(dnfRepoFile(repo))
+	if err != nil {
+		return "", fmt.Errorf("ler %s: %w", dnfRepoFile(repo), err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "baseurl="); ok {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("%s: baseurl= não encontrado", dnfRepoFile(repo))
 }

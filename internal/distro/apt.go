@@ -392,3 +392,124 @@ func (a *aptBackend) SetRepoEnabled(repo string, enabled bool) error {
 	}
 	return fmt.Errorf("apt: repositório %q não encontrado", repo)
 }
+
+// aptRepoFile is the sources.list.d file AddRepo/TrustRepoKey write directly
+// — same one-file-per-repo layout add-apt-repository itself uses for PPAs.
+func aptRepoFile(name string) string {
+	return "/etc/apt/sources.list.d/" + name + ".list"
+}
+
+// aptKeyringFile is where TrustRepoKey stores the imported (dearmored)
+// public key, referenced from the sources.list.d entry via the modern
+// signed-by= option — deliberately not using the deprecated system-wide
+// apt-key/trusted.gpg.d, which trusts a key for every repo instead of just
+// this one.
+func aptKeyringFile(name string) string {
+	return "/etc/apt/keyrings/" + name + ".gpg"
+}
+
+// aptReleaseKeyURL is the conventional location Debian/Ubuntu repos
+// (including OBS's Debian/Ubuntu targets) publish their signing key at, for
+// the "flat repo" layout (`deb <url> /`, no dists/ hierarchy) AddRepo uses.
+func aptReleaseKeyURL(url string) string {
+	return strings.TrimRight(url, "/") + "/Release.key"
+}
+
+// writeAptRepoLine (re)writes name's sources.list.d entry as a flat repo
+// (`deb [options] <url> /`), the layout OBS publishes Debian/Ubuntu targets
+// in — no dists/<suite>/ hierarchy, so there's no separate suite/component
+// to ask the user for beyond the URL they already gave AddRepo.
+func writeAptRepoLine(name, url string, signed bool) error {
+	line := "deb "
+	if signed {
+		line += "[signed-by=" + aptKeyringFile(name) + "] "
+	}
+	line += url + " /\n"
+	return os.WriteFile(aptRepoFile(name), []byte(line), 0644)
+}
+
+// aptRepoLineURL re-reads the URL out of name's own sources.list.d entry —
+// same "read back what AddRepo already wrote" trick dnfRepoBaseURL uses, so
+// TrustRepoKey doesn't need the URL passed back in from the D-Bus caller.
+func aptRepoLineURL(name string) (string, error) {
+	data, err := os.ReadFile(aptRepoFile(name))
+	if err != nil {
+		return "", fmt.Errorf("ler %s: %w", aptRepoFile(name), err)
+	}
+	content, _, isRepo := aptRepoLine(strings.TrimSpace(string(data)))
+	if !isRepo {
+		return "", fmt.Errorf("%s: entrada deb inválida", aptRepoFile(name))
+	}
+	fields := strings.Fields(content)
+	// fields[0]="deb", optionally fields[1]="[signed-by=...]", then the URL.
+	for _, f := range fields[1:] {
+		if !strings.HasPrefix(f, "[") {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("%s: URL não encontrada na entrada deb", aptRepoFile(name))
+}
+
+// AddRepo writes name's sources.list.d entry as a flat repo (`deb <url> /`)
+// right away — apt has no single "add repo" command, unlike zypper/dnf.
+// If the repo publishes a signing key at the conventional Release.key
+// location, it's fetched and previewed (not imported yet): *UntrustedKeyError
+// carries its fingerprint/userId for the caller to show the user before
+// TrustRepoKey actually imports it. No key found there means the repo is
+// left unsigned (apt has no way to discover a key at an arbitrary,
+// unadvertised location) and `apt-get update` runs immediately.
+func (a *aptBackend) AddRepo(name, url string, report ProgressFunc) error {
+	report(0, "Adicionando repositório...")
+	if err := writeAptRepoLine(name, url, false); err != nil {
+		return fmt.Errorf("escrever %s: %w", aptRepoFile(name), err)
+	}
+
+	report(30, "Verificando chave de assinatura do repositório...")
+	keyURL := aptReleaseKeyURL(url)
+	keyData, found := fetchRepoKey(keyURL)
+	if !found {
+		report(60, "Nenhuma chave encontrada — atualizando repositório sem verificação")
+		if err := runAptGet([]string{"update"}, report, "Atualizando índices...", "Repositório adicionado (não verificado)"); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	fingerprint, userId, err := inspectGPGKey(keyData)
+	if err != nil {
+		return fmt.Errorf("apt addrepo %s: %w", name, err)
+	}
+	return &UntrustedKeyError{Repo: name, KeyId: keyURL, Fingerprint: fingerprint, UserId: userId}
+}
+
+// TrustRepoKey re-fetches keyId (AddRepo passes the key URL itself, same
+// load-bearing use as dnfBackend.TrustRepoKey), dearmors it into
+// aptKeyringFile, rewrites the sources.list.d entry to reference it via
+// signed-by=, and refreshes.
+func (a *aptBackend) TrustRepoKey(repo, keyId string, report ProgressFunc) error {
+	report(0, "Confiando na chave...")
+	keyData, found := fetchRepoKey(keyId)
+	if !found {
+		return fmt.Errorf("apt: não foi possível baixar novamente a chave em %s", keyId)
+	}
+
+	if err := os.MkdirAll("/etc/apt/keyrings", 0755); err != nil {
+		return fmt.Errorf("criar /etc/apt/keyrings: %w", err)
+	}
+	dearmor := exec.Command("gpg", "--dearmor", "--yes", "--output", aptKeyringFile(repo))
+	dearmor.Stdin = strings.NewReader(string(keyData))
+	if out, err := dearmor.CombinedOutput(); err != nil {
+		return fmt.Errorf("gpg --dearmor: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+
+	report(50, "Atualizando repositório...")
+	url, err := aptRepoLineURL(repo)
+	if err != nil {
+		return err
+	}
+	if err := writeAptRepoLine(repo, url, true); err != nil {
+		return fmt.Errorf("escrever %s: %w", aptRepoFile(repo), err)
+	}
+
+	return runAptGet([]string{"update"}, report, "Atualizando índices...", "Repositório confiável e atualizado")
+}

@@ -381,3 +381,68 @@ func (s *SoftwareService) emitTransactionProgress(txID uint32, percent uint32, m
 func (s *SoftwareService) emitTransactionFinished(txID uint32, success bool, message string) error {
 	return s.conn.Emit(ObjectPath, BusName+".Software.TransactionFinished", txID, success, message)
 }
+
+func (s *SoftwareService) emitRepoKeyPending(txID uint32, repo, keyId, fingerprint, userId string) error {
+	return s.conn.Emit(ObjectPath, BusName+".Software.RepoKeyPending", txID, repo, keyId, fingerprint, userId)
+}
+
+// startTransactionWithID is startTransaction's twin for the one case where
+// work needs the transaction id before it finishes: AddRepo/TrustRepoKey
+// emit an extra RepoKeyPending signal (tagged with this same txID) when the
+// repo's signing key still needs the user's approval, ahead of the
+// TransactionFinished that follows either way.
+func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint32, report progressFunc) error) uint32 {
+	txID := s.nextTxID.Add(1)
+	report := func(percent uint32, message string) {
+		if err := s.emitTransactionProgress(txID, percent, message); err != nil {
+			log.Printf("vegad: emit TransactionProgress: %v", err)
+		}
+	}
+	go func() {
+		err := withShutdownInhibit(why, func() error { return work(txID, report) })
+		success := err == nil
+		message := "Concluído"
+		if err != nil {
+			message = err.Error()
+		}
+		if emitErr := s.emitTransactionFinished(txID, success, message); emitErr != nil {
+			log.Printf("vegad: emit TransactionFinished: %v", emitErr)
+		}
+	}()
+	return txID
+}
+
+// AddRepo registers a new repository (name pointing at url) and tries to
+// refresh it. When the repo is signed by a key the backend doesn't trust
+// yet, the transaction still finishes (success=false) but a RepoKeyPending
+// signal fires first with enough detail (keyId/fingerprint/userId) for the
+// UI to ask the user whether to trust it via TrustRepoKey — see
+// distro.UntrustedKeyError.
+func (s *SoftwareService) AddRepo(sender dbus.Sender, name, url string) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return 0, err
+	}
+	return s.startTransactionWithID("Adicionar repositório: "+name, func(txID uint32, report progressFunc) error {
+		err := s.provider.Package().AddRepo(name, url, report)
+		var keyErr *distro.UntrustedKeyError
+		if errors.As(err, &keyErr) {
+			if emitErr := s.emitRepoKeyPending(txID, keyErr.Repo, keyErr.KeyId, keyErr.Fingerprint, keyErr.UserId); emitErr != nil {
+				log.Printf("vegad: emit RepoKeyPending: %v", emitErr)
+			}
+		}
+		return err
+	}), nil
+}
+
+// TrustRepoKey imports/trusts keyId (as previously reported via a
+// RepoKeyPending signal for repo) and retries refreshing the repository.
+func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return 0, err
+	}
+	return s.startTransaction("Confiar em chave de repositório: "+repo, func(report progressFunc) error {
+		return s.provider.Package().TrustRepoKey(repo, keyId, report)
+	}), nil
+}

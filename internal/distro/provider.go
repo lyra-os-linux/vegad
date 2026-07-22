@@ -23,6 +23,14 @@ type PackageBackend interface {
 	ClearCache(report ProgressFunc) error
 	ListRepos() ([]RepositoryRef, error)
 	SetRepoEnabled(repo string, enabled bool) error
+	// AddRepo registers a new repository named name pointing at url and
+	// tries to refresh it. Returns *UntrustedKeyError (use errors.As) when
+	// the repo's signing key needs the caller to approve it via
+	// TrustRepoKey before the repo is actually usable.
+	AddRepo(name, url string, report ProgressFunc) error
+	// TrustRepoKey imports/trusts keyId (as previously reported via
+	// *UntrustedKeyError) and retries refreshing repo.
+	TrustRepoKey(repo, keyId string, report ProgressFunc) error
 
 	// OptimizeMirrors re-ranks/refreshes mirrors, where the concept exists
 	// (reflector on Arch). Backends without an equivalent (openSUSE, whose

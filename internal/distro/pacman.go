@@ -505,3 +505,134 @@ func (p *pacmanBackend) SetRepoEnabled(repo string, enabled bool) error {
 	}
 	return nil
 }
+
+// pacmanUnknownTrustRe matches pacman's "signature from ... is unknown
+// trust" line. Unlike RPM (repomd.xml.key) and Debian (Release.key), Arch
+// has no standard convention for where a repo publishes its signing key, so
+// this can only recover the human-readable name pacman already extracted
+// from the signature packet — never a fetchable key ID/fingerprint. That
+// makes this backend's key handling fundamentally weaker than the other
+// three; see TrustRepoKey below for the resulting fallback.
+var pacmanUnknownTrustRe = regexp.MustCompile(`signature from "([^"]+)" is unknown trust`)
+
+// pacmanRepoSectionExists reports whether pacman.conf already has a [name]
+// section, so AddRepo can fail fast instead of appending a duplicate.
+func pacmanRepoSectionExists(name string) (bool, error) {
+	repos, err := (&pacmanBackend{}).ListRepos()
+	if err != nil {
+		return false, err
+	}
+	for _, r := range repos {
+		if r.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// AddRepo appends a [name] section to pacman.conf and runs `pacman -Sy` to
+// refresh it. Because Arch has no repomd.xml.key/Release.key equivalent
+// (see pacmanUnknownTrustRe), a signature-trust failure here can only carry
+// the signer's human-readable name, not an importable key ID — KeyId comes
+// back empty, a signal to the caller (and TrustRepoKey) that there's no key
+// to actually import, only the (weaker) option of disabling verification
+// for this one repo.
+func (p *pacmanBackend) AddRepo(name, url string, report ProgressFunc) error {
+	report(0, "Adicionando repositório...")
+	exists, err := pacmanRepoSectionExists(name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("repositório %q já existe em pacman.conf", name)
+	}
+
+	data, err := os.ReadFile("/etc/pacman.conf")
+	if err != nil {
+		return err
+	}
+	section := fmt.Sprintf("\n[%s]\nServer = %s\n", name, url)
+	tmp := filepath.Join(filepath.Dir("/etc/pacman.conf"), ".pacman.conf.vega")
+	if err := os.WriteFile(tmp, append(data, []byte(section)...), 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	if err := os.Rename(tmp, "/etc/pacman.conf"); err != nil {
+		return err
+	}
+
+	report(50, "Atualizando banco de dados do repositório...")
+	out, err := runCommandOutput("pacman", "-Sy")
+	if err != nil {
+		if m := pacmanUnknownTrustRe.FindStringSubmatch(out); m != nil {
+			return &UntrustedKeyError{Repo: name, KeyId: "", Fingerprint: "", UserId: m[1]}
+		}
+		return fmt.Errorf("pacman -Sy: %w — %s", err, out)
+	}
+	report(100, "Repositório adicionado")
+	return nil
+}
+
+// TrustRepoKey. When keyId is a real key ID (the user supplied one out of
+// band — pacman itself never gives us one, see AddRepo), it's imported and
+// locally signed via pacman-key, the same "yes, trust it" a human would do
+// interactively. When keyId is empty (the common case for this backend),
+// there's nothing to import — the only remaining option is telling pacman
+// to stop requiring a signature for this specific repo
+// (SigLevel = Optional TrustAll), which is a real but strictly weaker form
+// of "trust" than the other three backends' fingerprint-based import. The
+// UI must word its confirmation differently in this case (see plan).
+func (p *pacmanBackend) TrustRepoKey(repo, keyId string, report ProgressFunc) error {
+	report(0, "Confiando na chave...")
+	if keyId != "" {
+		if out, err := runCommandOutput("pacman-key", "--recv-keys", keyId); err != nil {
+			return fmt.Errorf("pacman-key --recv-keys %s: %w — %s", keyId, err, out)
+		}
+		if out, err := runCommandOutput("pacman-key", "--lsign-key", keyId); err != nil {
+			return fmt.Errorf("pacman-key --lsign-key %s: %w — %s", keyId, err, out)
+		}
+	} else {
+		if err := pacmanSetSigLevelTrustAll(repo); err != nil {
+			return err
+		}
+	}
+
+	report(60, "Atualizando repositório...")
+	out, err := runCommandOutput("pacman", "-Sy")
+	if err != nil {
+		return fmt.Errorf("pacman -Sy: %w — %s", err, out)
+	}
+	report(100, "Repositório atualizado")
+	return nil
+}
+
+// pacmanSetSigLevelTrustAll appends "SigLevel = Optional TrustAll" right
+// after repo's [section] header in pacman.conf — the fallback
+// TrustRepoKey uses when there's no importable key ID at all.
+func pacmanSetSigLevelTrustAll(repo string) error {
+	data, err := os.ReadFile("/etc/pacman.conf")
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	sectionRe := regexp.MustCompile(`^\s*\[([^\]]+)\]\s*$`)
+	out := make([]string, 0, len(lines)+1)
+	found := false
+	for _, line := range lines {
+		out = append(out, line)
+		if m := sectionRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil && m[1] == repo {
+			out = append(out, "SigLevel = Optional TrustAll")
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("repositório %q não encontrado em pacman.conf", repo)
+	}
+
+	tmp := filepath.Join(filepath.Dir("/etc/pacman.conf"), ".pacman.conf.vega")
+	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	return os.Rename(tmp, "/etc/pacman.conf")
+}
