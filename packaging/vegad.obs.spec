@@ -15,7 +15,7 @@ Release:        1%{?dist}
 Summary:        Daemon privilegiado do Vega, centro de controle para Linux
 License:        GPL-3.0-only
 URL:            https://github.com/britors/Vega
-Source0:        vega-src-%{version}.tar.gz
+Source0:        vega-src-%{version}.tar
 # vendor.tar.gz gerado pelo _service go_modules (rede exigida, que a VM de
 # build do OBS não tem — sem isso, "go build" trava tentando baixar
 # github.com/godbus/dbus/v5 do proxy.golang.org e falha).
