@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 
 	"github.com/godbus/dbus/v5"
@@ -238,20 +239,34 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 	s.activity.Touch()
 	u := desktopUserOrNil(s.conn, sender, "ListUpdates")
 
-	var results []PackageRef
+	// Official and Flathub updates come from entirely separate subprocesses
+	// (zypper/pacman vs. flatpak) — run them concurrently rather than
+	// paying their combined latency in sequence, since this sits directly
+	// in the dashboard's startup path.
+	var official, flathub []PackageRef
+	var officialErr, flathubErr error
 
-	official, err := s.provider.Package().ListUpdates()
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
-	}
-	results = append(results, official...)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		official, officialErr = s.provider.Package().ListUpdates()
+	}()
+	go func() {
+		defer wg.Done()
+		flathub, flathubErr = listFlatpakUpdates(u)
+	}()
+	wg.Wait()
 
-	flathub, err := listFlatpakUpdates(u)
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+	if officialErr != nil {
+		return nil, dbus.MakeFailedError(officialErr)
 	}
+	if flathubErr != nil {
+		return nil, dbus.MakeFailedError(flathubErr)
+	}
+
+	results := append([]PackageRef{}, official...)
 	results = append(results, flathub...)
-
 	return results, nil
 }
 

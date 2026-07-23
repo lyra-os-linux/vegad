@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // zypperBackend drives openSUSE Leap's Zypper as the PackageBackend, the
@@ -206,14 +207,32 @@ func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
 // runs list-updates a second time with --all (which includes them) and
 // flags whatever's missing from the plain run so the UI can tell the user
 // they need manual resolution instead of quietly never appearing.
+//
+// The two runs are independent (no shared state, no --all narrowing what
+// the plain run sees), so they're fired off concurrently — each is a full
+// zypper invocation that reloads repo metadata, and this call sits directly
+// in the dashboard's startup path.
 func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
-	safe, err := zypperParseUpdates()
-	if err != nil {
-		return nil, err
+	var safe, all []PackageRef
+	var safeErr, allErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		safe, safeErr = zypperParseUpdates()
+	}()
+	go func() {
+		defer wg.Done()
+		all, allErr = zypperParseUpdates("--all")
+	}()
+	wg.Wait()
+
+	if safeErr != nil {
+		return nil, safeErr
 	}
-	all, err := zypperParseUpdates("--all")
-	if err != nil {
-		return nil, err
+	if allErr != nil {
+		return nil, allErr
 	}
 
 	safeNames := make(map[string]bool, len(safe))
