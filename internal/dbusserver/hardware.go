@@ -39,8 +39,8 @@ func (h *HardwareService) Inventory() (HardwareInventory, *dbus.Error) {
 
 // SwitchNvidiaDriver accepts whatever distro.HardwareBackend.AvailableNvidiaDrivers
 // reports for the active distro (e.g. "nvidia-open-dkms"/"nvidia-580xx-dkms"/
-// "nouveau" on Arch) — validity for the detected GPU generation is enforced
-// before this is called.
+// "nouveau") — validity for the detected GPU generation is enforced before
+// this is called.
 func (h *HardwareService) SwitchNvidiaDriver(sender dbus.Sender, driver string) *dbus.Error {
 	h.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.hardware.switch-driver"); err != nil {

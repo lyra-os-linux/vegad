@@ -28,7 +28,7 @@ func (s *SystemService) Ping() (bool, *dbus.Error) {
 }
 
 // Distro reports the running distro's human-readable name (e.g. "openSUSE
-// Leap 16.0", "Arch Linux") for display on the About screen.
+// Leap 16.0") for display on the About screen.
 func (s *SystemService) Distro() (string, *dbus.Error) {
 	s.activity.Touch()
 	return distro.PrettyName(), nil

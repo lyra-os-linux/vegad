@@ -44,7 +44,7 @@ func (k *KernelService) ListInstalled() ([]string, *dbus.Error) {
 
 // AvailablePackages lists every kernel package installable on the active
 // distro (not just what's already installed), so the UI's "install a
-// kernel" picker doesn't have to hardcode Arch package names.
+// kernel" picker doesn't have to hardcode package names.
 func (k *KernelService) AvailablePackages() ([]string, *dbus.Error) {
 	k.activity.Touch()
 	return k.provider.Kernel().AvailablePackages(), nil

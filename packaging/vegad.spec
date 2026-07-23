@@ -108,8 +108,7 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_datadir}/selinux/packages/vegad_bootloader.pp
 
 # vegad.service não tem [Install] (bus-activated, não systemctl enable) —
-# só as timers de update-check e log-export são habilitadas aqui, mesma
-# lógica de packaging/vegad/vegad.install.
+# só as timers de update-check e log-export são habilitadas aqui.
 #
 # O módulo SELinux só é carregado se o sistema tiver SELinux habilitado
 # (selinuxenabled) e as ferramentas certas instaladas — máquinas sem

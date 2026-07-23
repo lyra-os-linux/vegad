@@ -12,26 +12,13 @@ type ID int
 
 const (
 	Unknown ID = iota
-	Arch
 	OpenSUSELeap
-	// Debian covers both Debian and Ubuntu (and derivatives resolved via
-	// ID_LIKE, e.g. Pop!_OS, Linux Mint) — the package-manager mechanics
-	// (apt/dpkg) are identical for our purposes, so one Provider serves
-	// the whole family.
-	Debian
-	Fedora
 )
 
 func (d ID) String() string {
 	switch d {
-	case Arch:
-		return "arch"
 	case OpenSUSELeap:
 		return "opensuse-leap"
-	case Debian:
-		return "debian"
-	case Fedora:
-		return "fedora"
 	default:
 		return "unknown"
 	}
@@ -43,9 +30,9 @@ var osReleasePath = "/etc/os-release"
 
 // Detect reads /etc/os-release's ID (falling back to ID_LIKE for
 // derivatives) to identify the running distro family. It returns an error
-// for anything other than the distros vegad currently supports, rather than
-// guessing — callers must fail startup clearly instead of silently running
-// the wrong package manager commands.
+// for anything other than openSUSE Leap, the only distro vegad currently
+// supports, rather than guessing — callers must fail startup clearly
+// instead of silently running the wrong package manager commands.
 func Detect() (ID, error) {
 	fields, err := parseOSRelease(osReleasePath)
 	if err != nil {
@@ -66,9 +53,9 @@ func Detect() (ID, error) {
 }
 
 // PrettyName reports the running distro's human-readable name and version
-// (e.g. "openSUSE Leap 16.0", "Arch Linux"), straight from /etc/os-release's
-// PRETTY_NAME — this is for display only (About screen, logs), never for
-// branching logic, which must go through Detect/ID instead.
+// (e.g. "openSUSE Leap 16.0"), straight from /etc/os-release's PRETTY_NAME —
+// this is for display only (About screen, logs), never for branching logic,
+// which must go through Detect/ID instead.
 func PrettyName() string {
 	fields, err := parseOSRelease(osReleasePath)
 	if err != nil || fields["PRETTY_NAME"] == "" {
@@ -82,22 +69,15 @@ func PrettyName() string {
 
 func idFromName(name string) (ID, bool) {
 	switch name {
-	case "arch":
-		return Arch, true
 	case "opensuse-leap", "suse", "opensuse":
 		return OpenSUSELeap, true
-	case "debian", "ubuntu":
-		return Debian, true
-	case "fedora":
-		return Fedora, true
 	default:
 		return Unknown, false
 	}
 }
 
 // parseOSRelease parses the KEY=value (optionally quoted) lines of an
-// os-release file, per the freedesktop.org spec that both Arch and openSUSE
-// follow.
+// os-release file, per the freedesktop.org spec.
 func parseOSRelease(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

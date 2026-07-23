@@ -2,8 +2,8 @@ package distro
 
 import "fmt"
 
-// PackageBackend drives the distro's primary package manager (Pacman on
-// Arch, Zypper on openSUSE Leap).
+// PackageBackend drives the distro's primary package manager (Zypper on
+// openSUSE Leap).
 type PackageBackend interface {
 	// Name is the human-facing label for this backend ("Pacman"/"Zypper"),
 	// shown in the UI wherever it used to say "Pacman" unconditionally.
@@ -13,8 +13,8 @@ type PackageBackend interface {
 	ListInstalled() ([]PackageRef, error)
 	ListUpdates() ([]PackageRef, error)
 	// SyncDatabase refreshes local package metadata from the configured
-	// repos (`pacman -Sy` / `zypper refresh`). Touches the network and
-	// needs root; only the periodic update-check job calls it.
+	// repos (`zypper refresh`). Touches the network and needs root; only
+	// the periodic update-check job calls it.
 	SyncDatabase() error
 	GetDetails(id string) (PackageDetails, error)
 	Install(id string, report ProgressFunc) error
@@ -32,16 +32,15 @@ type PackageBackend interface {
 	// *UntrustedKeyError) and retries refreshing repo.
 	TrustRepoKey(repo, keyId string, report ProgressFunc) error
 
-	// OptimizeMirrors re-ranks/refreshes mirrors, where the concept exists
-	// (reflector on Arch). Backends without an equivalent (openSUSE, whose
-	// download redirector already picks the best mirror) return
-	// ErrUnsupported.
+	// OptimizeMirrors re-ranks/refreshes mirrors, where the concept exists.
+	// Backends without an equivalent (openSUSE, whose download redirector
+	// already picks the best mirror) return ErrUnsupported.
 	OptimizeMirrors(report ProgressFunc) error
 }
 
-// CommunityBackend drives an optional community package layer (AUR via
-// yay/paru on Arch). Providers without one (openSUSE Leap today) return nil
-// from Provider.Community() — callers must nil-check before use.
+// CommunityBackend drives an optional community package layer. Providers
+// without one (openSUSE Leap today) return nil from Provider.Community() —
+// callers must nil-check before use.
 type CommunityBackend interface {
 	// Name is the human-facing label for this layer ("AUR"), shown in the
 	// UI wherever it used to say "AUR" unconditionally.
@@ -60,21 +59,19 @@ type KernelBackend interface {
 	// AvailablePackages lists every kernel package this backend knows how to
 	// install for the active distro (not just what's installed) — the UI
 	// populates its "install a kernel" picker from this instead of
-	// hardcoding Arch package names.
+	// hardcoding package names.
 	AvailablePackages() []string
 	IsSupportedPackage(name string) bool
 	RunningKernelMatches(name string) bool
 	Install(name string, report ProgressFunc) error
 	Remove(name string) error
 
-	// RebuildBootArtifacts regenerates the initramfs (mkinitcpio/dracut)
-	// and bootloader config (grub-mkconfig/grub2-mkconfig) after a kernel
-	// or driver change.
+	// RebuildBootArtifacts regenerates the initramfs (dracut) and
+	// bootloader config (grub2-mkconfig) after a kernel or driver change.
 	RebuildBootArtifacts() error
 
-	// GrubConfigPath is where grub-mkconfig/grub2-mkconfig writes its
-	// generated config — it differs between distros
-	// (/boot/grub/grub.cfg vs /boot/grub2/grub.cfg).
+	// GrubConfigPath is where grub2-mkconfig writes its generated config
+	// (/boot/grub2/grub.cfg).
 	GrubConfigPath() string
 }
 
@@ -83,7 +80,7 @@ type KernelBackend interface {
 type HardwareBackend interface {
 	// AvailableNvidiaDrivers lists the driver identifiers this backend
 	// accepts, in display order — the UI populates its dropdown from this
-	// instead of hardcoding Arch package names.
+	// instead of hardcoding package names.
 	AvailableNvidiaDrivers() []string
 	SwitchNvidiaDriver(driver string, report ProgressFunc) error
 }
@@ -97,21 +94,15 @@ type Provider interface {
 	Kernel() KernelBackend
 	Hardware() HardwareBackend
 	// AdminGroup is the group membership that grants sudo/wheel access
-	// ("wheel" on both distros today).
+	// ("wheel" on openSUSE).
 	AdminGroup() string
 }
 
 // NewProvider builds the Provider for a detected distro.
 func NewProvider(d ID) (Provider, error) {
 	switch d {
-	case Arch:
-		return newArchProvider(), nil
 	case OpenSUSELeap:
 		return newOpenSUSEProvider(), nil
-	case Debian:
-		return newDebianProvider(), nil
-	case Fedora:
-		return newFedoraProvider(), nil
 	default:
 		return nil, fmt.Errorf("distro: nenhum provider disponível para %q", d)
 	}

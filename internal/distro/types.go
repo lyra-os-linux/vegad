@@ -1,11 +1,13 @@
-// Package distro isolates every Arch/openSUSE-specific detail (package
-// manager, kernel packaging, initramfs/bootloader regen, GPU driver
-// packages) behind a small set of interfaces, so the rest of vegad
-// (dbusserver) never shells out to pacman/zypper/mkinitcpio/dracut
-// directly — it asks the active Provider instead.
+// Package distro isolates every openSUSE-specific detail (package manager,
+// kernel packaging, initramfs/bootloader regen, GPU driver packages) behind
+// a small set of interfaces, so the rest of vegad (dbusserver) never shells
+// out to zypper/dracut directly — it asks the active Provider instead.
 package distro
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ProgressFunc reports coarse (stage-based, not byte-accurate) progress for
 // a running package transaction.
@@ -35,6 +37,17 @@ type UntrustedKeyError struct {
 
 func (e *UntrustedKeyError) Error() string {
 	return fmt.Sprintf("repositório %q assinado por chave não confiada %s (%s)", e.Repo, e.KeyId, e.UserId)
+}
+
+// SplitPackageList splits a space-separated zypper-style list field
+// ("Licenses", "Depends On", ...) into its entries, treating zypper's own
+// "None" as empty. Shared with flatpak.go's license parsing since both
+// formats use the same convention.
+func SplitPackageList(value string) []string {
+	if value == "" || value == "None" {
+		return nil
+	}
+	return strings.Fields(value)
 }
 
 // PackageRef identifies a package within one origin ("official", "flathub",

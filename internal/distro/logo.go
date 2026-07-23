@@ -43,3 +43,24 @@ func LogoPath() string {
 	}
 	return ""
 }
+
+// FindPackageIcon looks up a package's icon in the standard FHS icon
+// theme/pixmap paths — shared with the (distro-independent) Flatpak lookup
+// as a final fallback.
+func FindPackageIcon(id string) string {
+	candidates := []string{
+		filepath.Join("/usr/share/pixmaps", id+".png"),
+		filepath.Join("/usr/share/pixmaps", id+".svg"),
+		filepath.Join("/usr/share/icons/hicolor/scalable/apps", id+".svg"),
+		filepath.Join("/usr/share/icons/hicolor/256x256/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/128x128/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/64x64/apps", id+".png"),
+		filepath.Join("/usr/share/icons/hicolor/48x48/apps", id+".png"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}

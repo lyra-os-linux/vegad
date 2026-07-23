@@ -8,19 +8,15 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// FirewallService backs org.lyraos.Vega1.Firewall: orchestrates whichever
-// firewall manager is present — firewalld (Arch/openSUSE) or ufw
-// (Debian/Ubuntu, see ufw.go) — exposing friendly service names instead of
-// raw port numbers. Dispatch is by tool presence, not by distro ID, same
-// pattern SnapshotsService used to use for snapper/Timeshift before the
-// Timeshift backend was dropped (see snapshots.go).
+// FirewallService backs org.lyraos.Vega1.Firewall: orchestrates firewalld,
+// exposing friendly service names instead of raw port numbers.
 type FirewallService struct {
 	activity *Activity
 	conn     *dbus.Conn
 }
 
 type FirewallServiceInfo struct {
-	Name    string // firewalld service id ("samba") or ufw app name ("Samba")
+	Name    string // firewalld service id ("samba")
 	Label   string // friendly label, e.g. "Compartilhamento de arquivos"
 	Enabled bool
 }
@@ -30,11 +26,7 @@ func (f *FirewallService) Status() (bool, string, *dbus.Error) {
 	if commandAvailable("firewall-cmd") {
 		return firewalldStatus()
 	}
-	if ufwInstalled() {
-		active, zone := ufwStatus()
-		return active, zone, nil
-	}
-	return false, "", dbus.MakeFailedError(fmt.Errorf("nenhum firewall gerenciável (firewalld ou ufw) está disponível"))
+	return false, "", dbus.MakeFailedError(fmt.Errorf("firewalld não está disponível"))
 }
 
 func firewalldStatus() (bool, string, *dbus.Error) {
@@ -72,9 +64,6 @@ func (f *FirewallService) ListServices() ([]FirewallServiceInfo, *dbus.Error) {
 
 	if commandAvailable("firewall-cmd") {
 		return firewalldListServices(), nil
-	}
-	if ufwInstalled() {
-		return ufwListServices(), nil
 	}
 	return []FirewallServiceInfo{}, nil
 }
@@ -120,13 +109,7 @@ func (f *FirewallService) SetServiceEnabled(sender dbus.Sender, name string, ena
 	if commandAvailable("firewall-cmd") {
 		return firewalldSetServiceEnabled(name, enabled)
 	}
-	if ufwInstalled() {
-		if err := ufwSetServiceEnabled(name, enabled); err != nil {
-			return dbus.MakeFailedError(fmt.Errorf("ufw: %w", err))
-		}
-		return nil
-	}
-	return dbus.MakeFailedError(fmt.Errorf("nenhum firewall gerenciável (firewalld ou ufw) está disponível"))
+	return dbus.MakeFailedError(fmt.Errorf("firewalld não está disponível"))
 }
 
 func firewalldSetServiceEnabled(name string, enabled bool) *dbus.Error {
