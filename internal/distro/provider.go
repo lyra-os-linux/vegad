@@ -32,10 +32,6 @@ type PackageBackend interface {
 	// *UntrustedKeyError) and retries refreshing repo.
 	TrustRepoKey(repo, keyId string, report ProgressFunc) error
 
-	// OptimizeMirrors re-ranks/refreshes mirrors, where the concept exists.
-	// Backends without an equivalent (openSUSE, whose download redirector
-	// already picks the best mirror) return ErrUnsupported.
-	OptimizeMirrors(report ProgressFunc) error
 }
 
 // CommunityBackend drives an optional community package layer. Providers

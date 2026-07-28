@@ -28,7 +28,7 @@ const (
 // a transaction's existing coarse ProgressFunc. pkg is the package name —
 // for the "official" origin this equals PackageRef.Name/Id, so callers can
 // key UI state by it directly. Backends/flows without this granularity
-// (Flathub, AUR, ClearCache, OptimizeMirrors) simply never call it.
+// (Flathub, AUR and ClearCache) simply never call it.
 type PackageProgressFunc func(pkg string, phase PackagePhase, percent uint32)
 
 // RepositoryRef identifies a configured package repository and its current

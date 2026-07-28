@@ -340,19 +340,6 @@ func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enable
 	return nil
 }
 
-// OptimizeMirrors re-ranks package mirrors by download speed, where the
-// active distro's PackageBackend supports it (returns distro.ErrUnsupported
-// otherwise, e.g. openSUSE Leap).
-func (s *SoftwareService) OptimizeMirrors(sender dbus.Sender) (uint32, *dbus.Error) {
-	s.activity.Touch()
-	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
-		return 0, err
-	}
-	return s.startTransaction("Otimização de mirrors", func(report progressFunc, _ packageProgressFunc) error {
-		return s.provider.Package().OptimizeMirrors(report)
-	}), nil
-}
-
 // ClearCache clears the distro package manager's cache and orphaned Flatpak
 // runtimes as a single transaction.
 func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {

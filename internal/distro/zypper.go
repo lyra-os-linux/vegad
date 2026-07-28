@@ -501,13 +501,6 @@ func (z *zypperBackend) ClearCache(report ProgressFunc) error {
 		"Limpando cache...", "Cache limpo")
 }
 
-// OptimizeMirrors has no Zypper equivalent to expose: Leap's download
-// redirector (download.opensuse.org) already picks the best mirror per
-// request, unlike pacman's static mirrorlist that reflector re-ranks.
-func (z *zypperBackend) OptimizeMirrors(report ProgressFunc) error {
-	return ErrUnsupported
-}
-
 func (z *zypperBackend) ListRepos() ([]RepositoryRef, error) {
 	out, err := runCommandOutput("zypper", "--non-interactive", "repos")
 	if err != nil {
