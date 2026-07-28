@@ -14,6 +14,11 @@ import (
 // explicit conversion.
 type progressFunc = distro.ProgressFunc
 
+// packageProgressFunc reports fine-grained per-package progress for a
+// software transaction — same shape as distro.PackageProgressFunc, aliased
+// for the same reason as progressFunc above.
+type packageProgressFunc = distro.PackageProgressFunc
+
 func commandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil

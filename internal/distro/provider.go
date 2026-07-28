@@ -17,9 +17,9 @@ type PackageBackend interface {
 	// the periodic update-check job calls it.
 	SyncDatabase() error
 	GetDetails(id string) (PackageDetails, error)
-	Install(id string, report ProgressFunc) error
-	Remove(id string, report ProgressFunc) error
-	UpdateAll(report ProgressFunc) error
+	Install(id string, report ProgressFunc, pkgReport PackageProgressFunc) error
+	Remove(id string, report ProgressFunc, pkgReport PackageProgressFunc) error
+	UpdateAll(report ProgressFunc, pkgReport PackageProgressFunc) error
 	ClearCache(report ProgressFunc) error
 	ListRepos() ([]RepositoryRef, error)
 	SetRepoEnabled(repo string, enabled bool) error

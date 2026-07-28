@@ -13,6 +13,24 @@ import (
 // a running package transaction.
 type ProgressFunc func(percent uint32, message string)
 
+// PackagePhase distinguishes the two stages zypper --xmlout reports for a
+// single package: fetching the RPM (download) vs. applying it (install).
+// The values double as the wire strings sent over the PackageProgress D-Bus
+// signal, so they're user-facing-adjacent and shouldn't be renamed lightly.
+type PackagePhase string
+
+const (
+	PackagePhaseDownload PackagePhase = "download"
+	PackagePhaseInstall  PackagePhase = "install"
+)
+
+// PackageProgressFunc reports fine-grained, per-package progress alongside
+// a transaction's existing coarse ProgressFunc. pkg is the package name —
+// for the "official" origin this equals PackageRef.Name/Id, so callers can
+// key UI state by it directly. Backends/flows without this granularity
+// (Flathub, AUR, ClearCache, OptimizeMirrors) simply never call it.
+type PackageProgressFunc func(pkg string, phase PackagePhase, percent uint32)
+
 // RepositoryRef identifies a configured package repository and its current
 // state as reported by the distribution package manager.
 type RepositoryRef struct {
@@ -59,6 +77,11 @@ type PackageRef struct {
 	Description string
 	Installed   bool
 	Icon        string
+	// Repository is the source repo's display name, populated for pending
+	// updates (ListUpdates) so the UI can group the list by it — "Flathub"
+	// for that origin, the zypper repo's Name for "official". Empty where
+	// grouping doesn't apply (Search, ListInstalled).
+	Repository string
 }
 
 // PackageDetails is the expanded view of a single package shown in the

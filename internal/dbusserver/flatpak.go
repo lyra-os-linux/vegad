@@ -163,6 +163,7 @@ func listFlatpakUpdates(u *desktopUser) ([]PackageRef, error) {
 			Description: "Atualização disponível",
 			Installed:   true,
 			Icon:        findFlatpakIcon(id, u),
+			Repository:  "Flathub",
 		})
 	}
 	return results, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -190,9 +191,108 @@ func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
 			Description: fmt.Sprintf("%s → %s", fields[3], fields[4]),
 			Installed:   true,
 			Icon:        FindPackageIcon(name),
+			Repository:  fields[1],
 		})
 	}
 	return results, scanner.Err()
+}
+
+// zypperRepoAlias pairs a configured repo's alias (needed for `zypper
+// update --repo <alias>`) with its display Name (what `zypper list-updates`
+// prints in its "Repository" column — confirmed empirically to be the Name
+// field, not the alias, which can otherwise be a bare URL for repos added
+// without an explicit alias).
+type zypperRepoAlias struct {
+	Alias string
+	Name  string
+}
+
+// zypperRepoOrder parses `zypper repos` and returns every repo's
+// alias+name pair in the same order zypper itself lists them (its own
+// numbering) — the single source of truth for both display order (Updates
+// tab, grouped by repo) and execution order (UpdateAll, repo by repo).
+func zypperRepoOrder() ([]zypperRepoAlias, error) {
+	out, err := runCommandOutput("zypper", "--non-interactive", "repos")
+	if err != nil {
+		return nil, fmt.Errorf("falha ao listar repositórios: %w — %s", err, out)
+	}
+
+	var repos []zypperRepoAlias
+	seenHeader := false
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if isZypperTableRule(line) {
+			seenHeader = true
+			continue
+		}
+		if !seenHeader || !strings.Contains(line, "|") {
+			continue
+		}
+		fields := splitZypperTableLine(line)
+		if len(fields) < 3 || fields[1] == "" {
+			continue
+		}
+		repos = append(repos, zypperRepoAlias{Alias: fields[1], Name: fields[2]})
+	}
+	return repos, scanner.Err()
+}
+
+// RepoUpdateGroup is one repository's slice of the pending "safe" updates
+// (see zypperParseUpdates — excludes vendor-change updates, same set plain
+// `zypper update` already limits itself to).
+type RepoUpdateGroup struct {
+	Alias       string
+	DisplayName string
+	Packages    []PackageRef
+}
+
+// zypperGroupedUpdates groups pending updates by source repository, in
+// repo-numbering order (zypperRepoOrder), skipping repos with nothing
+// pending. This is the single source of truth for both the Updates tab's
+// display order and UpdateAll's execution order, so the two can never
+// drift apart.
+func zypperGroupedUpdates() ([]RepoUpdateGroup, error) {
+	updates, err := zypperParseUpdates()
+	if err != nil {
+		return nil, err
+	}
+	repos, err := zypperRepoOrder()
+	if err != nil {
+		return nil, err
+	}
+
+	byRepoName := make(map[string][]PackageRef, len(updates))
+	for _, pkg := range updates {
+		byRepoName[pkg.Repository] = append(byRepoName[pkg.Repository], pkg)
+	}
+
+	var groups []RepoUpdateGroup
+	seen := make(map[string]bool, len(repos))
+	for _, repo := range repos {
+		packages := byRepoName[repo.Name]
+		if len(packages) == 0 {
+			continue
+		}
+		seen[repo.Name] = true
+		groups = append(groups, RepoUpdateGroup{Alias: repo.Alias, DisplayName: repo.Name, Packages: packages})
+	}
+	// Updates whose Repository doesn't match any known repo Name (shouldn't
+	// normally happen, but repos can change between the two zypper calls)
+	// still need to be reachable — surface them as their own group keyed by
+	// the raw name, alias falling back to the same string. Sorted for
+	// deterministic ordering since map iteration order isn't.
+	var leftoverNames []string
+	for name := range byRepoName {
+		if !seen[name] {
+			leftoverNames = append(leftoverNames, name)
+		}
+	}
+	sort.Strings(leftoverNames)
+	for _, name := range leftoverNames {
+		groups = append(groups, RepoUpdateGroup{Alias: name, DisplayName: name, Packages: byRepoName[name]})
+	}
+	return groups, nil
 }
 
 // ListUpdates reports pending updates among installed packages from
@@ -212,15 +312,21 @@ func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
 // the plain run sees), so they're fired off concurrently — each is a full
 // zypper invocation that reloads repo metadata, and this call sits directly
 // in the dashboard's startup path.
+//
+// The "safe" side is grouped and ordered by source repository
+// (zypperGroupedUpdates), the same grouping/order UpdateAll executes in —
+// so the Updates tab's list and the actual repo-by-repo update run always
+// agree on ordering.
 func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
-	var safe, all []PackageRef
-	var safeErr, allErr error
+	var groups []RepoUpdateGroup
+	var all []PackageRef
+	var groupsErr, allErr error
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		safe, safeErr = zypperParseUpdates()
+		groups, groupsErr = zypperGroupedUpdates()
 	}()
 	go func() {
 		defer wg.Done()
@@ -228,19 +334,22 @@ func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
 	}()
 	wg.Wait()
 
-	if safeErr != nil {
-		return nil, safeErr
+	if groupsErr != nil {
+		return nil, groupsErr
 	}
 	if allErr != nil {
 		return nil, allErr
 	}
 
-	safeNames := make(map[string]bool, len(safe))
-	for _, pkg := range safe {
-		safeNames[pkg.Id] = true
+	var results []PackageRef
+	safeNames := make(map[string]bool)
+	for _, group := range groups {
+		for _, pkg := range group.Packages {
+			safeNames[pkg.Id] = true
+			results = append(results, pkg)
+		}
 	}
 
-	results := safe
 	for _, pkg := range all {
 		if safeNames[pkg.Id] {
 			continue
@@ -330,22 +439,61 @@ func (z *zypperBackend) GetDetails(id string) (PackageDetails, error) {
 	return details, nil
 }
 
-func (z *zypperBackend) Install(pkg string, report ProgressFunc) error {
-	return runStreamingCommand("zypper", []string{"--non-interactive", "install", "-y", "--", pkg}, report,
+func (z *zypperBackend) Install(pkg string, report ProgressFunc, pkgReport PackageProgressFunc) error {
+	return runZypperTransactionXML([]string{"--non-interactive", "install", "-y", "--", pkg}, report, pkgReport,
 		"Iniciando instalação...", "Instalação concluída")
 }
 
-func (z *zypperBackend) Remove(pkg string, report ProgressFunc) error {
-	return runStreamingCommand("zypper", []string{"--non-interactive", "remove", "-y", "--", pkg}, report,
+func (z *zypperBackend) Remove(pkg string, report ProgressFunc, pkgReport PackageProgressFunc) error {
+	return runZypperTransactionXML([]string{"--non-interactive", "remove", "-y", "--", pkg}, report, pkgReport,
 		"Iniciando remoção...", "Remoção concluída")
 }
 
-// UpdateAll runs `zypper update`, upgrading already-installed packages
-// (the Zypper analogue of `pacman -Syu`, not a full `dup` distribution
-// upgrade).
-func (z *zypperBackend) UpdateAll(report ProgressFunc) error {
-	return runStreamingCommand("zypper", []string{"--non-interactive", "update", "-y"}, report,
-		"Iniciando atualização...", "Atualização concluída")
+// UpdateAll upgrades already-installed packages one repository at a time
+// (in zypperGroupedUpdates' repo-numbering order), rather than a single
+// `zypper update` across every repo at once — so the user can watch each
+// repo's packages finish before the next one starts, matching the order
+// already shown in the Updates tab. A failure in one repo doesn't stop the
+// rest: remaining repos still run, and every failure is collected into one
+// final error.
+func (z *zypperBackend) UpdateAll(report ProgressFunc, pkgReport PackageProgressFunc) error {
+	groups, err := zypperGroupedUpdates()
+	if err != nil {
+		return err
+	}
+	if len(groups) == 0 {
+		report(100, "Nenhuma atualização pendente")
+		return nil
+	}
+
+	total := 0
+	for _, group := range groups {
+		total += len(group.Packages)
+	}
+
+	var completed int
+	var failures []string
+	for _, group := range groups {
+		repoSize := len(group.Packages)
+		wrapped := func(percent uint32, message string) {
+			overall := (completed*100 + int(percent)*repoSize) / total
+			report(uint32(overall), message)
+		}
+		err := runZypperTransactionXML(
+			[]string{"--non-interactive", "update", "-y", "--repo", group.Alias},
+			wrapped, pkgReport,
+			fmt.Sprintf("Atualizando %s...", group.DisplayName), "Atualização concluída")
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", group.DisplayName, err))
+		}
+		completed += repoSize
+	}
+
+	if len(failures) > 0 {
+		return fmt.Errorf("não foi possível atualizar pacotes de %d repositório(s): %s", len(failures), strings.Join(failures, "; "))
+	}
+	report(100, "Atualização concluída")
+	return nil
 }
 
 func (z *zypperBackend) ClearCache(report ProgressFunc) error {
