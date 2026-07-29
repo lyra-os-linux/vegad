@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // zypperBackend drives openSUSE Leap's Zypper as the PackageBackend, the
@@ -309,36 +308,24 @@ func zypperGroupedUpdates() ([]RepoUpdateGroup, error) {
 // they need manual resolution instead of quietly never appearing.
 //
 // The two runs are independent (no shared state, no --all narrowing what
-// the plain run sees), so they're fired off concurrently — each is a full
-// zypper invocation that reloads repo metadata, and this call sits directly
-// in the dashboard's startup path.
+// the plain run sees), but they must still run one at a time. libzypp uses
+// shared package-manager state, and concurrent zypper processes can make one
+// invocation return an empty result. zypperParseUpdates historically treated
+// that exit as "nothing to do", which then misclassified every update as a
+// vendor-change update.
 //
 // The "safe" side is grouped and ordered by source repository
 // (zypperGroupedUpdates), the same grouping/order UpdateAll executes in —
 // so the Updates tab's list and the actual repo-by-repo update run always
 // agree on ordering.
 func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
-	var groups []RepoUpdateGroup
-	var all []PackageRef
-	var groupsErr, allErr error
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		groups, groupsErr = zypperGroupedUpdates()
-	}()
-	go func() {
-		defer wg.Done()
-		all, allErr = zypperParseUpdates("--all")
-	}()
-	wg.Wait()
-
-	if groupsErr != nil {
-		return nil, groupsErr
+	groups, err := zypperGroupedUpdates()
+	if err != nil {
+		return nil, err
 	}
-	if allErr != nil {
-		return nil, allErr
+	all, err := zypperParseUpdates("--all")
+	if err != nil {
+		return nil, err
 	}
 
 	var results []PackageRef

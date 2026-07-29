@@ -172,6 +172,19 @@ func (s *Server) Export() error {
 				{Name: "UpdatesAvailable", Args: []introspect.Arg{
 					{Name: "count", Type: "u", Direction: "out"},
 				}},
+				{Name: "RepoKeyPending", Args: []introspect.Arg{
+					{Name: "transactionId", Type: "u", Direction: "out"},
+					{Name: "repo", Type: "s", Direction: "out"},
+					{Name: "keyId", Type: "s", Direction: "out"},
+					{Name: "fingerprint", Type: "s", Direction: "out"},
+					{Name: "userId", Type: "s", Direction: "out"},
+				}},
+				{Name: "PackageProgress", Args: []introspect.Arg{
+					{Name: "transactionId", Type: "u", Direction: "out"},
+					{Name: "package", Type: "s", Direction: "out"},
+					{Name: "phase", Type: "s", Direction: "out"},
+					{Name: "percent", Type: "u", Direction: "out"},
+				}},
 			}},
 			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots)},
 			{Name: BusName + ".Logs", Methods: introspect.Methods(logs)},
