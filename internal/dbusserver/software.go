@@ -320,6 +320,37 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	}), nil
 }
 
+// UpdatePackage updates a single pending update (see ListUpdates), letting
+// the origin's own dependency resolver pull in whatever else that requires,
+// instead of running the full UpdateAll.
+func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
+		return 0, err
+	}
+	switch origin {
+	case "official":
+		return s.startTransaction("Atualização oficial: "+id, func(report progressFunc, pkgReport packageProgressFunc) error {
+			return withSnapshots("Atualização oficial: "+id, func() error {
+				return s.provider.Package().UpdatePackage(id, report, pkgReport)
+			})
+		}), nil
+	case "flathub":
+		u := desktopUserOrNil(s.conn, sender, "UpdatePackage")
+		scope := "system"
+		if apps, err := flatpakInstalledApps(u); err == nil {
+			if app, ok := apps[id]; ok {
+				scope = app.Scope
+			}
+		}
+		return s.startTransaction("Atualização Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error {
+			return updateFlatpak(id, scope, u, report)
+		}), nil
+	default:
+		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
+	}
+}
+
 func (s *SoftwareService) ListRepos() ([]distro.RepositoryRef, *dbus.Error) {
 	s.activity.Touch()
 	repos, err := s.provider.Package().ListRepos()

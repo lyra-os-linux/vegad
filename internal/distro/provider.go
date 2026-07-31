@@ -20,6 +20,11 @@ type PackageBackend interface {
 	Install(id string, report ProgressFunc, pkgReport PackageProgressFunc) error
 	Remove(id string, report ProgressFunc, pkgReport PackageProgressFunc) error
 	UpdateAll(report ProgressFunc, pkgReport PackageProgressFunc) error
+	// UpdatePackage updates a single pending update, letting the backend's
+	// own dependency resolver pull in whatever else that requires — unlike
+	// Install/Remove, id here must already be a pending update (see
+	// ListUpdates), not an arbitrary package name.
+	UpdatePackage(id string, report ProgressFunc, pkgReport PackageProgressFunc) error
 	ClearCache(report ProgressFunc) error
 	ListRepos() ([]RepositoryRef, error)
 	SetRepoEnabled(repo string, enabled bool) error
@@ -31,7 +36,6 @@ type PackageBackend interface {
 	// TrustRepoKey imports/trusts keyId (as previously reported via
 	// *UntrustedKeyError) and retries refreshing repo.
 	TrustRepoKey(repo, keyId string, report ProgressFunc) error
-
 }
 
 // CommunityBackend drives an optional community package layer. Providers

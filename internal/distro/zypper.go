@@ -483,6 +483,15 @@ func (z *zypperBackend) UpdateAll(report ProgressFunc, pkgReport PackageProgress
 	return nil
 }
 
+// UpdatePackage updates a single package via `zypper update`, restricted to
+// that one package name — zypper's own dependency resolver still pulls in
+// whatever dependency bump it needs, the same as it would for the matching
+// package inside UpdateAll.
+func (z *zypperBackend) UpdatePackage(pkg string, report ProgressFunc, pkgReport PackageProgressFunc) error {
+	return runZypperTransactionXML([]string{"--non-interactive", "update", "-y", "--", pkg}, report, pkgReport,
+		"Iniciando atualização...", "Atualização concluída")
+}
+
 func (z *zypperBackend) ClearCache(report ProgressFunc) error {
 	return runStreamingCommand("zypper", []string{"clean", "--all"}, report,
 		"Limpando cache...", "Cache limpo")

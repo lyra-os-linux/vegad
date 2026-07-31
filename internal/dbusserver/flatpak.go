@@ -298,6 +298,22 @@ func removeFlatpak(appID, scope string, u *desktopUser, report progressFunc) err
 	)
 }
 
+// updateFlatpak updates a single installed Flatpak app, targeting whichever
+// installation it was actually found in (scope, resolved the same way
+// removeFlatpak does) rather than every installed app like updateAllFlatpak.
+func updateFlatpak(appID, scope string, u *desktopUser, report progressFunc) error {
+	if scope == "user" && u != nil {
+		return runStreamingCmd(
+			flatpakUserCmd(u, "update", "-y", "--noninteractive", "--user", appID),
+			report, "Iniciando atualização...", "Concluído",
+		)
+	}
+	return runStreamingCmd(
+		exec.Command("flatpak", "update", "-y", "--noninteractive", "--system", appID),
+		report, "Iniciando atualização...", "Concluído",
+	)
+}
+
 // updateAllFlatpak updates every installed Flatpak app to its latest
 // available version, in the system-wide installation and, when a desktop
 // user is resolved, that user's own --user installation too.
