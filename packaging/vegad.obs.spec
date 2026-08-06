@@ -2,8 +2,8 @@
 # Cópia de packaging/opensuse/vegad.spec adaptada só no Source0/%setup pra
 # bater com o tarball que o _service (tar_scm) deste mesmo diretório
 # gera — nome com sufixo de versão e diretório interno próprio, ao invés
-# do tar "achatado" (sem diretório-raiz) que .github/workflows/release-opensuse.yml
-# monta com tar czf. Resto do spec é idêntico ao de packaging/opensuse/.
+# do tar "achatado" usado pelo empacotamento local. Resto do spec é
+# idêntico ao de packaging/opensuse/.
 #
 # Version literal (não %%{version}/%%define) — o serviço set_version deste
 # diretório faz substituição textual simples na linha "Version:" e não
