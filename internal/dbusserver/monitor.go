@@ -37,7 +37,8 @@ type SystemMetrics struct {
 	CPUPerCore     []float64
 	// GPUPercent is -1 when neither sysfs nor the NVIDIA tooling exposes
 	// utilization for an installed GPU.
-	GPUPercent float64
+	GPUPercent   float64
+	GPUPerDevice []float64
 }
 
 type ProcessInfo struct {
@@ -54,48 +55,77 @@ func (m *MonitorService) Metrics() (SystemMetrics, *dbus.Error) {
 	m.activity.Touch()
 	metrics := SystemMetrics{}
 	metrics.CPUPercent, metrics.CPUPerCore = cpuPercentSnapshot()
-	metrics.GPUPercent = m.gpuPercent()
+	metrics.GPUPercent, metrics.GPUPerDevice = m.gpuPercents()
 	fillMemory(&metrics)
 	metrics.DiskReadBytes, metrics.DiskWriteBytes = diskCounters()
 	metrics.NetRxBytes, metrics.NetTxBytes = networkCounters()
 	return metrics, nil
 }
 
-// gpuPercent reads the kernel's inexpensive utilization counter when the DRM
-// driver provides one (notably amdgpu), then falls back to nvidia-smi and DRM
-// per-client engine counters. With more than one GPU, the busiest available
-// device is what the system-wide card displays.
-func (m *MonitorService) gpuPercent() float64 {
-	percent, found := gpuPercentFromDRM("/sys/class/drm")
-	if !found {
-		percent = -1
+// gpuPercents reads every GPU exposed by the kernel or vendor tooling. The
+// aggregate value remains the busiest device, while the ordered slice lets
+// clients render one history graph per GPU.
+func (m *MonitorService) gpuPercents() (float64, []float64) {
+	percents := gpuDevicesFromDRM("/sys/class/drm")
+	for device, percent := range gpuPercentsFromDRM("/sys/class/drm") {
+		mergeGPUPercent(percents, device, percent)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 	defer cancel()
-	if nvidiaPercent, ok := nvidiaGPUPercent(ctx); ok && nvidiaPercent > percent {
-		percent = nvidiaPercent
+	for device, percent := range nvidiaGPUPercentages(ctx) {
+		mergeGPUPercent(percents, device, percent)
 	}
 
 	// Intel and several other DRM drivers publish cumulative per-client engine
 	// times in /proc/*/fdinfo instead of a global sysfs percentage. Keep the
 	// previous snapshot on the service so normal two-second monitor refreshes
 	// provide the sampling interval without adding another sleep here.
-	if percent < 0 {
-		m.gpuMu.Lock()
-		now := time.Now()
-		current := drmFDInfoSnapshot("/proc")
-		if len(current) > 0 && len(m.gpuPrevious) > 0 {
-			preserveMonotonicDRMCounters(m.gpuPrevious, current)
-			if drmPercent, ok := gpuPercentBetween(m.gpuPrevious, current, now.Sub(m.gpuPreviousAt)); ok {
-				percent = drmPercent
-			}
+	m.gpuMu.Lock()
+	now := time.Now()
+	current := drmFDInfoSnapshot("/proc")
+	if len(current) > 0 && len(m.gpuPrevious) > 0 {
+		preserveMonotonicDRMCounters(m.gpuPrevious, current)
+		for device, percent := range gpuPercentsBetween(m.gpuPrevious, current, now.Sub(m.gpuPreviousAt)) {
+			mergeGPUPercent(percents, device, percent)
 		}
-		m.gpuPrevious = current
-		m.gpuPreviousAt = now
-		m.gpuMu.Unlock()
 	}
-	return percent
+	m.gpuPrevious = current
+	m.gpuPreviousAt = now
+	m.gpuMu.Unlock()
+
+	if len(percents) == 0 {
+		return -1, nil
+	}
+	devices := make([]string, 0, len(percents))
+	for device := range percents {
+		devices = append(devices, device)
+	}
+	sort.Strings(devices)
+	values := make([]float64, 0, len(devices))
+	aggregate := -1.0
+	for _, device := range devices {
+		value := percents[device]
+		values = append(values, value)
+		aggregate = max(aggregate, value)
+	}
+	return aggregate, values
+}
+
+func mergeGPUPercent(percents map[string]float64, device string, percent float64) {
+	device = normalizeGPUDevice(device)
+	if previous, ok := percents[device]; !ok || percent > previous {
+		percents[device] = percent
+	}
+}
+
+func normalizeGPUDevice(device string) string {
+	device = strings.ToLower(strings.TrimSpace(device))
+	if domain, rest, ok := strings.Cut(device, ":"); ok && len(domain) > 4 {
+		domain = domain[len(domain)-4:]
+		device = domain + ":" + rest
+	}
+	return device
 }
 
 type drmEngineSnapshot map[string]map[string]uint64
@@ -185,8 +215,18 @@ func preserveMonotonicDRMCounters(previous, current drmEngineSnapshot) {
 }
 
 func gpuPercentBetween(first, second drmEngineSnapshot, elapsed time.Duration) (float64, bool) {
+	percents := gpuPercentsBetween(first, second, elapsed)
+	maximum := 0.0
+	for _, percent := range percents {
+		maximum = max(maximum, percent)
+	}
+	return maximum, len(percents) > 0
+}
+
+func gpuPercentsBetween(first, second drmEngineSnapshot, elapsed time.Duration) map[string]float64 {
+	percents := make(map[string]float64)
 	if elapsed <= 0 {
-		return 0, false
+		return percents
 	}
 	busyByEngine := make(map[string]uint64)
 	for client, secondEngines := range second {
@@ -203,18 +243,17 @@ func gpuPercentBetween(first, second drmEngineSnapshot, elapsed time.Duration) (
 			busyByEngine[device+"\x00"+engine] += secondValue - firstValue
 		}
 	}
-	maximum := 0.0
-	for _, busy := range busyByEngine {
+	for deviceAndEngine, busy := range busyByEngine {
+		device, _, _ := strings.Cut(deviceAndEngine, "\x00")
 		value := float64(busy) * 100 / float64(elapsed.Nanoseconds())
-		maximum = max(maximum, min(value, 100))
+		mergeGPUPercent(percents, device, min(value, 100))
 	}
-	return maximum, len(busyByEngine) > 0
+	return percents
 }
 
-func gpuPercentFromDRM(root string) (float64, bool) {
+func gpuPercentsFromDRM(root string) map[string]float64 {
+	percents := make(map[string]float64)
 	paths, _ := filepath.Glob(filepath.Join(root, "card[0-9]*", "device", "gpu_busy_percent"))
-	maximum := 0.0
-	found := false
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -225,42 +264,74 @@ func gpuPercentFromDRM(root string) (float64, bool) {
 			continue
 		}
 		value = min(max(value, 0), 100)
-		if !found || value > maximum {
-			maximum = value
-		}
-		found = true
+		deviceDir := filepath.Dir(path)
+		device := gpuDeviceIdentity(deviceDir)
+		mergeGPUPercent(percents, device, value)
 	}
-	return maximum, found
+	return percents
 }
 
-func nvidiaGPUPercent(ctx context.Context) (float64, bool) {
+func gpuDevicesFromDRM(root string) map[string]float64 {
+	devices := make(map[string]float64)
+	paths, _ := filepath.Glob(filepath.Join(root, "card[0-9]*"))
+	for _, path := range paths {
+		name := filepath.Base(path)
+		if _, err := strconv.ParseUint(strings.TrimPrefix(name, "card"), 10, 32); err != nil {
+			continue
+		}
+		deviceDir := filepath.Join(path, "device")
+		if _, err := os.Stat(deviceDir); err != nil {
+			continue
+		}
+		devices[gpuDeviceIdentity(deviceDir)] = -1
+	}
+	return devices
+}
+
+func gpuDeviceIdentity(deviceDir string) string {
+	data, err := os.ReadFile(filepath.Join(deviceDir, "uevent"))
+	if err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if value, ok := strings.CutPrefix(line, "PCI_SLOT_NAME="); ok {
+				return normalizeGPUDevice(value)
+			}
+		}
+	}
+	return filepath.Base(filepath.Dir(deviceDir))
+}
+
+func nvidiaGPUPercentages(ctx context.Context) map[string]float64 {
 	path, err := exec.LookPath("nvidia-smi")
 	if err != nil {
-		return 0, false
+		return map[string]float64{}
 	}
 	output, err := exec.CommandContext(
 		ctx,
 		path,
-		"--query-gpu=utilization.gpu",
+		"--query-gpu=pci.bus_id,utilization.gpu",
 		"--format=csv,noheader,nounits",
 	).Output()
 	if err != nil {
-		return 0, false
+		return map[string]float64{}
 	}
-	maximum := 0.0
-	found := false
+	return parseNvidiaGPUPercentages(string(output))
+}
+
+func parseNvidiaGPUPercentages(output string) map[string]float64 {
+	percents := make(map[string]float64)
 	for _, line := range strings.Split(string(output), "\n") {
-		value, err := strconv.ParseFloat(strings.TrimSpace(line), 64)
+		device, rawValue, ok := strings.Cut(line, ",")
+		if !ok {
+			continue
+		}
+		value, err := strconv.ParseFloat(strings.TrimSpace(rawValue), 64)
 		if err != nil {
 			continue
 		}
 		value = min(max(value, 0), 100)
-		if !found || value > maximum {
-			maximum = value
-		}
-		found = true
+		mergeGPUPercent(percents, device, value)
 	}
-	return maximum, found
+	return percents
 }
 
 func (m *MonitorService) ListProcesses() ([]ProcessInfo, *dbus.Error) {

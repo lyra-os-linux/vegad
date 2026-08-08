@@ -50,7 +50,7 @@ func TestCPUStatPercentComputesUsageFromDelta(t *testing.T) {
 	}
 }
 
-func TestGPUPercentFromDRMUsesBusiestCard(t *testing.T) {
+func TestGPUPercentFromDRMReturnsEveryCard(t *testing.T) {
 	root := t.TempDir()
 	for card, value := range map[string]string{"card0": "17\n", "card1": "63\n"} {
 		device := filepath.Join(root, card, "device")
@@ -61,15 +61,35 @@ func TestGPUPercentFromDRMUsesBusiestCard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	percent, ok := gpuPercentFromDRM(root)
-	if !ok || percent != 63 {
-		t.Fatalf("expected busiest GPU at 63%%, got %v (found=%v)", percent, ok)
+	percents := gpuPercentsFromDRM(root)
+	if percents["card0"] != 17 || percents["card1"] != 63 || len(percents) != 2 {
+		t.Fatalf("expected both GPU percentages, got %+v", percents)
 	}
 }
 
 func TestGPUPercentFromDRMReportsUnavailable(t *testing.T) {
-	if percent, ok := gpuPercentFromDRM(t.TempDir()); ok || percent != 0 {
-		t.Fatalf("expected no available GPU metric, got %v (found=%v)", percent, ok)
+	if percents := gpuPercentsFromDRM(t.TempDir()); len(percents) != 0 {
+		t.Fatalf("expected no available GPU metric, got %+v", percents)
+	}
+}
+
+func TestGPUDevicesFromDRMKeepsCardsWithoutUtilizationCounter(t *testing.T) {
+	root := t.TempDir()
+	for _, card := range []string{"card0", "card1", "card1-HDMI-A-1"} {
+		if err := os.MkdirAll(filepath.Join(root, card, "device"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devices := gpuDevicesFromDRM(root)
+	if devices["card0"] != -1 || devices["card1"] != -1 || len(devices) != 2 {
+		t.Fatalf("expected both physical cards and no connector, got %+v", devices)
+	}
+}
+
+func TestParseNvidiaGPUPercentagesKeepsDevicesSeparate(t *testing.T) {
+	percents := parseNvidiaGPUPercentages("00000000:01:00.0, 28\n00000000:02:00.0, 74\n")
+	if percents["0000:01:00.0"] != 28 || percents["0000:02:00.0"] != 74 || len(percents) != 2 {
+		t.Fatalf("expected both NVIDIA GPUs with normalized PCI addresses, got %+v", percents)
 	}
 }
 
@@ -102,5 +122,20 @@ func TestGPUPercentBetweenUsesBusiestEngine(t *testing.T) {
 	percent, ok := gpuPercentBetween(first, second, 100*time.Millisecond)
 	if !ok || percent != 50 {
 		t.Fatalf("expected render engine at 50%%, got %v (found=%v)", percent, ok)
+	}
+}
+
+func TestGPUPercentBetweenKeepsDevicesSeparate(t *testing.T) {
+	first := drmEngineSnapshot{
+		"0000:00:02.0\x001": {"render": 0},
+		"0000:03:00.0\x001": {"render": 0},
+	}
+	second := drmEngineSnapshot{
+		"0000:00:02.0\x001": {"render": 25000000},
+		"0000:03:00.0\x001": {"render": 75000000},
+	}
+	percents := gpuPercentsBetween(first, second, 100*time.Millisecond)
+	if percents["0000:00:02.0"] != 25 || percents["0000:03:00.0"] != 75 || len(percents) != 2 {
+		t.Fatalf("expected a percentage per DRM device, got %+v", percents)
 	}
 }
