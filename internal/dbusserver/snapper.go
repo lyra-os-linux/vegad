@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"sort"
@@ -12,7 +13,10 @@ import (
 	"time"
 )
 
-const snapperConfig = "root"
+const (
+	snapperConfig     = "root"
+	snapperConfigPath = "/etc/snapper/configs/root"
+)
 
 var errSnapperUnavailable = errors.New("snapper não está disponível neste sistema")
 
@@ -47,7 +51,13 @@ func createSnapperSnapshot(kind, description string, preNumber ...uint32) (uint3
 		return 0, errSnapperUnavailable
 	}
 
-	args := []string{"create", "--type", kind, "--description", description, "--print-number"}
+	args := []string{
+		"create",
+		"--type", kind,
+		"--description", description,
+		"--cleanup-algorithm", "number",
+		"--print-number",
+	}
 	if len(preNumber) > 0 {
 		args = append(args, "--pre-number", strconv.FormatUint(uint64(preNumber[0]), 10))
 	}
@@ -61,7 +71,18 @@ func createSnapperSnapshot(kind, description string, preNumber ...uint32) (uint3
 	if parseErr != nil {
 		return 0, fmt.Errorf("snapper create: saída inesperada %q: %w", strings.TrimSpace(string(out)), parseErr)
 	}
-	return uint32(n), nil
+	id := uint32(n)
+	// A policy configured through Vega is an exact upper bound. Snapper's
+	// periodic cleanup can be delayed by NUMBER_MIN_AGE, so enforce it after
+	// completing each standalone snapshot or pre/post pair as well.
+	if kind != "pre" {
+		if keepCount, ok := configuredSnapperRetention(); ok {
+			if err := pruneSnapperSnapshots(keepCount); err != nil {
+				log.Printf("vegad: snapshot %d criado, mas a retenção falhou: %v", id, err)
+			}
+		}
+	}
+	return id, nil
 }
 
 // readSnapperCSV tries a candidate delimiter and reports success only if it
@@ -291,6 +312,75 @@ func setSnapperRetentionPolicy(keepCount uint32) error {
 	if !snapperInstalled() {
 		return errSnapperUnavailable
 	}
+	if keepCount == 0 {
+		return errors.New("a retenção deve manter pelo menos um snapshot")
+	}
 	_, err := snapperCombinedOutput("set-config", fmt.Sprintf("NUMBER_LIMIT=%d", keepCount))
-	return err
+	if err != nil {
+		return err
+	}
+	return pruneSnapperSnapshots(keepCount)
+}
+
+// configuredSnapperRetention reads the upper bound from Snapper's persisted
+// configuration. Besides the exact value written by Vega, accept Snapper's
+// native "min-max" form and use its maximum as the retention ceiling.
+func configuredSnapperRetention() (uint32, bool) {
+	data, err := os.ReadFile(snapperConfigPath)
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, found := strings.Cut(line, "=")
+		if !found || strings.TrimSpace(key) != "NUMBER_LIMIT" {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), "\"'")
+		if _, upper, found := strings.Cut(value, "-"); found {
+			value = strings.TrimSpace(upper)
+		}
+		limit, err := strconv.ParseUint(value, 10, 32)
+		return uint32(limit), err == nil && limit > 0
+	}
+	return 0, false
+}
+
+func pruneSnapperSnapshots(keepCount uint32) error {
+	snapshots, err := listSnapperSnapshots()
+	if err != nil {
+		return err
+	}
+	for _, id := range snapshotsBeyondRetention(snapshots, keepCount) {
+		if err := deleteSnapperSnapshot(id); err != nil {
+			return fmt.Errorf("excluir snapshot antigo %d: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// snapshotsBeyondRetention returns deletion candidates from oldest to newest.
+// Snapshot zero represents the live system in Snapper and is never counted.
+func snapshotsBeyondRetention(snapshots []SnapshotInfo, keepCount uint32) []uint32 {
+	actual := make([]SnapshotInfo, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		if snapshot.Id != 0 {
+			actual = append(actual, snapshot)
+		}
+	}
+	sort.SliceStable(actual, func(i, j int) bool {
+		if actual[i].Timestamp == actual[j].Timestamp {
+			return actual[i].Id > actual[j].Id
+		}
+		return actual[i].Timestamp > actual[j].Timestamp
+	})
+	if uint32(len(actual)) <= keepCount {
+		return nil
+	}
+
+	excess := len(actual) - int(keepCount)
+	ids := make([]uint32, 0, excess)
+	for i := len(actual) - 1; len(ids) < excess; i-- {
+		ids = append(ids, actual[i].Id)
+	}
+	return ids
 }

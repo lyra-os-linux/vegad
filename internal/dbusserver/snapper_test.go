@@ -47,3 +47,25 @@ func TestParseSnapperSnapshotsCSVComma(t *testing.T) {
 		t.Fatalf("unexpected row mapping: %+v", rows[2])
 	}
 }
+
+func TestSnapshotsBeyondRetentionKeepsNewest(t *testing.T) {
+	snapshots := []SnapshotInfo{
+		{Id: 3, Timestamp: 300},
+		{Id: 0, Timestamp: 0}, // sistema atual: não conta para a retenção
+		{Id: 1, Timestamp: 100},
+		{Id: 4, Timestamp: 300}, // ID maior desempata como mais recente
+		{Id: 2, Timestamp: 200},
+	}
+
+	deleted := snapshotsBeyondRetention(snapshots, 2)
+	if len(deleted) != 2 || deleted[0] != 1 || deleted[1] != 2 {
+		t.Fatalf("expected oldest snapshots [1 2], got %v", deleted)
+	}
+}
+
+func TestSnapshotsBeyondRetentionDoesNothingWithinLimit(t *testing.T) {
+	snapshots := []SnapshotInfo{{Id: 0}, {Id: 8, Timestamp: 100}}
+	if deleted := snapshotsBeyondRetention(snapshots, 10); len(deleted) != 0 {
+		t.Fatalf("expected no snapshots to be deleted, got %v", deleted)
+	}
+}
