@@ -1,6 +1,11 @@
 package dbusserver
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
 
 const sampleProcStat = `cpu  100 0 100 700 50 0 0 0 0 0
 cpu0  50 0 50 350 25 0 0 0 0 0
@@ -42,5 +47,60 @@ func TestCPUStatPercentComputesUsageFromDelta(t *testing.T) {
 	// delta total=100, delta idle=50 -> 50% busy.
 	if percent := cpuStatPercent(first, second); percent != 50 {
 		t.Fatalf("expected 50%%, got %v", percent)
+	}
+}
+
+func TestGPUPercentFromDRMUsesBusiestCard(t *testing.T) {
+	root := t.TempDir()
+	for card, value := range map[string]string{"card0": "17\n", "card1": "63\n"} {
+		device := filepath.Join(root, card, "device")
+		if err := os.MkdirAll(device, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(device, "gpu_busy_percent"), []byte(value), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	percent, ok := gpuPercentFromDRM(root)
+	if !ok || percent != 63 {
+		t.Fatalf("expected busiest GPU at 63%%, got %v (found=%v)", percent, ok)
+	}
+}
+
+func TestGPUPercentFromDRMReportsUnavailable(t *testing.T) {
+	if percent, ok := gpuPercentFromDRM(t.TempDir()); ok || percent != 0 {
+		t.Fatalf("expected no available GPU metric, got %v (found=%v)", percent, ok)
+	}
+}
+
+func TestParseDRMFDInfoReadsEngineNanoseconds(t *testing.T) {
+	client, engines, ok := parseDRMFDInfo(`pos: 0
+drm-driver: i915
+drm-client-id: 7
+drm-pdev: 0000:00:02.0
+drm-engine-render: 120000000 ns
+drm-engine-video: 30000000 ns
+drm-engine-capacity-video: 2
+`)
+	if !ok || client != "0000:00:02.0\x007" {
+		t.Fatalf("unexpected client identity %q (found=%v)", client, ok)
+	}
+	if engines["render"] != 120000000 || engines["video"] != 30000000 || len(engines) != 2 {
+		t.Fatalf("unexpected DRM engines: %+v", engines)
+	}
+}
+
+func TestGPUPercentBetweenUsesBusiestEngine(t *testing.T) {
+	first := drmEngineSnapshot{
+		"0000:00:02.0\x001": {"render": 100, "video": 200},
+		"0000:00:02.0\x002": {"render": 300},
+	}
+	second := drmEngineSnapshot{
+		"0000:00:02.0\x001": {"render": 25000100, "video": 10000200},
+		"0000:00:02.0\x002": {"render": 25000300},
+	}
+	percent, ok := gpuPercentBetween(first, second, 100*time.Millisecond)
+	if !ok || percent != 50 {
+		t.Fatalf("expected render engine at 50%%, got %v (found=%v)", percent, ok)
 	}
 }
