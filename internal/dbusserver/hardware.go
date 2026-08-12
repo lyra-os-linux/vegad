@@ -11,6 +11,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/distro"
+	vegai18n "github.com/lyraos/vegad/internal/i18n"
 )
 
 // HardwareService backs org.lyraos.Vega1.Hardware: inventory, NVIDIA
@@ -29,11 +30,15 @@ type HardwareInventory struct {
 }
 
 func (h *HardwareService) Inventory() (HardwareInventory, *dbus.Error) {
+	return h.InventoryLocalized(vegai18n.DefaultLocale)
+}
+
+func (h *HardwareService) InventoryLocalized(locale string) (HardwareInventory, *dbus.Error) {
 	h.activity.Touch()
 	return HardwareInventory{
-		CPU:     cpuModelName(),
-		GPU:     gpuDescription(),
-		RAMText: ramDescription(),
+		CPU:     cpuModelName(locale),
+		GPU:     gpuDescription(locale),
+		RAMText: ramDescription(locale),
 	}, nil
 }
 
@@ -68,9 +73,13 @@ func (h *HardwareService) SwitchNvidiaDriver(sender dbus.Sender, driver string) 
 }
 
 func (h *HardwareService) FirmwareStatus() (string, *dbus.Error) {
+	return h.FirmwareStatusLocalized(vegai18n.DefaultLocale)
+}
+
+func (h *HardwareService) FirmwareStatusLocalized(locale string) (string, *dbus.Error) {
 	h.activity.Touch()
 	if !commandAvailable("fwupdmgr") {
-		return "fwupd não disponível neste sistema", nil
+		return vegai18n.T(locale, "hardware.fwupd_unavailable"), nil
 	}
 
 	out, err := runCommandOutput("fwupdmgr", "get-updates")
@@ -80,21 +89,21 @@ func (h *HardwareService) FirmwareStatus() (string, *dbus.Error) {
 			// fwupdmgr uses exit code 2 for "nothing to do" (no updates
 			// available), not a real failure — the message text itself is
 			// locale-dependent so it can't be matched reliably.
-			return "Nenhuma atualização de firmware disponível", nil
+			return vegai18n.T(locale, "hardware.no_firmware_updates"), nil
 		}
 		return "", dbus.MakeFailedError(fmt.Errorf("fwupdmgr get-updates: %w — %s", err, out))
 	}
 
 	if out == "" {
-		return "Nenhuma atualização de firmware disponível", nil
+		return vegai18n.T(locale, "hardware.no_firmware_updates"), nil
 	}
 	return out, nil
 }
 
-func cpuModelName() string {
+func cpuModelName(locale string) string {
 	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
-		return "CPU indisponível"
+		return vegai18n.T(locale, "hardware.cpu_unavailable")
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -104,13 +113,13 @@ func cpuModelName() string {
 			}
 		}
 	}
-	return "CPU indisponível"
+	return vegai18n.T(locale, "hardware.cpu_unavailable")
 }
 
-func ramDescription() string {
+func ramDescription(locale string) string {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return "RAM indisponível"
+		return vegai18n.T(locale, "hardware.ram_unavailable")
 	}
 	re := regexp.MustCompile(`^MemTotal:\s+(\d+)\s+kB$`)
 	for _, line := range strings.Split(string(data), "\n") {
@@ -123,10 +132,10 @@ func ramDescription() string {
 			return fmt.Sprintf("%.1f GiB", gb)
 		}
 	}
-	return "RAM indisponível"
+	return vegai18n.T(locale, "hardware.ram_unavailable")
 }
 
-func gpuDescription() string {
+func gpuDescription(locale string) string {
 	if commandAvailable("lspci") {
 		out, err := runCommandOutput("lspci", "-nn")
 		if err == nil {
@@ -140,5 +149,5 @@ func gpuDescription() string {
 			}
 		}
 	}
-	return "GPU indisponível"
+	return vegai18n.T(locale, "hardware.gpu_unavailable")
 }

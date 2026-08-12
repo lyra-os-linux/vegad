@@ -1,0 +1,21 @@
+{
+  "common.completed": "Completed",
+  "hardware.cpu_unavailable": "CPU unavailable",
+  "hardware.gpu_unavailable": "GPU unavailable",
+  "hardware.ram_unavailable": "RAM unavailable",
+  "hardware.fwupd_unavailable": "fwupd is not available on this system",
+  "hardware.no_firmware_updates": "No firmware updates available",
+  "services.remote_access.label": "Remote access",
+  "services.remote_access.description": "SSH server",
+  "services.bluetooth.description": "Bluetooth manager",
+  "services.printing.label": "Printing",
+  "services.printing.description": "Printing system",
+  "services.network.label": "Network",
+  "services.network.description": "Connection manager",
+  "services.firewall.description": "System firewall",
+  "services.discovery.label": "Network discovery",
+  "services.discovery.description": "mDNS/Bonjour service",
+  "services.systemd.description": "systemd service",
+  "snapshots.timeshift_diff_unavailable": "Timeshift does not provide a package diff; review the snapshot and destination before rollback.",
+  "snapshots.no_changes": "No differences found."
+}

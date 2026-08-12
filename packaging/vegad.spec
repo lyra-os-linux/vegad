@@ -73,6 +73,10 @@ install -Dm644 packaging/vegad/org.lyraos.Vega1.service \
   %{buildroot}%{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
 install -Dm644 packaging/vegad/org.lyraos.vega.policy \
   %{buildroot}%{_datadir}/polkit-1/actions/org.lyraos.vega.policy
+for locale in en-US pt-BR es-ES zh-CN; do
+  install -Dm644 "vegad/internal/i18n/catalog/${locale}.json" \
+    "%{buildroot}%{_datadir}/locale/${locale}/LC_MESSAGES/vegad.json"
+done
 
 # Exportação periódica do journal do vegad para /var/log/vega/vegad.log —
 # journalctl continua sendo a fonte de verdade (o módulo Log do Sistema do
@@ -103,6 +107,10 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
 %{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
 %{_datadir}/polkit-1/actions/org.lyraos.vega.policy
+%lang(en-US) %{_datadir}/locale/en-US/LC_MESSAGES/vegad.json
+%lang(pt-BR) %{_datadir}/locale/pt-BR/LC_MESSAGES/vegad.json
+%lang(es-ES) %{_datadir}/locale/es-ES/LC_MESSAGES/vegad.json
+%lang(zh-CN) %{_datadir}/locale/zh-CN/LC_MESSAGES/vegad.json
 %dir %{_datadir}/selinux
 %dir %{_datadir}/selinux/packages
 %{_datadir}/selinux/packages/vegad_bootloader.pp

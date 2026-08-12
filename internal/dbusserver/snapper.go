@@ -289,7 +289,7 @@ func snapperDiffLines(snapshotID uint32) ([]string, error) {
 	if lastErr != nil {
 		return []string{lastErr.Error()}, nil
 	}
-	return []string{"Nenhuma diferença encontrada."}, nil
+	return []string{"No differences found."}, nil
 }
 
 func rollbackSnapperSnapshot(snapshotID uint32) error {

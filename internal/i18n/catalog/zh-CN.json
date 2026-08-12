@@ -1,0 +1,21 @@
+{
+  "common.completed": "已完成",
+  "hardware.cpu_unavailable": "CPU 不可用",
+  "hardware.gpu_unavailable": "GPU 不可用",
+  "hardware.ram_unavailable": "内存不可用",
+  "hardware.fwupd_unavailable": "此系统不提供 fwupd",
+  "hardware.no_firmware_updates": "没有可用的固件更新",
+  "services.remote_access.label": "远程访问",
+  "services.remote_access.description": "SSH 服务器",
+  "services.bluetooth.description": "蓝牙管理器",
+  "services.printing.label": "打印",
+  "services.printing.description": "打印系统",
+  "services.network.label": "网络",
+  "services.network.description": "连接管理器",
+  "services.firewall.description": "系统防火墙",
+  "services.discovery.label": "网络发现",
+  "services.discovery.description": "mDNS/Bonjour 服务",
+  "services.systemd.description": "systemd 服务",
+  "snapshots.timeshift_diff_unavailable": "Timeshift 不提供软件包差异；回滚前请检查快照和目标位置。",
+  "snapshots.no_changes": "未发现差异。"
+}

@@ -1,0 +1,21 @@
+{
+  "common.completed": "Completado",
+  "hardware.cpu_unavailable": "CPU no disponible",
+  "hardware.gpu_unavailable": "GPU no disponible",
+  "hardware.ram_unavailable": "RAM no disponible",
+  "hardware.fwupd_unavailable": "fwupd no está disponible en este sistema",
+  "hardware.no_firmware_updates": "No hay actualizaciones de firmware disponibles",
+  "services.remote_access.label": "Acceso remoto",
+  "services.remote_access.description": "Servidor SSH",
+  "services.bluetooth.description": "Gestor de Bluetooth",
+  "services.printing.label": "Impresión",
+  "services.printing.description": "Sistema de impresión",
+  "services.network.label": "Red",
+  "services.network.description": "Gestor de conexiones",
+  "services.firewall.description": "Firewall del sistema",
+  "services.discovery.label": "Descubrimiento de red",
+  "services.discovery.description": "Servicio mDNS/Bonjour",
+  "services.systemd.description": "Servicio systemd",
+  "snapshots.timeshift_diff_unavailable": "Timeshift no proporciona diferencias de paquetes; revise la instantánea y el destino antes de revertir.",
+  "snapshots.no_changes": "No se encontraron diferencias."
+}

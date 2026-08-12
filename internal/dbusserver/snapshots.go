@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/godbus/dbus/v5"
+	vegai18n "github.com/lyraos/vegad/internal/i18n"
 )
 
 // SnapshotsService drives an already installed snapshot tool. Snapper takes
@@ -71,16 +72,25 @@ func (s *SnapshotsService) CreateSnapshot(sender dbus.Sender, description string
 // DiffPackages reports what would change (pending) if snapshotID were
 // restored, so the confirmation screen can show it before rollback.
 func (s *SnapshotsService) DiffPackages(snapshotID uint32) ([]string, *dbus.Error) {
+	return s.DiffPackagesLocalized(snapshotID, vegai18n.DefaultLocale)
+}
+
+func (s *SnapshotsService) DiffPackagesLocalized(snapshotID uint32, locale string) ([]string, *dbus.Error) {
 	s.activity.Touch()
 	if !snapperInstalled() && !timeshiftInstalled() {
 		return nil, dbus.MakeFailedError(errNoSnapshotTool)
 	}
 	if timeshiftInstalled() && !snapperInstalled() {
-		return []string{"Timeshift não fornece um diff de pacotes; revise o snapshot e o destino antes do rollback."}, nil
+		return []string{vegai18n.T(locale, "snapshots.timeshift_diff_unavailable")}, nil
 	}
 	lines, err := snapperDiffLines(snapshotID)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
+	}
+	for i, line := range lines {
+		if line == "No differences found." {
+			lines[i] = vegai18n.T(locale, "snapshots.no_changes")
+		}
 	}
 	return lines, nil
 }

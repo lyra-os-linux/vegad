@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/godbus/dbus/v5"
+	vegai18n "github.com/lyraos/vegad/internal/i18n"
 )
 
 // ServicesService backs org.lyraos.Vega1.Services: a curated list of user-facing systemd units with enable/disable and
@@ -24,32 +25,40 @@ type ManagedServiceInfo struct {
 }
 
 var curatedServices = []struct {
-	name        string
-	label       string
-	description string
+	name           string
+	labelKey       string
+	descriptionKey string
 }{
-	{name: "sshd.service", label: "Acesso remoto", description: "Servidor SSH"},
-	{name: "bluetooth.service", label: "Bluetooth", description: "Gerenciador do Bluetooth"},
-	{name: "cups.service", label: "Impressão", description: "Sistema de impressão"},
-	{name: "NetworkManager.service", label: "Rede", description: "Gerenciador de conexões"},
-	{name: "firewalld.service", label: "Firewall", description: "Firewall do sistema"},
-	{name: "avahi-daemon.service", label: "Descoberta na rede", description: "Serviço mDNS/Bonjour"},
+	{name: "sshd.service", labelKey: "services.remote_access.label", descriptionKey: "services.remote_access.description"},
+	{name: "bluetooth.service", labelKey: "Bluetooth", descriptionKey: "services.bluetooth.description"},
+	{name: "cups.service", labelKey: "services.printing.label", descriptionKey: "services.printing.description"},
+	{name: "NetworkManager.service", labelKey: "services.network.label", descriptionKey: "services.network.description"},
+	{name: "firewalld.service", labelKey: "Firewall", descriptionKey: "services.firewall.description"},
+	{name: "avahi-daemon.service", labelKey: "services.discovery.label", descriptionKey: "services.discovery.description"},
 }
 
 func (s *ServicesService) ListServices() ([]ManagedServiceInfo, *dbus.Error) {
+	return s.ListServicesLocalized(vegai18n.DefaultLocale)
+}
+
+func (s *ServicesService) ListServicesLocalized(locale string) ([]ManagedServiceInfo, *dbus.Error) {
 	s.activity.Touch()
 
 	var rows []ManagedServiceInfo
 	for _, item := range curatedServices {
-		rows = append(rows, serviceInfo(item.name, item.label, item.description))
+		rows = append(rows, serviceInfo(item.name, vegai18n.T(locale, item.labelKey), vegai18n.T(locale, item.descriptionKey)))
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Label < rows[j].Label })
 	return rows, nil
 }
 
 func (s *ServicesService) ListAllServices() ([]ManagedServiceInfo, *dbus.Error) {
+	return s.ListAllServicesLocalized(vegai18n.DefaultLocale)
+}
+
+func (s *ServicesService) ListAllServicesLocalized(locale string) ([]ManagedServiceInfo, *dbus.Error) {
 	s.activity.Touch()
-	rows, err := listAllSystemdServices()
+	rows, err := listAllSystemdServices(locale)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
@@ -116,7 +125,7 @@ func serviceInfo(name, label, description string) ManagedServiceInfo {
 	}
 }
 
-func listAllSystemdServices() ([]ManagedServiceInfo, error) {
+func listAllSystemdServices(locale string) ([]ManagedServiceInfo, error) {
 	if !commandAvailable("systemctl") {
 		return nil, fmt.Errorf("systemctl não está disponível")
 	}
@@ -164,7 +173,7 @@ func listAllSystemdServices() ([]ManagedServiceInfo, error) {
 	for name := range availableByUnit {
 		description := descriptionByUnit[name]
 		if description == "" {
-			description = "Serviço systemd"
+			description = vegai18n.T(locale, "services.systemd.description")
 		}
 		rows = append(rows, ManagedServiceInfo{
 			Name:        name,
