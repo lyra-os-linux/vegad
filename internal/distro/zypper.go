@@ -298,23 +298,12 @@ func zypperGroupedUpdates() ([]RepoUpdateGroup, error) {
 // whatever is in the local repo metadata (no refresh, so no network access
 // needed). Callers that need fresh results must SyncDatabase first.
 //
-// Plain `zypper list-updates` — like `zypper update` — silently drops
-// updates that would require a vendor change (e.g. a proprietary driver
-// package offered by both the distro's repo and the vendor's own repo).
-// Those don't error out or show up anywhere; they just vanish, and `zypper
-// update` reports "will not be installed" with no further explanation. This
-// runs list-updates a second time with --all (which includes them) and
-// flags whatever's missing from the plain run so the UI can tell the user
-// they need manual resolution instead of quietly never appearing.
+// Plain `zypper list-updates` returns the same installable set as `zypper
+// update`: packages that would require a vendor change or otherwise appear
+// under "will not be installed" are omitted. Keep that behavior here so
+// clients never advertise packages that UpdateAll will leave untouched.
 //
-// The two runs are independent (no shared state, no --all narrowing what
-// the plain run sees), but they must still run one at a time. libzypp uses
-// shared package-manager state, and concurrent zypper processes can make one
-// invocation return an empty result. zypperParseUpdates historically treated
-// that exit as "nothing to do", which then misclassified every update as a
-// vendor-change update.
-//
-// The "safe" side is grouped and ordered by source repository
+// The installable set is grouped and ordered by source repository
 // (zypperGroupedUpdates), the same grouping/order UpdateAll executes in —
 // so the Updates tab's list and the actual repo-by-repo update run always
 // agree on ordering.
@@ -323,26 +312,10 @@ func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	all, err := zypperParseUpdates("--all")
-	if err != nil {
-		return nil, err
-	}
 
 	var results []PackageRef
-	safeNames := make(map[string]bool)
 	for _, group := range groups {
-		for _, pkg := range group.Packages {
-			safeNames[pkg.Id] = true
-			results = append(results, pkg)
-		}
-	}
-
-	for _, pkg := range all {
-		if safeNames[pkg.Id] {
-			continue
-		}
-		pkg.Description += " — requer troca de fornecedor, não coberto por \"Atualizar tudo\""
-		results = append(results, pkg)
+		results = append(results, group.Packages...)
 	}
 	return results, nil
 }
