@@ -20,11 +20,15 @@ BuildRequires:  policycoreutils
 Requires:       systemd
 Requires:       dbus-1
 Requires:       polkit
+Requires:       pciutils
+Requires:       usbutils
+Requires:       mokutil
+Requires:       dracut
+Requires:       snapper
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
 
-Recommends:     snapper
 Recommends:     flatpak
 Recommends:     NetworkManager
 Recommends:     restic
