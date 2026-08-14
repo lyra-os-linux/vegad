@@ -40,7 +40,7 @@ func (f *fakeNvidiaRunner) Run(name string, args ...string) error {
 
 func compatibleRunner() *fakeNvidiaRunner {
 	return &fakeNvidiaRunner{outputs: map[string]string{
-		"lspci -Dnnd 10de:":     "0000:01:00.0 0300: 10de:1f99 (rev a1) [10de:1f99]",
+		"lspci -Dnd 10de:":      "0000:01:00.0 0300: 10de:1f99 (rev a1)",
 		"lspci -s 0000:01:00.0": "01:00.0 VGA compatible controller: NVIDIA Corporation TU117M",
 		"mokutil --sb-state":    "SecureBoot enabled",
 	}, errors: map[string]error{}, sequences: map[string][]fakeNvidiaResponse{}}

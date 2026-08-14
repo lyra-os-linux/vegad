@@ -77,12 +77,12 @@ var nvidiaDeviceID = regexp.MustCompile(`(?i)10de:([0-9a-f]{4})`)
 func supportedNvidiaDevice(id uint64) bool { return id >= 0x1e00 && id <= 0x2fff }
 
 func (m nvidiaManager) hardware() (string, bool, error) {
-	out, err := m.run.Output("lspci", "-Dnnd", "10de:")
+	out, err := m.run.Output("lspci", "-Dnd", "10de:")
 	if err != nil && strings.TrimSpace(out) == "" {
 		return "", false, fmt.Errorf("não foi possível detectar a GPU NVIDIA: %w", err)
 	}
-	// lspci -Dnnd prints "... [10de:1f99]"; retain only display-class rows
-	// and parse the device half of the vendor:device pair.
+	// Keep lspci's output numeric so class and vendor:device parsing remains
+	// stable regardless of the local PCI name database.
 	for _, line := range strings.Split(out, "\n") {
 		lower := strings.ToLower(line)
 		if !strings.Contains(lower, " 0300:") && !strings.Contains(lower, " 0302:") {
