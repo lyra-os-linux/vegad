@@ -4,11 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/distro"
+	"github.com/lyraos/vegad/internal/profile"
 )
 
 // SoftwareService backs org.lyraos.Vega1.Software: unified search/install/update across the distro's package manager
@@ -18,11 +21,23 @@ import (
 // TransactionProgress/TransactionFinished signals instead of the caller
 // polling.
 type SoftwareService struct {
-	activity *Activity
-	conn     *dbus.Conn
-	provider distro.Provider
-	nextTxID atomic.Uint32
+	activity        *Activity
+	conn            *dbus.Conn
+	provider        distro.Provider
+	profile         profile.Profile
+	nextTxID        atomic.Uint32
+	nativeUpdatesMu sync.Mutex
+	nativeUpdatesAt time.Time
+	nativeUpdates   []PackageRef
 }
+
+const nativeUpdateCacheTTL = 5 * time.Minute
+
+func capabilityUnavailable(capability string) *dbus.Error {
+	return dbus.NewError(BusName+".Error.CapabilityUnavailable", []interface{}{fmt.Sprintf("capacidade %s indisponível no perfil ativo", capability)})
+}
+
+func (s *SoftwareService) flatpakEnabled() bool { return s.profile == profile.Desktop }
 
 // PackageRef identifies a package within one origin ("official", "flathub",
 // "aur") so the UI can dedupe the same app found across origins.
@@ -64,7 +79,6 @@ func (s *SoftwareService) CommunityLayerName() (string, *dbus.Error) {
 // (no polkit gate needed), same as Search/ListUpdates.
 func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id string) (PackageDetails, *dbus.Error) {
 	s.activity.Touch()
-	u := desktopUserOrNil(s.conn, sender, "GetPackageDetails")
 
 	var (
 		details PackageDetails
@@ -74,6 +88,10 @@ func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id strin
 	case "official":
 		details, err = s.provider.Package().GetDetails(id)
 	case "flathub":
+		if !s.flatpakEnabled() {
+			return PackageDetails{}, capabilityUnavailable("flatpak")
+		}
+		u := desktopUserOrNil(s.conn, sender, "GetPackageDetails")
 		details, err = fetchFlatpakDetails(id, u)
 	case "aur":
 		community := s.provider.Community()
@@ -97,7 +115,6 @@ func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id strin
 // one (Provider.Community() == nil), same as when no helper is installed.
 func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
-	u := desktopUserOrNil(s.conn, sender, "Search")
 
 	var results []PackageRef
 
@@ -107,11 +124,14 @@ func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef
 	}
 	results = append(results, official...)
 
-	flathub, err := searchFlatpak(query, u)
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+	if s.flatpakEnabled() {
+		u := desktopUserOrNil(s.conn, sender, "Search")
+		flathub, err := searchFlatpak(query, u)
+		if err != nil {
+			return nil, dbus.MakeFailedError(err)
+		}
+		results = append(results, flathub...)
 	}
-	results = append(results, flathub...)
 
 	if community := s.provider.Community(); community != nil {
 		aur, err := community.Search(query)
@@ -121,6 +141,24 @@ func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef
 		results = append(results, aur...)
 	}
 
+	return results, nil
+}
+
+// SearchNative is the server-client variant: it never resolves a desktop
+// user and never invokes Flatpak, even if the host runs the desktop profile.
+func (s *SoftwareService) SearchNative(query string) ([]PackageRef, *dbus.Error) {
+	s.activity.Touch()
+	results, err := s.provider.Package().Search(query)
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	if community := s.provider.Community(); community != nil {
+		items, err := community.Search(query)
+		if err != nil {
+			return nil, dbus.MakeFailedError(err)
+		}
+		results = append(results, items...)
+	}
 	return results, nil
 }
 
@@ -176,6 +214,9 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 
 func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if origin == "flathub" && !s.flatpakEnabled() {
+		return 0, capabilityUnavailable("flatpak")
+	}
 	switch origin {
 	case "official", "flathub", "aur":
 		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
@@ -211,6 +252,9 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 
 func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if origin == "flathub" && !s.flatpakEnabled() {
+		return 0, capabilityUnavailable("flatpak")
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
 		return 0, err
 	}
@@ -245,6 +289,13 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 // Flatpak into one list.
 func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
+	if !s.flatpakEnabled() {
+		updates, err := s.provider.Package().ListUpdates()
+		if err != nil {
+			return nil, dbus.MakeFailedError(err)
+		}
+		return updates, nil
+	}
 	u := desktopUserOrNil(s.conn, sender, "ListUpdates")
 
 	// Official and Flathub updates come from entirely separate subprocesses
@@ -278,11 +329,47 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 	return results, nil
 }
 
+func (s *SoftwareService) ListNativeUpdates() ([]PackageRef, *dbus.Error) {
+	s.activity.Touch()
+	s.nativeUpdatesMu.Lock()
+	defer s.nativeUpdatesMu.Unlock()
+	if time.Since(s.nativeUpdatesAt) < nativeUpdateCacheTTL {
+		return append([]PackageRef(nil), s.nativeUpdates...), nil
+	}
+	updates, err := s.provider.Package().ListUpdates()
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	s.nativeUpdates = append([]PackageRef(nil), updates...)
+	s.nativeUpdatesAt = time.Now()
+	status := UpdateStatus{
+		CheckedAt:   s.nativeUpdatesAt.UTC().Format(time.RFC3339),
+		Profile:     string(s.profile),
+		NativeCount: uint32(len(updates)),
+		TotalCount:  uint32(len(updates)),
+	}
+	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
+		log.Printf("vegad: persistir consulta nativa de atualizações: %v", err)
+	}
+	return append([]PackageRef(nil), updates...), nil
+}
+
+func (s *SoftwareService) GetUpdateStatus() (UpdateStatus, *dbus.Error) {
+	s.activity.Touch()
+	status, err := readUpdateStatus(updateStatePath())
+	if os.IsNotExist(err) {
+		return UpdateStatus{Profile: string(s.profile)}, nil
+	}
+	if err != nil {
+		return UpdateStatus{}, dbus.MakeFailedError(err)
+	}
+	return status, nil
+}
+
 // ListInstalled merges locally installed distro packages and system Flatpak
 // apps into one read-only list for the software inventory view.
 func (s *SoftwareService) ListInstalled(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
-	u := desktopUserOrNil(s.conn, sender, "ListInstalled")
 
 	var results []PackageRef
 
@@ -291,7 +378,11 @@ func (s *SoftwareService) ListInstalled(sender dbus.Sender) ([]PackageRef, *dbus
 		return nil, dbus.MakeFailedError(err)
 	}
 	results = append(results, official...)
+	if !s.flatpakEnabled() {
+		return results, nil
+	}
 
+	u := desktopUserOrNil(s.conn, sender, "ListInstalled")
 	flathub, err := listFlatpakInstalled(u)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
@@ -299,6 +390,15 @@ func (s *SoftwareService) ListInstalled(sender dbus.Sender) ([]PackageRef, *dbus
 	results = append(results, flathub...)
 
 	return results, nil
+}
+
+func (s *SoftwareService) ListNativeInstalled() ([]PackageRef, *dbus.Error) {
+	s.activity.Touch()
+	packages, err := s.provider.Package().ListInstalled()
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	return packages, nil
 }
 
 // UpdateAll runs a full sync+upgrade of the distro's package manager
@@ -309,14 +409,32 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
-	u := desktopUserOrNil(s.conn, sender, "UpdateAll")
+	var u *desktopUser
+	if s.flatpakEnabled() {
+		u = desktopUserOrNil(s.conn, sender, "UpdateAll")
+	}
 	return s.startTransaction("Atualização completa", func(report progressFunc, pkgReport packageProgressFunc) error {
 		if err := withSnapshots("Atualização completa", func() error {
 			return s.provider.Package().UpdateAll(report, pkgReport)
 		}); err != nil {
 			return err
 		}
-		return updateAllFlatpak(u, report)
+		if s.flatpakEnabled() {
+			return updateAllFlatpak(u, report)
+		}
+		return nil
+	}), nil
+}
+
+func (s *SoftwareService) UpdateAllNative(sender dbus.Sender) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
+		return 0, err
+	}
+	return s.startTransaction("Atualização nativa completa", func(report progressFunc, pkgReport packageProgressFunc) error {
+		return withSnapshots("Atualização nativa completa", func() error {
+			return s.provider.Package().UpdateAll(report, pkgReport)
+		})
 	}), nil
 }
 
@@ -325,6 +443,9 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 // instead of running the full UpdateAll.
 func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if origin == "flathub" && !s.flatpakEnabled() {
+		return 0, capabilityUnavailable("flatpak")
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
@@ -378,17 +499,34 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
-	u := desktopUserOrNil(s.conn, sender, "ClearCache")
+	var u *desktopUser
+	if s.flatpakEnabled() {
+		u = desktopUserOrNil(s.conn, sender, "ClearCache")
+	}
 	return s.startTransaction("Limpeza de cache", func(report progressFunc, _ packageProgressFunc) error {
 		if err := withSnapshots("Limpeza de cache", func() error {
 			return s.provider.Package().ClearCache(report)
 		}); err != nil {
 			return fmt.Errorf("%s: %w", s.provider.Package().Name(), err)
 		}
-		if err := clearFlatpakCache(u, report); err != nil {
-			return fmt.Errorf("flatpak: %w", err)
+		if s.flatpakEnabled() {
+			if err := clearFlatpakCache(u, report); err != nil {
+				return fmt.Errorf("flatpak: %w", err)
+			}
 		}
 		return nil
+	}), nil
+}
+
+func (s *SoftwareService) ClearNativeCache(sender dbus.Sender) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
+		return 0, err
+	}
+	return s.startTransaction("Limpeza de cache nativo", func(report progressFunc, _ packageProgressFunc) error {
+		return withSnapshots("Limpeza de cache nativo", func() error {
+			return s.provider.Package().ClearCache(report)
+		})
 	}), nil
 }
 

@@ -36,7 +36,6 @@ Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
 
-Recommends:     flatpak
 Recommends:     NetworkManager
 Recommends:     restic
 Recommends:     firewalld
@@ -81,6 +80,12 @@ install -Dm644 packaging/vegad/vegad-update-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.service
 install -Dm644 packaging/vegad/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
+install -Dm644 packaging/vegad/vegad.conf \
+  %{buildroot}%{_sysconfdir}/vega/vegad.conf
+install -Dm644 packaging/vegad/profiles/desktop.conf \
+  %{buildroot}%{_datadir}/vega/profiles/desktop.conf
+install -Dm644 packaging/vegad/profiles/server.conf \
+  %{buildroot}%{_datadir}/vega/profiles/server.conf
 install -Dm644 packaging/vegad/org.lyraos.Vega1.conf \
   %{buildroot}%{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
 install -Dm644 packaging/vegad/org.lyraos.Vega1.service \
@@ -93,8 +98,6 @@ install -Dm644 vegad/internal/i18n/catalog/pt-BR.json \
   %{buildroot}%{_datadir}/locale/pt_BR/LC_MESSAGES/vegad.json
 install -Dm644 vegad/internal/i18n/catalog/es-ES.json \
   %{buildroot}%{_datadir}/locale/es_ES/LC_MESSAGES/vegad.json
-install -Dm644 vegad/internal/i18n/catalog/zh-CN.json \
-  %{buildroot}%{_datadir}/locale/zh_CN/LC_MESSAGES/vegad.json
 
 # Exportação periódica do journal do vegad para /var/log/vega/vegad.log —
 # journalctl continua sendo a fonte de verdade (o módulo Log do Sistema do
@@ -118,6 +121,9 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad.service
 %{_prefix}/lib/systemd/system/vegad-update-check.service
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
+%config(noreplace) %{_sysconfdir}/vega/vegad.conf
+%{_datadir}/vega/profiles/desktop.conf
+%{_datadir}/vega/profiles/server.conf
 %{_prefix}/lib/systemd/system/vegad-log-export.service
 %{_prefix}/lib/systemd/system/vegad-log-export.timer
 %{_prefix}/lib/tmpfiles.d/vega-log.conf
@@ -128,7 +134,6 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %lang(en) %{_datadir}/locale/en_US/LC_MESSAGES/vegad.json
 %lang(pt_BR) %{_datadir}/locale/pt_BR/LC_MESSAGES/vegad.json
 %lang(es) %{_datadir}/locale/es_ES/LC_MESSAGES/vegad.json
-%lang(zh_CN) %{_datadir}/locale/zh_CN/LC_MESSAGES/vegad.json
 %dir %{_datadir}/selinux
 %dir %{_datadir}/selinux/packages
 %{_datadir}/selinux/packages/vegad_bootloader.pp

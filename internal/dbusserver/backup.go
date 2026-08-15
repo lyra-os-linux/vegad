@@ -32,6 +32,16 @@ var (
 	backupIDRe           = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
+var criticalRestoreRoots = []string{
+	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
+	"/root", "/run", "/sbin", "/sys", "/usr",
+}
+
+var exactProtectedRestorePaths = map[string]bool{
+	"/": true, "/home": true, "/var": true, "/opt": true, "/srv": true,
+	"/mnt": true, "/media": true,
+}
+
 // BackupService backs org.lyraos.Vega1.Backup: orchestrates restic
 // subprocesses per backup configuration. Configs
 // live under /etc/vega/backup by default; the path can be overridden in
@@ -267,20 +277,24 @@ func (b *BackupService) RestoreSnapshot(sender dbus.Sender, snapshotID, targetPa
 	if err != nil {
 		return 0, dbus.MakeFailedError(err)
 	}
+	validatedTarget, err := b.validateRestoreRequest(sender, targetPath, mode, cfg.Paths)
+	if err != nil {
+		return 0, dbus.MakeFailedError(err)
+	}
 
 	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
 			return err
 		}
 
-		restoreTarget := targetPath
+		restoreTarget := validatedTarget
 		switch mode {
 		case "replace":
-			if err := os.RemoveAll(targetPath); err != nil {
+			if err := os.RemoveAll(validatedTarget); err != nil {
 				return err
 			}
 		case "separate-folder":
-			restoreTarget = filepath.Join(targetPath, "restored-"+snapshotID)
+			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
 		default:
 			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
 		}
@@ -393,6 +407,10 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 	if err != nil {
 		return 0, dbus.MakeFailedError(err)
 	}
+	validatedTarget, err := b.validateRestoreRequest(sender, targetPath, mode, cfg.Paths)
+	if err != nil {
+		return 0, dbus.MakeFailedError(err)
+	}
 	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
 			if errors.Is(err, errBackupDeferred) {
@@ -400,14 +418,14 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 			}
 			return err
 		}
-		restoreTarget := targetPath
+		restoreTarget := validatedTarget
 		switch mode {
 		case "replace":
-			if err := os.RemoveAll(targetPath); err != nil {
+			if err := os.RemoveAll(validatedTarget); err != nil {
 				return err
 			}
 		case "separate-folder":
-			restoreTarget = filepath.Join(targetPath, "restored-"+snapshotID)
+			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
 		default:
 			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
 		}
@@ -420,6 +438,84 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 		}
 		return runResticCommand(cfg, args, report, "Iniciando restauração...", "Restauração concluída")
 	}), nil
+}
+
+func (b *BackupService) validateRestoreRequest(sender dbus.Sender, targetPath, mode string, backupRoots []string) (string, error) {
+	if mode != "replace" && mode != "separate-folder" {
+		return "", fmt.Errorf("modo de restauração desconhecido: %s", mode)
+	}
+	u, err := resolveDesktopUser(b.conn, sender)
+	if err != nil {
+		return "", fmt.Errorf("validar usuário da restauração: %w", err)
+	}
+	return validateRestoreTarget(targetPath, u, backupRoots)
+}
+
+func validateRestoreTarget(targetPath string, caller *desktopUser, backupRoots []string) (string, error) {
+	raw := strings.TrimSpace(targetPath)
+	if raw == "" || strings.ContainsRune(raw, '\x00') || !filepath.IsAbs(raw) {
+		return "", fmt.Errorf("destino de restauração deve ser um caminho absoluto válido")
+	}
+	for _, part := range strings.Split(filepath.ToSlash(raw), "/") {
+		if part == ".." {
+			return "", fmt.Errorf("destino de restauração não pode conter ..")
+		}
+	}
+
+	resolved, err := resolvePathWithExistingAncestors(filepath.Clean(raw))
+	if err != nil {
+		return "", fmt.Errorf("canonicalizar destino de restauração: %w", err)
+	}
+	if exactProtectedRestorePaths[resolved] {
+		return "", fmt.Errorf("destino de restauração protegido: %s", resolved)
+	}
+	for _, critical := range criticalRestoreRoots {
+		if pathWithin(resolved, critical) {
+			return "", fmt.Errorf("destino de restauração protegido: %s", resolved)
+		}
+	}
+
+	var allowedRoots []string
+	if caller != nil {
+		allowedRoots = []string{caller.HomeDir}
+	} else {
+		allowedRoots = backupRoots
+	}
+	for _, root := range allowedRoots {
+		canonicalRoot, err := resolvePathWithExistingAncestors(filepath.Clean(root))
+		if err == nil && pathWithin(resolved, canonicalRoot) {
+			return resolved, nil
+		}
+	}
+	return "", fmt.Errorf("destino de restauração fora da área permitida: %s", resolved)
+}
+
+func resolvePathWithExistingAncestors(path string) (string, error) {
+	current := path
+	var suffix []string
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for i := len(suffix) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, suffix[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
+}
+
+func pathWithin(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (b *BackupService) emitBackupProgress(txID uint32, percent uint32, message string) error {

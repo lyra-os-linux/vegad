@@ -3,4 +3,19 @@ Description=Vega periodic update check
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/vega/vegad.conf
 ExecStart=/usr/lib/vega/vegad check-updates
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+UMask=0077

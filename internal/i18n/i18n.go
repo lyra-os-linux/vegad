@@ -15,7 +15,6 @@ var supported = map[string]string{
 	"en-us": "en-US",
 	"pt-br": "pt-BR",
 	"es-es": "es-ES",
-	"zh-cn": "zh-CN",
 }
 
 var localePattern = regexp.MustCompile(`^[A-Za-z]{2}[-_][A-Za-z]{2}$`)

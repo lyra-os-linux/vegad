@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/lyraos/vegad/internal/dbusserver"
+	"github.com/lyraos/vegad/internal/profile"
 	"github.com/lyraos/vegad/internal/version"
 )
 
@@ -46,9 +47,18 @@ func ensureSystemPATH() {
 
 func main() {
 	ensureSystemPATH()
+	activeProfile, profileSource, err := profile.Load(profile.DefaultConfigPath)
+	if err != nil {
+		log.Fatalf("vegad: carregar perfil: %v", err)
+	}
+	log.Printf("vegad: perfil %s (%s)", activeProfile, profileSource)
 
 	if len(os.Args) >= 2 && os.Args[1] == "check-updates" {
-		if err := dbusserver.RunUpdateCheckJob(); err != nil {
+		if activeProfile != profile.Desktop {
+			log.Printf("vegad: verificação periódica ignorada no perfil %s", activeProfile)
+			return
+		}
+		if err := dbusserver.RunUpdateCheckJob(activeProfile); err != nil {
 			log.Fatalf("vegad check-updates failed: %v", err)
 		}
 		return
@@ -71,7 +81,7 @@ func main() {
 
 	log.Printf("vegad %s starting", version.Version)
 
-	srv, err := dbusserver.New()
+	srv, err := dbusserver.New(activeProfile)
 	if err != nil {
 		log.Fatalf("vegad: connect to system bus: %v", err)
 	}

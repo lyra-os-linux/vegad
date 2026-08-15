@@ -7,6 +7,23 @@ Type=dbus
 BusName=org.lyraos.Vega1
 ExecStart=/usr/lib/vega/vegad
 User=root
+EnvironmentFile=-/etc/vega/vegad.conf
+
+# vegad administra pacotes, usuários, rede, mounts, backups e boot. Por isso
+# ProtectSystem/ProtectHome, CapabilityBoundingSet e filtros agressivos de
+# syscalls seriam incompatíveis com sua função. As barreiras abaixo reduzem
+# superfície sem impedir os subprocessos administrativos autorizados.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
 
 # Bus-activated: systemd starts this
 # unit on demand when a client calls org.lyraos.Vega1, and vegad exits on

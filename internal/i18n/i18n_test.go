@@ -5,7 +5,7 @@ import "testing"
 func TestNormalize(t *testing.T) {
 	tests := map[string]string{
 		"": DefaultLocale, "en_US.UTF-8": "en-US", "pt_BR.UTF-8": "pt-BR",
-		"es_ES.UTF-8@custom": "es-ES", "zh_CN.UTF-8": "zh-CN",
+		"es_ES.UTF-8@custom": "es-ES", "zh_CN.UTF-8": "en-US",
 		"de_DE.UTF-8": DefaultLocale, "../../pt_BR": DefaultLocale,
 		"pt": DefaultLocale, "pt_BR_extra": DefaultLocale,
 	}
@@ -17,7 +17,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestCatalogsAndFallback(t *testing.T) {
-	for _, locale := range []string{"en-US", "pt-BR", "es-ES", "zh-CN"} {
+	for _, locale := range []string{"en-US", "pt-BR", "es-ES"} {
 		if got := T(locale, "common.completed"); got == "" || got == "common.completed" {
 			t.Errorf("catalog %s is missing common.completed", locale)
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 	"github.com/lyraos/vegad/internal/distro"
+	"github.com/lyraos/vegad/internal/profile"
 )
 
 const (
@@ -52,9 +53,10 @@ type Server struct {
 	conn     *dbus.Conn
 	activity *Activity
 	provider distro.Provider
+	profile  profile.Profile
 }
 
-func New() (*Server, error) {
+func New(activeProfile profile.Profile) (*Server, error) {
 	id, err := distro.Detect()
 	if err != nil {
 		return nil, fmt.Errorf("vegad: %w", err)
@@ -68,18 +70,23 @@ func New() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{conn: conn, activity: &Activity{last: time.Now()}, provider: provider}, nil
+	return &Server{conn: conn, activity: &Activity{last: time.Now()}, provider: provider, profile: activeProfile}, nil
 }
 
 // Export registers every subsystem interface at ObjectPath and requests
 // BusName. Call Run afterwards to block until idle shutdown.
 func (s *Server) Export() error {
+	metadata := &MetadataService{activity: s.activity, profile: s.profile}
+	if err := s.conn.Export(metadata, ObjectPath, BusName+".Metadata"); err != nil {
+		return err
+	}
+
 	system := &SystemService{activity: s.activity}
 	if err := s.conn.Export(system, ObjectPath, BusName+".System"); err != nil {
 		return err
 	}
 
-	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider}
+	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider, profile: s.profile}
 	if err := s.conn.Export(software, ObjectPath, BusName+".Software"); err != nil {
 		return err
 	}
@@ -134,9 +141,12 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	bluetooth := &BluetoothService{activity: s.activity}
-	if err := s.conn.Export(bluetooth, ObjectPath, BusName+".Bluetooth"); err != nil {
-		return err
+	var bluetooth *BluetoothService
+	if s.profile == profile.Desktop {
+		bluetooth = &BluetoothService{activity: s.activity}
+		if err := s.conn.Export(bluetooth, ObjectPath, BusName+".Bluetooth"); err != nil {
+			return err
+		}
 	}
 
 	storage := &StorageService{activity: s.activity}
@@ -157,6 +167,7 @@ func (s *Server) Export() error {
 	node := &introspect.Node{
 		Name: string(ObjectPath),
 		Interfaces: []introspect.Interface{
+			{Name: BusName + ".Metadata", Methods: introspect.Methods(metadata)},
 			{Name: BusName + ".System", Methods: introspect.Methods(system)},
 			{Name: BusName + ".Software", Methods: introspect.Methods(software), Signals: []introspect.Signal{
 				{Name: "TransactionProgress", Args: []introspect.Arg{
@@ -222,10 +233,12 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Services", Methods: introspect.Methods(services)},
 			{Name: BusName + ".DateTime", Methods: introspect.Methods(dateTime)},
 			{Name: BusName + ".Network", Methods: introspect.Methods(network)},
-			{Name: BusName + ".Bluetooth", Methods: introspect.Methods(bluetooth)},
 			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
 			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
 		},
+	}
+	if bluetooth != nil {
+		node.Interfaces = append(node.Interfaces, introspect.Interface{Name: BusName + ".Bluetooth", Methods: introspect.Methods(bluetooth)})
 	}
 	if err := s.conn.Export(introspect.NewIntrospectable(node), ObjectPath, "org.freedesktop.DBus.Introspectable"); err != nil {
 		return err
