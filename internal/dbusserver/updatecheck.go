@@ -16,12 +16,14 @@ import (
 const defaultUpdateStatePath = "/var/lib/vega/update-status.json"
 
 type UpdateStatus struct {
-	CheckedAt    string `json:"checkedAt"`
-	Profile      string `json:"profile"`
-	NativeCount  uint32 `json:"nativeCount"`
-	FlatpakCount uint32 `json:"flatpakCount"`
-	TotalCount   uint32 `json:"totalCount"`
-	Error        string `json:"error,omitempty"`
+	CheckedAt     string `json:"checkedAt"`
+	Profile       string `json:"profile"`
+	NativeCount   uint32 `json:"nativeCount"`
+	FlatpakCount  uint32 `json:"flatpakCount"`
+	TotalCount    uint32 `json:"totalCount"`
+	SecurityCount uint32 `json:"securityCount"`
+	InProgress    bool   `json:"inProgress"`
+	Error         string `json:"error,omitempty"`
 }
 
 func updateStatePath() string {
@@ -63,6 +65,17 @@ func updateStatusChanged(previous, current UpdateStatus) bool {
 		previous.NativeCount != current.NativeCount ||
 		previous.FlatpakCount != current.FlatpakCount ||
 		previous.TotalCount != current.TotalCount ||
+		previous.SecurityCount != current.SecurityCount ||
+		previous.InProgress != current.InProgress ||
+		previous.Error != current.Error
+}
+
+func updateResultChanged(previous, current UpdateStatus) bool {
+	return previous.Profile != current.Profile ||
+		previous.NativeCount != current.NativeCount ||
+		previous.FlatpakCount != current.FlatpakCount ||
+		previous.TotalCount != current.TotalCount ||
+		previous.SecurityCount != current.SecurityCount ||
 		previous.Error != current.Error
 }
 
@@ -117,7 +130,7 @@ func RunUpdateCheckJob(activeProfile profile.Profile) error {
 	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
 		return fmt.Errorf("persistir estado de atualizações: %w", err)
 	}
-	if previousErr == nil && !updateStatusChanged(previous, status) {
+	if previousErr == nil && !updateResultChanged(previous, status) {
 		log.Printf("vegad: estado de atualizações inalterado (%d pendentes)", count)
 		return nil
 	}
@@ -130,6 +143,9 @@ func RunUpdateCheckJob(activeProfile profile.Profile) error {
 
 	if err := conn.Emit(ObjectPath, BusName+".Software.UpdatesAvailable", uint32(count)); err != nil {
 		return fmt.Errorf("emitir UpdatesAvailable: %w", err)
+	}
+	if err := conn.Emit(ObjectPath, BusName+".Software.UpdateStateChanged", status); err != nil {
+		return fmt.Errorf("emitir UpdateStateChanged: %w", err)
 	}
 
 	log.Printf("vegad: estado alterado para %d atualizações pendentes, sinal UpdatesAvailable emitido", count)

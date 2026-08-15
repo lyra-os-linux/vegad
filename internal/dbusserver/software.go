@@ -29,6 +29,8 @@ type SoftwareService struct {
 	nativeUpdatesMu sync.Mutex
 	nativeUpdatesAt time.Time
 	nativeUpdates   []PackageRef
+	updateCheckMu   sync.Mutex
+	updateChecking  bool
 }
 
 const nativeUpdateCacheTTL = 5 * time.Minute
@@ -364,6 +366,79 @@ func (s *SoftwareService) GetUpdateStatus() (UpdateStatus, *dbus.Error) {
 		return UpdateStatus{}, dbus.MakeFailedError(err)
 	}
 	return status, nil
+}
+
+// RequestUpdateCheck returns immediately with the cached state. When that
+// state is stale it starts one background refresh; concurrent administrative
+// logins share the same refresh instead of synchronizing repositories once
+// per client.
+func (s *SoftwareService) RequestUpdateCheck() (UpdateStatus, *dbus.Error) {
+	s.activity.Touch()
+	status, err := readUpdateStatus(updateStatePath())
+	if err != nil && !os.IsNotExist(err) {
+		return UpdateStatus{}, dbus.MakeFailedError(err)
+	}
+	if status.Profile == "" {
+		status.Profile = string(s.profile)
+	}
+	checkedAt, parseErr := time.Parse(time.RFC3339, status.CheckedAt)
+	stale := parseErr != nil || time.Since(checkedAt) >= nativeUpdateCacheTTL
+
+	s.updateCheckMu.Lock()
+	if stale && !s.updateChecking {
+		s.updateChecking = true
+		status.InProgress = true
+		status.Error = ""
+		_ = persistUpdateStatus(updateStatePath(), status)
+		go s.refreshUpdateStatus()
+	} else if s.updateChecking {
+		status.InProgress = true
+	}
+	s.updateCheckMu.Unlock()
+	return status, nil
+}
+
+func (s *SoftwareService) refreshUpdateStatus() {
+	status := UpdateStatus{
+		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+		Profile:    string(s.profile),
+		InProgress: true,
+	}
+	if err := s.provider.Package().SyncDatabase(); err != nil {
+		status.Error = err.Error()
+	} else if updates, err := s.provider.Package().ListUpdates(); err != nil {
+		status.Error = err.Error()
+	} else {
+		status.NativeCount = uint32(len(updates))
+		status.TotalCount = status.NativeCount
+		if s.profile == profile.Desktop {
+			if flatpaks, err := listFlatpakUpdates(nil); err != nil {
+				status.Error = err.Error()
+			} else {
+				status.FlatpakCount = uint32(len(flatpaks))
+				status.TotalCount += status.FlatpakCount
+			}
+		}
+	}
+	status.InProgress = false
+	previous, _ := readUpdateStatus(updateStatePath())
+	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
+		log.Printf("vegad: persistir estado solicitado no login: %v", err)
+	}
+	s.updateCheckMu.Lock()
+	s.updateChecking = false
+	s.updateCheckMu.Unlock()
+	if s.conn != nil && updateStatusChanged(previous, status) {
+		if err := s.conn.Emit(ObjectPath, BusName+".Software.UpdateStateChanged", status); err != nil {
+			log.Printf("vegad: emitir mudança do estado de atualizações: %v", err)
+		}
+		if updateResultChanged(previous, status) {
+			if err := s.conn.Emit(ObjectPath, BusName+".Software.UpdatesAvailable", status.TotalCount); err != nil {
+				log.Printf("vegad: emitir alerta de atualizações: %v", err)
+			}
+		}
+	}
+	log.Printf("vegad: consulta administrativa de atualizações concluída perfil=%s total=%d erro=%t", s.profile, status.TotalCount, status.Error != "")
 }
 
 // ListInstalled merges locally installed distro packages and system Flatpak

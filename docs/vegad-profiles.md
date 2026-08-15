@@ -34,5 +34,10 @@ também não é exportada.
 
 O timer desktop verifica atualizações a cada quatro horas e salva o último
 resultado em `/var/lib/vega/update-status.json`. No server, o painel inicial da
-CLI e a primeira página após login na Web consultam `ListUpdates`, garantindo
-um aviso por sessão administrativa sem instalar nada automaticamente.
+CLI e a primeira página após login na Web consultam `RequestUpdateCheck`,
+garantindo um aviso por sessão administrativa sem instalar nada
+automaticamente. A operação responde imediatamente com o estado persistido e,
+quando ele tem mais de cinco minutos, inicia uma verificação assíncrona. Logins
+concorrentes compartilham a mesma verificação. O estado contém horário, perfil,
+contagens nativa, Flatpak, total e de segurança (zero quando o backend não
+classifica patches), além de indicar andamento e o último erro.

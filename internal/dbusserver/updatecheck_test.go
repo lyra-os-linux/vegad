@@ -42,4 +42,14 @@ func TestUpdateStatusChangedIgnoresTimestamp(t *testing.T) {
 	if !updateStatusChanged(a, b) {
 		t.Fatal("transition to zero updates must emit an alert")
 	}
+	a = b
+	b.InProgress = true
+	if !updateStatusChanged(a, b) {
+		t.Fatal("progress transition must emit a state event")
+	}
+	a = b
+	b.InProgress = false
+	if updateResultChanged(a, b) {
+		t.Fatal("progress-only transition must not duplicate the availability alert")
+	}
 }

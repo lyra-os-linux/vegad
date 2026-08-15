@@ -183,6 +183,9 @@ func (s *Server) Export() error {
 				{Name: "UpdatesAvailable", Args: []introspect.Arg{
 					{Name: "count", Type: "u", Direction: "out"},
 				}},
+				{Name: "UpdateStateChanged", Args: []introspect.Arg{
+					{Name: "status", Type: "(ssuuuubs)", Direction: "out"},
+				}},
 				{Name: "RepoKeyPending", Args: []introspect.Arg{
 					{Name: "transactionId", Type: "u", Direction: "out"},
 					{Name: "repo", Type: "s", Direction: "out"},
