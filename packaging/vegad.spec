@@ -111,7 +111,10 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad.service
 %{_prefix}/lib/systemd/system/vegad-update-check.service
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
+%dir %{_sysconfdir}/vega
 %config(noreplace) %{_sysconfdir}/vega/vegad.conf
+%dir %{_datadir}/vega
+%dir %{_datadir}/vega/profiles
 %{_datadir}/vega/profiles/desktop.conf
 %{_datadir}/vega/profiles/server.conf
 %{_prefix}/lib/systemd/system/vegad-log-export.service
