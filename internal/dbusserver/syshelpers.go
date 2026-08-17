@@ -24,8 +24,19 @@ func commandAvailable(name string) bool {
 	return err == nil
 }
 
+// systemCommand limits the relaxed umask to Zypper. The daemon keeps its
+// restrictive UMask=0077 for credentials and other administrative files,
+// while libzypp metadata remains reusable by unprivileged read-only clients.
+func systemCommand(name string, args ...string) *exec.Cmd {
+	if name == "zypper" {
+		wrapped := append([]string{"-c", `umask 0022; exec /usr/bin/zypper "$@"`, "vega-zypper"}, args...)
+		return exec.Command("/bin/sh", wrapped...)
+	}
+	return exec.Command(name, args...)
+}
+
 func runCommandOutput(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).CombinedOutput()
+	out, err := systemCommand(name, args...).CombinedOutput()
 	if err != nil {
 		return strings.TrimSpace(string(out)), err
 	}

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -45,7 +44,7 @@ type nvidiaRunner interface {
 type systemNvidiaRunner struct{}
 
 func (systemNvidiaRunner) Output(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	cmd := systemCommand(name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))

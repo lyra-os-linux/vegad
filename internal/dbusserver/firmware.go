@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/godbus/dbus/v5"
@@ -38,7 +37,7 @@ type firmwareRunner interface {
 type systemFirmwareRunner struct{}
 
 func (systemFirmwareRunner) Output(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	cmd := systemCommand(name, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))

@@ -13,8 +13,20 @@ func commandAvailable(name string) bool {
 	return err == nil
 }
 
+// packageCommand keeps Zypper's shared metadata cache readable even though
+// vegad itself deliberately runs with UMask=0077. The fixed shell snippet
+// changes the umask only in the child; "$@" forwards arguments verbatim and
+// avoids both interpolation and a process-wide syscall.Umask race.
+func packageCommand(name string, args ...string) *exec.Cmd {
+	if name == "zypper" {
+		wrapped := append([]string{"-c", `umask 0022; exec /usr/bin/zypper "$@"`, "vega-zypper"}, args...)
+		return exec.Command("/bin/sh", wrapped...)
+	}
+	return exec.Command(name, args...)
+}
+
 func runCommandOutput(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).CombinedOutput()
+	out, err := packageCommand(name, args...).CombinedOutput()
 	if err != nil {
 		return strings.TrimSpace(string(out)), err
 	}
@@ -35,7 +47,7 @@ func commandEnvC() []string {
 // bars typically use carriage returns rather than newlines, so this can't
 // track exact percentages, only "it's moving" milestones.
 func runStreamingCommand(name string, args []string, report ProgressFunc, startMsg, doneMsg string) error {
-	return runStreamingCmd(exec.Command(name, args...), report, startMsg, doneMsg)
+	return runStreamingCmd(packageCommand(name, args...), report, startMsg, doneMsg)
 }
 
 // runStreamingCmd is runStreamingCommand's shared core, taking an

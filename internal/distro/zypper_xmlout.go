@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os/exec"
 	"path"
 	"sort"
 	"strconv"
@@ -221,7 +220,7 @@ func handleZypperProgress(t xml.StartElement, state *xmlProgressState, report Pr
 func runZypperTransactionXML(args []string, report ProgressFunc, pkgReport PackageProgressFunc, startMsg, doneMsg string) error {
 	report(0, startMsg)
 
-	cmd := exec.Command("zypper", append([]string{"--xmlout"}, args...)...)
+	cmd := packageCommand("zypper", append([]string{"--xmlout"}, args...)...)
 	cmd.Env = commandEnvC()
 
 	stdout, err := cmd.StdoutPipe()
