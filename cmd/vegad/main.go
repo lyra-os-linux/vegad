@@ -80,6 +80,9 @@ func main() {
 	}
 
 	log.Printf("vegad %s starting", version.Version)
+	if err := dbusserver.ReconcileNvidiaSuspendPolicy(); err != nil {
+		log.Printf("vegad: não foi possível reconciliar a política de suspensão NVIDIA: %v", err)
+	}
 
 	srv, err := dbusserver.New(activeProfile)
 	if err != nil {

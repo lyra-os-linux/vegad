@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,15 +15,17 @@ import (
 )
 
 const (
-	nvidiaRepoAlias     = "repo-nvidia"
-	nvidiaRepoURL       = "https://download.nvidia.com/opensuse/leap/16.0/"
-	nvidiaKMPMeta       = "nvidia-open-driver-G06-signed-kmp-meta"
-	nvidiaUserspaceMeta = "nvidia-userspace-meta-G06"
+	nvidiaRepoAlias             = "repo-nvidia"
+	nvidiaRepoURL               = "https://download.nvidia.com/opensuse/leap/16.0/"
+	nvidiaKMPMeta               = "nvidia-open-driver-G06-signed-kmp-meta"
+	nvidiaUserspaceMeta         = "nvidia-userspace-meta-G06"
+	nvidiaSleepQuarantinePath   = "/etc/systemd/sleep.conf.d/90-lyra-nvidia-quarantine.conf"
+	nvidiaSleepQuarantineMarker = "# Managed by Vega: NVIDIA suspend qualification"
 )
 
 // NvidiaStatus is deliberately compact because it is also the stable D-Bus
 // wire contract consumed by vega-gtk. State is one of unavailable,
-// available, installed, reboot-required or active.
+// available, installed, reboot-required, active or quarantined.
 type NvidiaStatus struct {
 	Supported        bool
 	Installed        bool
@@ -64,9 +67,17 @@ func outputSuffix(text string) string {
 	return ": " + text
 }
 
-type nvidiaManager struct{ run nvidiaRunner }
+type nvidiaManager struct {
+	run                 nvidiaRunner
+	sleepQuarantinePath string
+}
 
-func newNvidiaManager() nvidiaManager { return nvidiaManager{run: systemNvidiaRunner{}} }
+func newNvidiaManager() nvidiaManager {
+	return nvidiaManager{
+		run:                 systemNvidiaRunner{},
+		sleepQuarantinePath: nvidiaSleepQuarantinePath,
+	}
+}
 
 var nvidiaDeviceID = regexp.MustCompile(`(?i)10de:([0-9a-f]{4})`)
 
@@ -125,6 +136,110 @@ func (m nvidiaManager) packageVersion(name string) string {
 	return strings.TrimSpace(out)
 }
 
+func upstreamVersion(evr string) string {
+	version := strings.TrimSpace(evr)
+	if index := strings.IndexAny(version, "-_"); index >= 0 {
+		version = version[:index]
+	}
+	return version
+}
+
+func (m nvidiaManager) installedStackVersions() ([]string, error) {
+	out, err := m.run.Output("rpm", "-qa", "--qf", "%{NAME}|%{VERSION}\n")
+	if err != nil {
+		return nil, fmt.Errorf("não foi possível auditar os pacotes NVIDIA instalados: %w", err)
+	}
+	versions := make(map[string]struct{})
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.SplitN(strings.TrimSpace(line), "|", 2)
+		if len(fields) != 2 || !strings.Contains(fields[0], "G06") {
+			continue
+		}
+		if strings.HasPrefix(fields[0], "nvidia-") || strings.HasPrefix(fields[0], "libnvidia-") {
+			versions[upstreamVersion(fields[1])] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(versions))
+	for version := range versions {
+		result = append(result, version)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func (m nvidiaManager) hybridGraphics() bool {
+	var hasNvidia, hasIntegrated bool
+	for _, class := range []string{"::0300", "::0302"} {
+		out, _ := m.run.Output("lspci", "-Dnd", class)
+		for _, line := range strings.Split(strings.ToLower(out), "\n") {
+			switch {
+			case strings.Contains(line, " 10de:"):
+				hasNvidia = true
+			case strings.Contains(line, " 8086:"), strings.Contains(line, " 1002:"):
+				hasIntegrated = true
+			}
+		}
+	}
+	return hasNvidia && hasIntegrated
+}
+
+func (m nvidiaManager) suspendQualified(version string) (bool, string) {
+	// 580.159.03 is quarantined on hybrid systems after reproducible failures
+	// in the driver's VRAM mapping path during S3/s2idle entry. Keep this
+	// narrow: desktops and later versions are not penalized by this incident.
+	if m.hybridGraphics() && upstreamVersion(version) == "580.159.03" {
+		return false, "NVIDIA 580.159.03 em notebook híbrido não está qualificada para suspensão"
+	}
+	return true, ""
+}
+
+func (m nvidiaManager) quarantinePath() string {
+	if m.sleepQuarantinePath != "" {
+		return m.sleepQuarantinePath
+	}
+	return nvidiaSleepQuarantinePath
+}
+
+func (m nvidiaManager) reconcileSuspendPolicy(version string) (bool, error) {
+	qualified, reason := m.suspendQualified(version)
+	path := m.quarantinePath()
+	if !qualified {
+		contents := nvidiaSleepQuarantineMarker + "\n# " + reason + "\n[Sleep]\nAllowSuspend=no\nAllowHibernation=no\nAllowSuspendThenHibernate=no\nAllowHybridSleep=no\n"
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return true, fmt.Errorf("não foi possível criar o diretório da quarentena NVIDIA: %w", err)
+		}
+		temporary := path + ".tmp"
+		if err := os.WriteFile(temporary, []byte(contents), 0o644); err != nil {
+			return true, fmt.Errorf("não foi possível gravar a quarentena NVIDIA: %w", err)
+		}
+		if err := os.Rename(temporary, path); err != nil {
+			_ = os.Remove(temporary)
+			return true, fmt.Errorf("não foi possível ativar a quarentena NVIDIA: %w", err)
+		}
+		if err := m.run.Run("systemctl", "daemon-reload"); err != nil {
+			return true, fmt.Errorf("a quarentena foi gravada, mas o systemd não a recarregou: %w", err)
+		}
+		return true, nil
+	}
+	contents, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("não foi possível verificar a quarentena NVIDIA: %w", err)
+	}
+	if !strings.HasPrefix(string(contents), nvidiaSleepQuarantineMarker) {
+		return false, fmt.Errorf("%s existe, mas não é gerenciado pelo Vega; remoção automática bloqueada", path)
+	}
+	if err := os.Remove(path); err != nil {
+		return false, fmt.Errorf("não foi possível remover a quarentena NVIDIA obsoleta: %w", err)
+	}
+	if err := m.run.Run("systemctl", "daemon-reload"); err != nil {
+		return false, fmt.Errorf("a quarentena foi removida, mas o systemd não foi recarregado: %w", err)
+	}
+	return false, nil
+}
+
 func (m nvidiaManager) status() (NvidiaStatus, error) {
 	gpu, supported, err := m.hardware()
 	if err != nil {
@@ -155,6 +270,17 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 		status.Detail = "Instalação NVIDIA parcial ou desalinhada detectada; faça rollback ou remova os pacotes G06 antes de continuar."
 		return status, nil
 	}
+	stackVersions, stackErr := m.installedStackVersions()
+	if stackErr != nil {
+		status.State = "unavailable"
+		status.Detail = stackErr.Error()
+		return status, nil
+	}
+	if len(stackVersions) > 1 {
+		status.State = "unavailable"
+		status.Detail = fmt.Sprintf("Pacotes NVIDIA G06 desalinhados nas versões %s; restaure o snapshot antes de reiniciar.", strings.Join(stackVersions, ", "))
+		return status, nil
+	}
 	status.Installed = true
 	status.State = "reboot-required"
 	status.RebootRequired = true
@@ -163,6 +289,10 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 		status.State = "active"
 		status.RebootRequired = false
 		status.Detail = "Driver NVIDIA ativo e pacotes G06 alinhados."
+		if qualified, reason := m.suspendQualified(kmpVersion); !qualified {
+			status.State = "quarantined"
+			status.Detail = "Driver NVIDIA ativo, mas suspensão e hibernação estão em quarentena: " + reason + "."
+		}
 	}
 	return status, nil
 }
@@ -264,9 +394,22 @@ func (m nvidiaManager) install(report progressFunc) (uint32, error) {
 	if kmpVersion == "" || kmpVersion != userspaceVersion {
 		return snapshot, fmt.Errorf("a transação deixou KMP e userspace desalinhados; use o snapshot %d para recuperação", snapshot)
 	}
+	stackVersions, err := m.installedStackVersions()
+	if err != nil || len(stackVersions) != 1 {
+		return snapshot, fmt.Errorf("a auditoria da pilha NVIDIA instalada falhou (%v, versões=%v); use o snapshot %d para recuperação", err, stackVersions, snapshot)
+	}
 	report(80, "Regenerando initramfs")
 	if err := m.run.Run("dracut", "--force"); err != nil {
 		return snapshot, fmt.Errorf("o initramfs não pôde ser regenerado; use o snapshot %d para recuperação: %w", snapshot, err)
+	}
+	quarantined, err := m.reconcileSuspendPolicy(kmpVersion)
+	if err != nil {
+		return snapshot, fmt.Errorf("o driver foi instalado, mas a política de suspensão não pôde ser aplicada; use o snapshot %d para recuperação: %w", snapshot, err)
+	}
+	if quarantined {
+		report(95, "Driver instalado; suspensão e hibernação foram bloqueadas por uma regressão conhecida nesta combinação")
+		report(100, fmt.Sprintf("Driver G06 %s instalado com suspensão em quarentena. Reinicie e use Verificar driver. Snapshot de recuperação: %d", kmpVersion, snapshot))
+		return snapshot, nil
 	}
 	report(100, fmt.Sprintf("Driver G06 %s instalado. Reinicie e use Verificar driver. Snapshot de recuperação: %d", kmpVersion, snapshot))
 	return snapshot, nil
@@ -277,7 +420,7 @@ func (m nvidiaManager) check() error {
 	if err != nil {
 		return err
 	}
-	if status.State != "active" {
+	if status.State != "active" && status.State != "quarantined" {
 		return errors.New(status.Detail)
 	}
 	connectors, err := filepath.Glob("/sys/class/drm/card*-*/status")
@@ -287,6 +430,14 @@ func (m nvidiaManager) check() error {
 	connectorCount := len(connectors)
 	if connectorCount == 0 {
 		return errors.New("o driver está ativo, mas nenhum conector DRM foi publicado")
+	}
+	kmpVersion := m.packageVersion(nvidiaKMPMeta)
+	quarantined, err := m.reconcileSuspendPolicy(kmpVersion)
+	if err != nil {
+		return err
+	}
+	if quarantined {
+		return errors.New("driver e conectores validados; suspensão e hibernação foram bloqueadas por regressão conhecida da NVIDIA 580.159.03 em notebook híbrido")
 	}
 	return nil
 }
@@ -320,4 +471,13 @@ func (s *SoftwareService) CheckNvidia() (bool, string, *dbus.Error) {
 		return false, err.Error(), nil
 	}
 	return true, "Driver NVIDIA ativo; nvidia-smi e conectores DRM validados.", nil
+}
+
+// ReconcileNvidiaSuspendPolicy applies the managed power guard at daemon
+// startup as well as during install/check. This also removes a Vega-owned
+// quarantine after a qualified driver replaces the affected version.
+func ReconcileNvidiaSuspendPolicy() error {
+	manager := newNvidiaManager()
+	_, err := manager.reconcileSuspendPolicy(manager.packageVersion(nvidiaKMPMeta))
+	return err
 }
