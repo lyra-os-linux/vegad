@@ -194,11 +194,14 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 		if err := s.emitTransactionProgress(txID, percent, message); err != nil {
 			log.Printf("vegad: emit TransactionProgress: %v", err)
 		}
+		_ = s.emitTransactionConsoleLine(txID, "event", sanitizeSoftwareConsoleLine(message))
 	}
 	pkgReport := func(pkg string, phase distro.PackagePhase, percent uint32) {
 		if err := s.emitPackageProgress(txID, pkg, phase, percent); err != nil {
 			log.Printf("vegad: emit PackageProgress: %v", err)
 		}
+		line := fmt.Sprintf("zypper: %s %s %d%%", phase, pkg, percent)
+		_ = s.emitTransactionConsoleLine(txID, "stdout", sanitizeSoftwareConsoleLine(line))
 	}
 	go func() {
 		err := withShutdownInhibit(why, func() error { return work(report, pkgReport) })
@@ -634,6 +637,13 @@ func (s *SoftwareService) emitTransactionProgress(txID uint32, percent uint32, m
 
 func (s *SoftwareService) emitPackageProgress(txID uint32, pkg string, phase distro.PackagePhase, percent uint32) error {
 	return s.conn.Emit(ObjectPath, BusName+".Software.PackageProgress", txID, pkg, string(phase), percent)
+}
+
+func (s *SoftwareService) emitTransactionConsoleLine(txID uint32, source, line string) error {
+	if line == "" {
+		return nil
+	}
+	return s.conn.Emit(ObjectPath, BusName+".Software.TransactionConsoleLine", txID, source, line)
 }
 
 func (s *SoftwareService) emitTransactionFinished(txID uint32, success bool, message string) error {

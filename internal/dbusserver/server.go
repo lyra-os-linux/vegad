@@ -199,6 +199,11 @@ func (s *Server) Export() error {
 					{Name: "phase", Type: "s", Direction: "out"},
 					{Name: "percent", Type: "u", Direction: "out"},
 				}},
+				{Name: "TransactionConsoleLine", Args: []introspect.Arg{
+					{Name: "transaction_id", Type: "u", Direction: "out"},
+					{Name: "source", Type: "s", Direction: "out"},
+					{Name: "line", Type: "s", Direction: "out"},
+				}},
 			}},
 			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots)},
 			{Name: BusName + ".Logs", Methods: introspect.Methods(logs)},
