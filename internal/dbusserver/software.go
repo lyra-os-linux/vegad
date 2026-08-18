@@ -15,9 +15,8 @@ import (
 )
 
 // SoftwareService backs org.lyraos.Vega1.Software: unified search/install/update across the distro's package manager
-// ("Oficial", via distro.PackageBackend), Flathub and the community layer
-// ("Comunidade", via distro.CommunityBackend — nil on distros without one).
-// Long transactions run in a goroutine and report progress via the
+// ("Oficial", via distro.PackageBackend) and Flathub. Long transactions run
+// in a goroutine and report progress via the
 // TransactionProgress/TransactionFinished signals instead of the caller
 // polling.
 type SoftwareService struct {
@@ -41,21 +40,14 @@ func capabilityUnavailable(capability string) *dbus.Error {
 
 func (s *SoftwareService) flatpakEnabled() bool { return s.profile == profile.Desktop }
 
-// PackageRef identifies a package within one origin ("official", "flathub",
-// "aur") so the UI can dedupe the same app found across origins.
+// PackageRef identifies a package within one origin ("official", "flathub")
+// so the UI can dedupe the same app found across origins.
 type PackageRef = distro.PackageRef
 
 // PackageDetails is the expanded view of a single package shown in the
 // detail panel (issue #8) — unlike PackageRef, fetching this touches the
-// network/AUR helper, so it's only requested on demand, never as part of a
-// list.
+// network, so it's only requested on demand, never as part of a list.
 type PackageDetails = distro.PackageDetails
-
-// errNoCommunityLayer is returned for the "aur" origin on distros whose
-// Provider.Community() is nil (no AUR-equivalent layer, e.g. openSUSE Leap).
-func errNoCommunityLayer() error {
-	return fmt.Errorf("esta distribuição não possui uma camada de pacotes da comunidade")
-}
 
 // PackageManagerName reports the active distro's official package manager
 // label ("Pacman", "Zypper", ...) so the UI doesn't have to hardcode one —
@@ -63,18 +55,6 @@ func errNoCommunityLayer() error {
 func (s *SoftwareService) PackageManagerName() (string, *dbus.Error) {
 	s.activity.Touch()
 	return s.provider.Package().Name(), nil
-}
-
-// CommunityLayerName reports the active distro's community package layer
-// label ("AUR"), or "" on distros without one (Provider.Community() == nil,
-// e.g. openSUSE Leap) — read-only, no polkit gate needed.
-func (s *SoftwareService) CommunityLayerName() (string, *dbus.Error) {
-	s.activity.Touch()
-	community := s.provider.Community()
-	if community == nil {
-		return "", nil
-	}
-	return community.Name(), nil
 }
 
 // GetPackageDetails fetches the expanded metadata for one package — read-only
@@ -95,12 +75,6 @@ func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id strin
 		}
 		u := desktopUserOrNil(s.conn, sender, "GetPackageDetails")
 		details, err = fetchFlatpakDetails(id, u)
-	case "aur":
-		community := s.provider.Community()
-		if community == nil {
-			return PackageDetails{}, dbus.MakeFailedError(errNoCommunityLayer())
-		}
-		details, err = community.GetDetails(id)
 	default:
 		return PackageDetails{}, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -113,8 +87,7 @@ func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id strin
 // Search queries the distro's local package sync databases and Flathub,
 // merging both into one flat list — deduplication across origins
 // is the UI's job, so it can offer the origin picker
-// on the card. The community origin ("aur") is skipped on distros without
-// one (Provider.Community() == nil), same as when no helper is installed.
+// on the card.
 func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 
@@ -135,14 +108,6 @@ func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef
 		results = append(results, flathub...)
 	}
 
-	if community := s.provider.Community(); community != nil {
-		aur, err := community.Search(query)
-		if err != nil {
-			return nil, dbus.MakeFailedError(err)
-		}
-		results = append(results, aur...)
-	}
-
 	return results, nil
 }
 
@@ -154,30 +119,7 @@ func (s *SoftwareService) SearchNative(query string) ([]PackageRef, *dbus.Error)
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
-	if community := s.provider.Community(); community != nil {
-		items, err := community.Search(query)
-		if err != nil {
-			return nil, dbus.MakeFailedError(err)
-		}
-		results = append(results, items...)
-	}
 	return results, nil
-}
-
-// GetAurPkgbuild fetches the PKGBUILD for an AUR package so the UI can show
-// it for review before the user confirms an install — read-only (no polkit
-// gate needed), same as Search/ListUpdates.
-func (s *SoftwareService) GetAurPkgbuild(id string) (string, *dbus.Error) {
-	s.activity.Touch()
-	community := s.provider.Community()
-	if community == nil {
-		return "", dbus.MakeFailedError(errNoCommunityLayer())
-	}
-	pkgbuild, err := community.GetBuildScript(id)
-	if err != nil {
-		return "", dbus.MakeFailedError(err)
-	}
-	return pkgbuild, nil
 }
 
 // startTransaction allocates a transaction id and runs work in the
@@ -223,10 +165,13 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 		return 0, capabilityUnavailable("flatpak")
 	}
 	switch origin {
-	case "official", "flathub", "aur":
+	case "official":
 		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
 			return 0, err
 		}
+	case "flathub":
+		// Deliberately no polkit prompt: Flathub installs should run
+		// unattended ahead of zypper installs in the install queue.
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -240,16 +185,6 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 		}), nil
 	case "flathub":
 		return s.startTransaction("Instalação Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return installFlatpak(id, report) }), nil
-	case "aur":
-		community := s.provider.Community()
-		if community == nil {
-			return 0, dbus.MakeFailedError(errNoCommunityLayer())
-		}
-		return s.startTransaction("Instalação AUR: "+id, func(report progressFunc, _ packageProgressFunc) error {
-			return withSnapshots("Instalação AUR: "+id, func() error {
-				return community.Install(id, report)
-			})
-		}), nil
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -260,8 +195,16 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 	if origin == "flathub" && !s.flatpakEnabled() {
 		return 0, capabilityUnavailable("flatpak")
 	}
-	if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
-		return 0, err
+	switch origin {
+	case "official":
+		if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
+			return 0, err
+		}
+	case "flathub":
+		// Deliberately no polkit prompt, same reasoning as Install: vegad
+		// already runs as root and calls flatpak directly.
+	default:
+		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
 	switch origin {
 	case "official":
@@ -279,12 +222,6 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			}
 		}
 		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return removeFlatpak(id, scope, u, report) }), nil
-	case "aur":
-		return s.startTransaction("Remoção AUR: "+id, func(report progressFunc, pkgReport packageProgressFunc) error {
-			return withSnapshots("Remoção AUR: "+id, func() error {
-				return s.provider.Package().Remove(id, report, pkgReport)
-			})
-		}), nil
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}

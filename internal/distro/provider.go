@@ -38,20 +38,6 @@ type PackageBackend interface {
 	TrustRepoKey(repo, keyId string, report ProgressFunc) error
 }
 
-// CommunityBackend drives an optional community package layer. Providers
-// without one (openSUSE Leap today) return nil from Provider.Community() —
-// callers must nil-check before use.
-type CommunityBackend interface {
-	// Name is the human-facing label for this layer ("AUR"), shown in the
-	// UI wherever it used to say "AUR" unconditionally.
-	Name() string
-
-	Search(query string) ([]PackageRef, error)
-	GetDetails(id string) (PackageDetails, error)
-	GetBuildScript(id string) (string, error)
-	Install(id string, report ProgressFunc) error
-}
-
 // KernelBackend knows the distro's kernel package naming and how to
 // regenerate initramfs/bootloader artifacts after a kernel change.
 type KernelBackend interface {
@@ -89,8 +75,6 @@ type HardwareBackend interface {
 type Provider interface {
 	Distro() ID
 	Package() PackageBackend
-	// Community returns nil when this distro has no AUR-equivalent layer.
-	Community() CommunityBackend
 	Kernel() KernelBackend
 	Hardware() HardwareBackend
 	// AdminGroup is the group membership that grants sudo/wheel access

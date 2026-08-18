@@ -28,7 +28,7 @@ const (
 // a transaction's existing coarse ProgressFunc. pkg is the package name —
 // for the "official" origin this equals PackageRef.Name/Id, so callers can
 // key UI state by it directly. Backends/flows without this granularity
-// (Flathub, AUR and ClearCache) simply never call it.
+// (Flathub and ClearCache) simply never call it.
 type PackageProgressFunc func(pkg string, phase PackagePhase, percent uint32)
 
 // RepositoryRef identifies a configured package repository and its current
@@ -68,8 +68,8 @@ func SplitPackageList(value string) []string {
 	return strings.Fields(value)
 }
 
-// PackageRef identifies a package within one origin ("official", "flathub",
-// "aur") so the UI can dedupe the same app found across origins.
+// PackageRef identifies a package within one origin ("official", "flathub")
+// so the UI can dedupe the same app found across origins.
 type PackageRef struct {
 	Origin      string
 	Id          string
@@ -85,8 +85,8 @@ type PackageRef struct {
 }
 
 // PackageDetails is the expanded view of a single package shown in the
-// detail panel — unlike PackageRef, fetching this touches the network/AUR
-// helper, so it's only requested on demand, never as part of a list.
+// detail panel — unlike PackageRef, fetching this touches the network, so
+// it's only requested on demand, never as part of a list.
 type PackageDetails struct {
 	Origin           string
 	Id               string
