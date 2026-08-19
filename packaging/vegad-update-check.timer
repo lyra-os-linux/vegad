@@ -2,9 +2,9 @@
 Description=Vega periodic update check timer
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=4h
-RandomizedDelaySec=5min
+OnBootSec=1h
+OnUnitActiveSec=24h
+RandomizedDelaySec=30min
 Persistent=true
 Unit=vegad-update-check.service
 

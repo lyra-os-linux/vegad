@@ -32,8 +32,9 @@ No perfil server, operações cuja origem é `flathub` falham com
 atualizações e limpeza de cache não executam Flatpak. A interface Bluetooth
 também não é exportada.
 
-O timer desktop verifica atualizações a cada quatro horas e salva o último
-resultado em `/var/lib/vega/update-status.json`. No server, o painel inicial da
+O timer desktop faz a primeira verificação uma hora após o boot, repete a
+consulta a cada 24 horas e salva o último resultado em
+`/var/lib/vega/update-status.json`. No server, o painel inicial da
 CLI e a primeira página após login na Web consultam `RequestUpdateCheck`,
 garantindo um aviso por sessão administrativa sem instalar nada
 automaticamente. A operação responde imediatamente com o estado persistido e,
@@ -41,3 +42,5 @@ quando ele tem mais de cinco minutos, inicia uma verificação assíncrona. Logi
 concorrentes compartilham a mesma verificação. O estado contém horário, perfil,
 contagens nativa, Flatpak, total e de segurança (zero quando o backend não
 classifica patches), além de indicar andamento e o último erro.
+Uma falha de rede ou de repositório agenda nova tentativa em duas horas, com
+até cinco minutos de atraso aleatório, sem alterar o ciclo diário normal.

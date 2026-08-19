@@ -1,0 +1,7 @@
+[Unit]
+Description=Retry a failed Vega update check
+
+[Timer]
+OnActiveSec=2h
+RandomizedDelaySec=5min
+Unit=vegad-update-check.service

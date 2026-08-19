@@ -70,6 +70,8 @@ install -Dm644 packaging/vegad/vegad-update-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.service
 install -Dm644 packaging/vegad/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
+install -Dm644 packaging/vegad/vegad-update-check-retry.timer \
+  %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
 install -Dm644 packaging/vegad/vegad.conf \
   %{buildroot}%{_sysconfdir}/vega/vegad.conf
 install -Dm644 packaging/vegad/profiles/desktop.conf \
@@ -111,6 +113,7 @@ install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad.service
 %{_prefix}/lib/systemd/system/vegad-update-check.service
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
+%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
 %dir %{_sysconfdir}/vega
 %config(noreplace) %{_sysconfdir}/vega/vegad.conf
 %dir %{_datadir}/vega
@@ -151,6 +154,7 @@ fi
 %preun
 if [ "$1" = "0" ]; then
   systemctl disable --now vegad-update-check.timer 2>/dev/null || true
+  systemctl stop vegad-update-check-retry.timer 2>/dev/null || true
   systemctl disable --now vegad-log-export.timer 2>/dev/null || true
 fi
 
