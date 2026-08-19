@@ -128,6 +128,14 @@ func deleteTimeshiftSnapshot(id uint32) error {
 	return err
 }
 
+func deleteAllTimeshiftSnapshots() error {
+	if !timeshiftInstalled() {
+		return errTimeshiftUnavailable
+	}
+	_, err := timeshiftCombinedOutput("--delete-all", "--scripted", "--yes")
+	return err
+}
+
 func rollbackTimeshiftSnapshot(id uint32) error {
 	name, err := timeshiftSnapshotName(id)
 	if err != nil {

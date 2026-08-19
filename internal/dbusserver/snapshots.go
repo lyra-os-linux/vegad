@@ -133,6 +133,59 @@ func (s *SnapshotsService) DeleteSnapshot(sender dbus.Sender, snapshotID uint32)
 	return nil
 }
 
+// ClearSnapshots removes every deletable snapshot after a single Polkit
+// authorization. Snapper's snapshot zero represents the live system and is
+// deliberately preserved.
+func (s *SnapshotsService) ClearSnapshots(sender dbus.Sender) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
+		return 0, err
+	}
+
+	var snapshots []SnapshotInfo
+	var listErr error
+	useSnapper := snapperInstalled()
+	if useSnapper {
+		snapshots, listErr = listSnapperSnapshots()
+	} else if timeshiftInstalled() {
+		snapshots, listErr = listTimeshiftSnapshots()
+	} else {
+		return 0, dbus.MakeFailedError(errNoSnapshotTool)
+	}
+	if listErr != nil {
+		return 0, dbus.MakeFailedError(listErr)
+	}
+
+	ids := make([]uint32, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		if snapshot.Id != 0 {
+			ids = append(ids, snapshot.Id)
+		}
+	}
+
+	total := uint32(len(ids))
+	for index, id := range ids {
+		var deleteErr error
+		if useSnapper {
+			deleteErr = deleteSnapperSnapshot(id)
+		} else {
+			deleteErr = deleteTimeshiftSnapshot(id)
+		}
+		if deleteErr != nil {
+			return uint32(index), dbus.MakeFailedError(fmt.Errorf("limpar snapshot %d: %w", id, deleteErr))
+		}
+		if err := s.conn.Emit(
+			ObjectPath,
+			BusName+".Snapshots.ClearProgress",
+			uint32(index+1),
+			total,
+		); err != nil {
+			return uint32(index + 1), dbus.MakeFailedError(fmt.Errorf("informar progresso da limpeza: %w", err))
+		}
+	}
+	return total, nil
+}
+
 func (s *SnapshotsService) SetRetentionPolicy(sender dbus.Sender, keepCount uint32) *dbus.Error {
 	s.activity.Touch()
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.configure"); err != nil {

@@ -263,7 +263,11 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 		return nil, dbus.MakeFailedError(officialErr)
 	}
 	if flathubErr != nil {
-		return nil, dbus.MakeFailedError(flathubErr)
+		// Flatpak is an auxiliary source on desktop systems. A broken or
+		// temporarily unavailable Flatpak setup must not hide valid native
+		// updates or turn a completed zypper transaction into an apparent
+		// failure during the UI refresh that follows it.
+		log.Printf("vegad: consultar atualizações Flatpak: %v", flathubErr)
 	}
 
 	results := append([]PackageRef{}, official...)

@@ -308,6 +308,27 @@ func deleteSnapperSnapshot(snapshotID uint32) error {
 	return err
 }
 
+func deleteSnapperSnapshots(snapshotIDs []uint32) error {
+	if !snapperInstalled() {
+		return errSnapperUnavailable
+	}
+	if len(snapshotIDs) == 0 {
+		return nil
+	}
+	args := make([]string, 1, len(snapshotIDs)+1)
+	args[0] = "delete"
+	for _, snapshotID := range snapshotIDs {
+		if snapshotID != 0 {
+			args = append(args, strconv.FormatUint(uint64(snapshotID), 10))
+		}
+	}
+	if len(args) == 1 {
+		return nil
+	}
+	_, err := snapperCombinedOutput(args...)
+	return err
+}
+
 func setSnapperRetentionPolicy(keepCount uint32) error {
 	if !snapperInstalled() {
 		return errSnapperUnavailable

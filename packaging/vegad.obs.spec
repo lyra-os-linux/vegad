@@ -32,6 +32,7 @@ Requires:       usbutils
 Requires:       mokutil
 Requires:       dracut
 Requires:       snapper
+Requires:       util-linux
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd

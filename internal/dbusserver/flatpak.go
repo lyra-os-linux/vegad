@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 
 	"github.com/lyraos/vegad/internal/distro"
 )
@@ -21,18 +20,34 @@ type flatpakApp struct {
 
 // flatpakUserCmd builds a `flatpak ... --user` invocation that runs as the
 // resolved desktop user rather than root, so it reads/writes that user's own
-// ~/.local/share/flatpak instead of root's.
+// ~/.local/share/flatpak instead of root's. The UID/GID transition is made by
+// runuser after exec, instead of exec.Cmd.SysProcAttr.Credential during fork.
+// The latter is rejected with EPERM in the hardened vegad systemd service on
+// Leap 16, before flatpak itself has a chance to start.
 func flatpakUserCmd(u *desktopUser, args ...string) *exec.Cmd {
-	cmd := exec.Command("flatpak", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{Uid: u.Uid, Gid: u.Gid},
-	}
-	env := append(os.Environ(), "HOME="+u.HomeDir)
+	runuserArgs := []string{"--user", u.Username, "--", "/usr/bin/flatpak"}
+	runuserArgs = append(runuserArgs, args...)
+	cmd := exec.Command("/usr/sbin/runuser", runuserArgs...)
+	env := environmentWith(os.Environ(), "HOME", u.HomeDir)
 	if _, err := os.Stat(u.RuntimeDir); err == nil {
-		env = append(env, "XDG_RUNTIME_DIR="+u.RuntimeDir)
+		env = environmentWith(env, "XDG_RUNTIME_DIR", u.RuntimeDir)
 	}
 	cmd.Env = env
 	return cmd
+}
+
+// environmentWith replaces an existing value as well as adding a missing
+// one. Appending HOME to os.Environ leaves duplicate entries, and libc-based
+// programs may keep the first one (root's HOME) instead of the intended user.
+func environmentWith(env []string, key, value string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
 }
 
 // searchFlatpak shells out to `flatpak search`, which queries the locally
