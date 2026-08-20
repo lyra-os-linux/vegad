@@ -13,7 +13,9 @@ EnvironmentFile=-/etc/vega/vegad.conf
 # ProtectSystem/ProtectHome, CapabilityBoundingSet e filtros agressivos de
 # syscalls seriam incompatíveis com sua função. As barreiras abaixo reduzem
 # superfície sem impedir os subprocessos administrativos autorizados.
-NoNewPrivileges=true
+# The daemon invokes /usr/sbin/runuser for per-user Flatpak operations.
+# NoNewPrivileges would prevent that uid transition even though the target
+# account is resolved and selected by vegad's polkit-authorized request.
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelTunables=true

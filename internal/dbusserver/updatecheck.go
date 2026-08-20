@@ -37,12 +37,21 @@ func persistUpdateStatus(path string, status UpdateStatus) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	// The daemon services deliberately run with UMask=0077, but this status is
+	// public, non-sensitive desktop state consumed by the GNOME Shell extension.
+	// Explicit chmods also repair directories/files created by older releases.
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	data, err := json.Marshal(status)
 	if err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
