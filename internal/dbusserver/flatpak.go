@@ -2,6 +2,7 @@ package dbusserver
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -147,12 +148,18 @@ func listFlatpakInstalled(u *desktopUser) ([]PackageRef, error) {
 	return results, nil
 }
 
-// listFlatpakUpdates has no clean "list only" subcommand in this flatpak
-// version (1.18) — `flatpak update` always mixes the pending list with an
-// interactive confirmation. We run it once per resolved scope answering "n"
-// (so nothing is ever applied) and check which of that scope's installed
-// app IDs appear in the pre-confirmation output, sidestepping
-// locale-specific column parsing.
+// listFlatpakUpdates asks each resolved scope what it would update. flatpak
+// 1.16 has no dry-run: `flatpak update` always mixes the pending list with an
+// interactive confirmation, and neither --no-pull nor --no-deploy is a
+// read-only probe (one deploys from cache, the other downloads). So we run it
+// answering "n", which never applies anything, and read the plan it prints
+// first. `flatpak remote-ls --updates` would be read-only by construction but
+// measured ~4x slower here, so it is not worth the swap while this sits
+// behind the update caches.
+//
+// A failing scope is returned as an error rather than silently reported as
+// "nothing pending" — callers decide whether to degrade, and per
+// SoftwareService.ListUpdates a broken Flatpak must not hide native updates.
 func listFlatpakUpdates(u *desktopUser) ([]PackageRef, error) {
 	apps, err := flatpakInstalledApps(u)
 	if err != nil {
@@ -163,36 +170,79 @@ func listFlatpakUpdates(u *desktopUser) ([]PackageRef, error) {
 	}
 
 	pending := map[string]bool{}
-	collectPendingFlatpakUpdates(exec.Command("flatpak", "update", "--system"), apps, "system", pending)
+	var failures []error
+	if err := collectPendingFlatpakUpdates(
+		exec.Command("flatpak", "update", "--system"), apps, "system", pending); err != nil {
+		failures = append(failures, err)
+	}
 	if u != nil {
-		collectPendingFlatpakUpdates(flatpakUserCmd(u, "update", "--user"), apps, "user", pending)
+		if err := collectPendingFlatpakUpdates(
+			flatpakUserCmd(u, "update", "--user"), apps, "user", pending); err != nil {
+			failures = append(failures, err)
+		}
 	}
 
 	var results []PackageRef
 	for id := range pending {
 		app := apps[id]
 		results = append(results, PackageRef{
-			Origin:      "flathub",
-			Id:          id,
-			Name:        app.Name,
-			Description: "Atualização disponível",
-			Installed:   true,
-			Icon:        findFlatpakIcon(id, u),
-			Repository:  "Flathub",
+			Origin:     "flathub",
+			Id:         id,
+			Name:       app.Name,
+			Installed:  true,
+			Icon:       findFlatpakIcon(id, u),
+			Repository: "Flathub",
 		})
 	}
-	return results, nil
+	return results, errors.Join(failures...)
 }
 
-func collectPendingFlatpakUpdates(cmd *exec.Cmd, apps map[string]flatpakApp, scope string, pending map[string]bool) {
+// collectPendingFlatpakUpdates records which of scope's installed apps the
+// update plan lists.
+//
+// Exit status alone cannot separate the two non-zero cases: declining the
+// prompt and failing outright both exit 1 (an empty plan exits 0). A run that
+// named at least one installed app was a decline and is fine; a non-zero run
+// that named none really failed — unreachable remote, broken installation —
+// and has to surface, because reading that as "nothing pending" tells the
+// user they are up to date when nothing was actually checked.
+func collectPendingFlatpakUpdates(cmd *exec.Cmd, apps map[string]flatpakApp, scope string, pending map[string]bool) error {
 	cmd.Stdin = strings.NewReader("n\n")
-	out, _ := cmd.CombinedOutput() // exit status is meaningless here: "n" always makes it exit non-zero
-	text := string(out)
+	out, err := cmd.CombinedOutput()
+
+	found := 0
 	for id, app := range apps {
-		if app.Scope == scope && strings.Contains(text, id) {
+		if app.Scope == scope && planListsApp(out, id) {
 			pending[id] = true
+			found++
 		}
 	}
+	if err != nil && found == 0 {
+		return fmt.Errorf("consultar atualizações Flatpak (%s): %w — %s",
+			scope, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// planListsApp reports whether the plan names exactly this app ID. Matching
+// the raw substring instead would let org.gnome.Builder.Devel's row mark
+// org.gnome.Builder as pending too, so compare whole whitespace-separated
+// fields. Some flatpak outputs print a full app/ID/arch/branch ref in place
+// of the bare ID, so the ID slot of such a ref counts as well — only that
+// slot, never the arch or branch beside it.
+func planListsApp(out []byte, id string) bool {
+	for _, line := range strings.Split(string(out), "\n") {
+		for _, field := range strings.Fields(line) {
+			if field == id {
+				return true
+			}
+			parts := strings.Split(field, "/")
+			if len(parts) == 4 && parts[0] == "app" && parts[1] == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // findFlatpakIcon checks the system-wide export tree, then (when u is

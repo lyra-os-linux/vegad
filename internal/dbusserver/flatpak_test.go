@@ -81,3 +81,37 @@ func TestSearchFlatpakFindsFirefox(t *testing.T) {
 		t.Fatalf("expected to find org.mozilla.firefox in results, got %+v", results)
 	}
 }
+
+// The plan is a table whose ID column holds the bare app ID; matching the raw
+// substring instead let a longer ID's row mark its prefix as pending too.
+func TestPlanListsAppMatchesWholeIDsOnly(t *testing.T) {
+	plan := []byte("Procurando por atualizações…\n\n" +
+		"        ID                            Ramo    Op\n" +
+		" 1. [ ] org.gnome.Builder.Devel       master   u\n\n" +
+		"Deseja continuar? [S/n]:")
+
+	if !planListsApp(plan, "org.gnome.Builder.Devel") {
+		t.Fatal("o app listado no plano deve casar")
+	}
+	if planListsApp(plan, "org.gnome.Builder") {
+		t.Fatal("prefixo de outro ID não pode ser lido como pendente")
+	}
+}
+
+// Some flatpak outputs print the full ref instead of the bare ID.
+func TestPlanListsAppMatchesFullRefSegments(t *testing.T) {
+	plan := []byte(" 1. [ ] app/us.zoom.Zoom/x86_64/stable   u\n")
+	if !planListsApp(plan, "us.zoom.Zoom") {
+		t.Fatal("segmento de uma ref completa deve casar")
+	}
+	if planListsApp(plan, "x86_64") {
+		t.Fatal("arquitetura não é um ID de aplicativo pendente")
+	}
+}
+
+// An empty plan must not mark anything pending.
+func TestPlanListsAppIgnoresEmptyPlan(t *testing.T) {
+	if planListsApp([]byte("Procurando por atualizações…\n\nNada para fazer.\n"), "us.zoom.Zoom") {
+		t.Fatal("plano vazio não pode marcar pendências")
+	}
+}
