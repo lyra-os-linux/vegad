@@ -1,6 +1,7 @@
 package dbusserver
 
 import (
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -358,6 +359,131 @@ func (m nvidiaManager) ensureRepository() error {
 	return nil
 }
 
+type nvidiaZypperSearch struct {
+	Solvables []struct {
+		Edition string `xml:"edition,attr"`
+	} `xml:"search-result>solvable-list>solvable"`
+}
+
+// repoEditions lists the package editions (version-release) that
+// repo-nvidia currently offers for name, newest metadata order first as
+// reported by zypper. NVIDIA occasionally publishes the userspace and the
+// signed kmp meta packages on different schedules, so callers must not
+// assume the newest edition of one package has a matching edition of the
+// other.
+func (m nvidiaManager) repoEditions(name string) ([]string, error) {
+	out, err := m.run.Output("zypper", "--xmlout", "--non-interactive", "se", "-s", "-t", "package", "-r", nvidiaRepoAlias, name)
+	if err != nil {
+		return nil, fmt.Errorf("não foi possível consultar as versões de %s no repositório NVIDIA: %w", name, err)
+	}
+	var parsed nvidiaZypperSearch
+	if err := xml.Unmarshal([]byte(out), &parsed); err != nil {
+		return nil, fmt.Errorf("resposta inesperada do zypper ao consultar %s: %w", name, err)
+	}
+	seen := make(map[string]struct{}, len(parsed.Solvables))
+	editions := make([]string, 0, len(parsed.Solvables))
+	for _, solvable := range parsed.Solvables {
+		if solvable.Edition == "" {
+			continue
+		}
+		if _, ok := seen[solvable.Edition]; ok {
+			continue
+		}
+		seen[solvable.Edition] = struct{}{}
+		editions = append(editions, solvable.Edition)
+	}
+	return editions, nil
+}
+
+// splitVersionSegments breaks a version/release string into alternating
+// runs of digits and non-digits, the same shape rpmvercmp compares, which
+// is enough to order the purely numeric NVIDIA version and openSUSE
+// release strings used here.
+func splitVersionSegments(s string) []string {
+	var segments []string
+	var current strings.Builder
+	var digit bool
+	for i, r := range s {
+		isDigit := r >= '0' && r <= '9'
+		if i > 0 && isDigit != digit {
+			segments = append(segments, current.String())
+			current.Reset()
+		}
+		current.WriteRune(r)
+		digit = isDigit
+	}
+	if current.Len() > 0 {
+		segments = append(segments, current.String())
+	}
+	return segments
+}
+
+// compareEditions returns >0 if a is newer than b, <0 if older, 0 if equal.
+func compareEditions(a, b string) int {
+	as, bs := splitVersionSegments(a), splitVersionSegments(b)
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var sa, sb string
+		if i < len(as) {
+			sa = as[i]
+		}
+		if i < len(bs) {
+			sb = bs[i]
+		}
+		if sa == sb {
+			continue
+		}
+		na, aErr := strconv.Atoi(sa)
+		nb, bErr := strconv.Atoi(sb)
+		if aErr == nil && bErr == nil {
+			if na != nb {
+				if na > nb {
+					return 1
+				}
+				return -1
+			}
+			continue
+		}
+		if sa > sb {
+			return 1
+		}
+		return -1
+	}
+	return 0
+}
+
+// lockstepVersion picks the newest package edition that repo-nvidia
+// currently offers for both the signed kmp meta package and the userspace
+// meta package. NVIDIA sometimes publishes one ahead of the other, which
+// makes a plain "install latest of each" call fail the solver even though
+// an older, fully aligned pair is available.
+func (m nvidiaManager) lockstepVersion() (string, error) {
+	kmpEditions, err := m.repoEditions(nvidiaKMPMeta)
+	if err != nil {
+		return "", err
+	}
+	userspaceEditions, err := m.repoEditions(nvidiaUserspaceMeta)
+	if err != nil {
+		return "", err
+	}
+	kmpSet := make(map[string]struct{}, len(kmpEditions))
+	for _, edition := range kmpEditions {
+		kmpSet[edition] = struct{}{}
+	}
+	best := ""
+	for _, edition := range userspaceEditions {
+		if _, ok := kmpSet[edition]; !ok {
+			continue
+		}
+		if best == "" || compareEditions(edition, best) > 0 {
+			best = edition
+		}
+	}
+	if best == "" {
+		return "", fmt.Errorf("o repositório NVIDIA está temporariamente desalinhado entre %s e %s (nenhuma versão em comum); tente novamente mais tarde", nvidiaKMPMeta, nvidiaUserspaceMeta)
+	}
+	return best, nil
+}
+
 func (m nvidiaManager) install(report progressFunc) (uint32, error) {
 	status, err := m.status()
 	if err != nil {
@@ -384,8 +510,14 @@ func (m nvidiaManager) install(report progressFunc) (uint32, error) {
 	if err := m.ensureRepository(); err != nil {
 		return snapshot, fmt.Errorf("%w. Nenhum driver foi instalado; snapshot de recuperação: %d", err, snapshot)
 	}
-	report(45, "Instalando módulo assinado, userspace e firmware G06 em lockstep")
-	if err := m.run.Run("zypper", "--non-interactive", "install", "--no-recommends", nvidiaKMPMeta, nvidiaUserspaceMeta); err != nil {
+	report(35, "Resolvendo a versão em lockstep disponível no repositório NVIDIA")
+	version, err := m.lockstepVersion()
+	if err != nil {
+		return snapshot, fmt.Errorf("%w. Nenhum driver foi instalado; snapshot de recuperação: %d", err, snapshot)
+	}
+	report(45, fmt.Sprintf("Instalando módulo assinado, userspace e firmware G06 %s em lockstep", version))
+	if err := m.run.Run("zypper", "--non-interactive", "install", "--no-recommends",
+		nvidiaKMPMeta+"="+version, nvidiaUserspaceMeta+"="+version); err != nil {
 		return snapshot, fmt.Errorf("a transação NVIDIA falhou; use o snapshot %d para recuperação: %w", snapshot, err)
 	}
 	kmpVersion := m.packageVersion(nvidiaKMPMeta)
