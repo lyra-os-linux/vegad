@@ -28,11 +28,70 @@ type SoftwareService struct {
 	nativeUpdatesMu sync.Mutex
 	nativeUpdatesAt time.Time
 	nativeUpdates   []PackageRef
+	updatesMu       sync.Mutex
+	updatesAt       time.Time
+	updatesScope    string
+	updates         []PackageRef
 	updateCheckMu   sync.Mutex
 	updateChecking  bool
 }
 
 const nativeUpdateCacheTTL = 5 * time.Minute
+
+// cachedNativeUpdates reads the native pending updates through the shared
+// cache, shelling out to the package manager only when it has expired. Both
+// ListUpdates and ListNativeUpdates go through here so the dashboard and the
+// Updates tab never pay for the same answer twice; refreshed reports whether
+// this call was the one that repopulated it.
+func (s *SoftwareService) cachedNativeUpdates() (packages []PackageRef, refreshed bool, err error) {
+	s.nativeUpdatesMu.Lock()
+	defer s.nativeUpdatesMu.Unlock()
+	if !s.nativeUpdatesAt.IsZero() && time.Since(s.nativeUpdatesAt) < nativeUpdateCacheTTL {
+		return append([]PackageRef(nil), s.nativeUpdates...), false, nil
+	}
+	updates, err := s.provider.Package().ListUpdates()
+	if err != nil {
+		return nil, false, err
+	}
+	s.nativeUpdates = append([]PackageRef(nil), updates...)
+	s.nativeUpdatesAt = time.Now()
+	return append([]PackageRef(nil), updates...), true, nil
+}
+
+// flatpakScopeKey identifies whose --user Flatpak installation fed a cached
+// merged list. The system scope alone answers to "", so a list built for one
+// desktop user is never handed to another.
+func flatpakScopeKey(u *desktopUser) string {
+	if u == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", u.Uid)
+}
+
+// invalidateThenListUpdates drops the caches now that SyncDatabase has pulled
+// new metadata — anything cached before it was computed against the old
+// repository state — and then reads the fresh list.
+func (s *SoftwareService) invalidateThenListUpdates() ([]PackageRef, error) {
+	s.invalidateUpdateCaches()
+	return s.provider.Package().ListUpdates()
+}
+
+// invalidateUpdateCaches drops both cached lists so the next reader shells
+// out again. Anything that can change what is pending — a finished
+// transaction, a repository toggle, a database sync — must call this, or the
+// Updates tab keeps showing packages that are already installed.
+func (s *SoftwareService) invalidateUpdateCaches() {
+	s.nativeUpdatesMu.Lock()
+	s.nativeUpdatesAt = time.Time{}
+	s.nativeUpdates = nil
+	s.nativeUpdatesMu.Unlock()
+
+	s.updatesMu.Lock()
+	s.updatesAt = time.Time{}
+	s.updatesScope = ""
+	s.updates = nil
+	s.updatesMu.Unlock()
+}
 
 func capabilityUnavailable(capability string) *dbus.Error {
 	return dbus.NewError(BusName+".Error.CapabilityUnavailable", []interface{}{fmt.Sprintf("capacidade %s indisponível no perfil ativo", capability)})
@@ -147,6 +206,10 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 	}
 	go func() {
 		err := withShutdownInhibit(why, func() error { return work(report, pkgReport) })
+		// Every transaction funnels through here, and any of them can change
+		// what is still pending — drop the cached lists before the UI reacts
+		// to TransactionFinished and re-reads them.
+		s.invalidateUpdateCaches()
 		success := err == nil
 		message := "Concluído"
 		if err != nil {
@@ -232,13 +295,27 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 	if !s.flatpakEnabled() {
-		updates, err := s.provider.Package().ListUpdates()
+		updates, _, err := s.cachedNativeUpdates()
 		if err != nil {
 			return nil, dbus.MakeFailedError(err)
 		}
 		return updates, nil
 	}
 	u := desktopUserOrNil(s.conn, sender, "ListUpdates")
+	scope := flatpakScopeKey(u)
+
+	// The Updates tab re-reads this on every click and the dashboard reads
+	// it again at startup, but the answer only changes when a transaction
+	// runs (see invalidateUpdateCaches) — so serve repeats from the cache
+	// instead of shelling out to zypper and flatpak each time. The lookup
+	// happens inside the lock, so callers arriving during a refresh wait for
+	// it and then read its result rather than starting a second one.
+	s.updatesMu.Lock()
+	defer s.updatesMu.Unlock()
+	if !s.updatesAt.IsZero() && s.updatesScope == scope &&
+		time.Since(s.updatesAt) < nativeUpdateCacheTTL {
+		return append([]PackageRef(nil), s.updates...), nil
+	}
 
 	// Official and Flathub updates come from entirely separate subprocesses
 	// (zypper/pacman vs. flatpak) — run them concurrently rather than
@@ -251,7 +328,7 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		official, officialErr = s.provider.Package().ListUpdates()
+		official, _, officialErr = s.cachedNativeUpdates()
 	}()
 	go func() {
 		defer wg.Done()
@@ -272,24 +349,23 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 
 	results := append([]PackageRef{}, official...)
 	results = append(results, flathub...)
+	s.updates = append([]PackageRef(nil), results...)
+	s.updatesAt = time.Now()
+	s.updatesScope = scope
 	return results, nil
 }
 
 func (s *SoftwareService) ListNativeUpdates() ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
-	s.nativeUpdatesMu.Lock()
-	defer s.nativeUpdatesMu.Unlock()
-	if time.Since(s.nativeUpdatesAt) < nativeUpdateCacheTTL {
-		return append([]PackageRef(nil), s.nativeUpdates...), nil
-	}
-	updates, err := s.provider.Package().ListUpdates()
+	updates, refreshed, err := s.cachedNativeUpdates()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
-	s.nativeUpdates = append([]PackageRef(nil), updates...)
-	s.nativeUpdatesAt = time.Now()
+	if !refreshed {
+		return updates, nil
+	}
 	status := UpdateStatus{
-		CheckedAt:   s.nativeUpdatesAt.UTC().Format(time.RFC3339),
+		CheckedAt:   time.Now().UTC().Format(time.RFC3339),
 		Profile:     string(s.profile),
 		NativeCount: uint32(len(updates)),
 		TotalCount:  uint32(len(updates)),
@@ -297,7 +373,7 @@ func (s *SoftwareService) ListNativeUpdates() ([]PackageRef, *dbus.Error) {
 	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
 		log.Printf("vegad: persistir consulta nativa de atualizações: %v", err)
 	}
-	return append([]PackageRef(nil), updates...), nil
+	return updates, nil
 }
 
 func (s *SoftwareService) GetUpdateStatus() (UpdateStatus, *dbus.Error) {
@@ -350,7 +426,7 @@ func (s *SoftwareService) refreshUpdateStatus() {
 	}
 	if err := s.provider.Package().SyncDatabase(); err != nil {
 		status.Error = err.Error()
-	} else if updates, err := s.provider.Package().ListUpdates(); err != nil {
+	} else if updates, err := s.invalidateThenListUpdates(); err != nil {
 		status.Error = err.Error()
 	} else {
 		status.NativeCount = uint32(len(updates))
@@ -508,6 +584,9 @@ func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enable
 	if err := s.provider.Package().SetRepoEnabled(repo, enabled); err != nil {
 		return dbus.MakeFailedError(err)
 	}
+	// Toggling a repository changes which updates are visible, and this path
+	// is not a transaction, so it has to drop the caches itself.
+	s.invalidateUpdateCaches()
 	return nil
 }
 
@@ -609,6 +688,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 	}
 	go func() {
 		err := withShutdownInhibit(why, func() error { return work(txID, report) })
+		s.invalidateUpdateCaches()
 		success := err == nil
 		message := "Concluído"
 		if err != nil {
