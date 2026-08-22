@@ -15,9 +15,11 @@ import (
 // fails loudly instead of silently passing.
 type countingPackageBackend struct {
 	distro.PackageBackend
-	mu      sync.Mutex
-	calls   int
-	updates []distro.PackageRef
+	mu             sync.Mutex
+	calls          int
+	installedCalls int
+	updates        []distro.PackageRef
+	installed      []distro.PackageRef
 }
 
 func (b *countingPackageBackend) ListUpdates() ([]distro.PackageRef, error) {
@@ -25,6 +27,13 @@ func (b *countingPackageBackend) ListUpdates() ([]distro.PackageRef, error) {
 	defer b.mu.Unlock()
 	b.calls++
 	return append([]distro.PackageRef(nil), b.updates...), nil
+}
+
+func (b *countingPackageBackend) ListInstalled() ([]distro.PackageRef, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.installedCalls++
+	return append([]distro.PackageRef(nil), b.installed...), nil
 }
 
 func (b *countingPackageBackend) callCount() int {
@@ -44,7 +53,8 @@ func newCachingService(t *testing.T, p profile.Profile) (*SoftwareService, *coun
 	t.Helper()
 	t.Setenv("VEGAD_UPDATE_STATE", filepath.Join(t.TempDir(), "update-status.json"))
 	backend := &countingPackageBackend{
-		updates: []distro.PackageRef{{Origin: "official", Id: "vim", Name: "vim"}},
+		updates:   []distro.PackageRef{{Origin: "official", Id: "vim", Name: "vim"}},
+		installed: []distro.PackageRef{{Origin: "official", Id: "bash", Name: "bash"}},
 	}
 	return &SoftwareService{
 		activity: &Activity{},
@@ -134,5 +144,23 @@ func TestFlatpakScopeKeySeparatesUsers(t *testing.T) {
 	}
 	if flatpakScopeKey(&desktopUser{Uid: 1000}) == flatpakScopeKey(&desktopUser{Uid: 1001}) {
 		t.Fatal("usuários distintos devem gerar chaves distintas")
+	}
+}
+
+// ListInstalled was restructured so the native and Flatpak queries overlap;
+// the profile without Flatpak must still take the native-only path and never
+// reach the concurrent branch.
+func TestListInstalledWithoutFlatpakReturnsNativeOnly(t *testing.T) {
+	svc, backend := newCachingService(t, profile.Server)
+
+	got, err := svc.ListInstalled("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Id != "bash" {
+		t.Fatalf("instalados = %#v", got)
+	}
+	if backend.installedCalls != 1 {
+		t.Fatalf("gerenciador consultado %d vezes, esperado 1", backend.installedCalls)
 	}
 }

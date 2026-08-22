@@ -424,21 +424,41 @@ func (s *SoftwareService) refreshUpdateStatus() {
 		Profile:    string(s.profile),
 		InProgress: true,
 	}
-	if err := s.provider.Package().SyncDatabase(); err != nil {
-		status.Error = err.Error()
-	} else if updates, err := s.invalidateThenListUpdates(); err != nil {
-		status.Error = err.Error()
-	} else {
+	// The Flatpak probe shares no lock with zypper and does not depend on
+	// SyncDatabase, so it covers the whole native sync+list rather than
+	// starting after it. The goroutine writes flatpaks/flatpakErr, so it is
+	// joined before either is read.
+	var flatpaks []PackageRef
+	var flatpakErr error
+	var wg sync.WaitGroup
+	if s.profile == profile.Desktop {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			flatpaks, flatpakErr = listFlatpakUpdates(nil)
+		}()
+	}
+
+	var nativeErr error
+	var updates []PackageRef
+	if nativeErr = s.provider.Package().SyncDatabase(); nativeErr == nil {
+		updates, nativeErr = s.invalidateThenListUpdates()
+	}
+	wg.Wait()
+
+	if nativeErr == nil {
 		status.NativeCount = uint32(len(updates))
 		status.TotalCount = status.NativeCount
-		if s.profile == profile.Desktop {
-			if flatpaks, err := listFlatpakUpdates(nil); err != nil {
-				status.Error = err.Error()
-			} else {
-				status.FlatpakCount = uint32(len(flatpaks))
-				status.TotalCount += status.FlatpakCount
-			}
-		}
+	}
+	// Same rule as ListUpdates: each source records its own failure without
+	// throwing away what the other one found.
+	if flatpakErr != nil {
+		log.Printf("vegad: consultar atualizações Flatpak: %v", flatpakErr)
+	}
+	status.FlatpakCount = uint32(len(flatpaks))
+	status.TotalCount += status.FlatpakCount
+	if err := errors.Join(nativeErr, flatpakErr); err != nil {
+		status.Error = err.Error()
 	}
 	status.InProgress = false
 	previous, _ := readUpdateStatus(updateStatePath())
@@ -466,24 +486,46 @@ func (s *SoftwareService) refreshUpdateStatus() {
 func (s *SoftwareService) ListInstalled(sender dbus.Sender) ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
 
-	var results []PackageRef
-
-	official, err := s.provider.Package().ListInstalled()
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
-	}
-	results = append(results, official...)
 	if !s.flatpakEnabled() {
-		return results, nil
+		official, err := s.provider.Package().ListInstalled()
+		if err != nil {
+			return nil, dbus.MakeFailedError(err)
+		}
+		return official, nil
 	}
 
+	// rpm/pacman and flatpak are separate subprocesses sharing no lock, so
+	// overlap them the way ListUpdates already does instead of paying both
+	// in sequence. desktopUserOrNil needs the sender and is resolved here,
+	// before the goroutines start.
 	u := desktopUserOrNil(s.conn, sender, "ListInstalled")
-	flathub, err := listFlatpakInstalled(u)
-	if err != nil {
-		return nil, dbus.MakeFailedError(err)
-	}
-	results = append(results, flathub...)
 
+	var official, flathub []PackageRef
+	var officialErr, flathubErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		official, officialErr = s.provider.Package().ListInstalled()
+	}()
+	go func() {
+		defer wg.Done()
+		flathub, flathubErr = listFlatpakInstalled(u)
+	}()
+	wg.Wait()
+
+	if officialErr != nil {
+		return nil, dbus.MakeFailedError(officialErr)
+	}
+	if flathubErr != nil {
+		return nil, dbus.MakeFailedError(flathubErr)
+	}
+
+	// Native packages stay ahead of Flatpak ones, the order the previous
+	// sequential version produced and the inventory view groups by.
+	results := append([]PackageRef{}, official...)
+	results = append(results, flathub...)
 	return results, nil
 }
 

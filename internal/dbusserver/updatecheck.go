@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -106,7 +107,27 @@ func RunUpdateCheckJob(activeProfile profile.Profile) error {
 		return err
 	}
 
+	// Runs as its own short-lived process on a systemd timer, with no D-Bus
+	// caller to resolve a desktop user from — only the system-wide Flatpak
+	// installation is checked here (see listFlatpakUpdates).
+	//
+	// It shares no lock with zypper and does not depend on SyncDatabase, so
+	// it runs alongside the native sync+list instead of after them. The
+	// goroutine writes flathub/flatpakErr, so every path below joins it
+	// before reading either — including the early returns.
+	var flathub []PackageRef
+	var flatpakErr error
+	var wg sync.WaitGroup
+	if activeProfile == profile.Desktop {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			flathub, flatpakErr = listFlatpakUpdates(nil)
+		}()
+	}
+
 	if err := provider.Package().SyncDatabase(); err != nil {
+		wg.Wait()
 		status.Error = err.Error()
 		_ = persistUpdateStatus(updateStatePath(), status)
 		return err
@@ -114,21 +135,20 @@ func RunUpdateCheckJob(activeProfile profile.Profile) error {
 
 	official, err := provider.Package().ListUpdates()
 	if err != nil {
+		wg.Wait()
 		status.Error = err.Error()
 		_ = persistUpdateStatus(updateStatePath(), status)
 		return err
 	}
-	// Runs as its own short-lived process on a systemd timer, with no D-Bus
-	// caller to resolve a desktop user from — only the system-wide Flatpak
-	// installation is checked here (see listFlatpakUpdates).
-	var flathub []PackageRef
-	if activeProfile == profile.Desktop {
-		flathub, err = listFlatpakUpdates(nil)
-		if err != nil {
-			status.Error = err.Error()
-			_ = persistUpdateStatus(updateStatePath(), status)
-			return err
-		}
+	wg.Wait()
+
+	// Flatpak is auxiliary: a broken or unreachable one is recorded in
+	// status.Error but must not discard the native count we already have,
+	// which is the same rule SoftwareService.ListUpdates follows. It can
+	// still return the scopes that did work alongside the error.
+	if flatpakErr != nil {
+		log.Printf("vegad: consultar atualizações Flatpak: %v", flatpakErr)
+		status.Error = flatpakErr.Error()
 	}
 
 	count := len(official) + len(flathub)
