@@ -10,7 +10,7 @@ import (
 )
 
 // desktopUser identifies the flesh-and-blood account behind a D-Bus caller.
-// vegad runs as root (see packaging/vegad/vegad.service), so without this a
+// vegad runs as root (see packaging/vegad.service), so without this a
 // `flatpak --user` call would operate on root's own — irrelevant — per-user
 // Flatpak installation instead of the desktop user's.
 type desktopUser struct {

@@ -1,0 +1,29 @@
+<services>
+  <!-- Fonte de verdade pro build no OBS. Adaptado do _service compartilhado
+       que o monorepo vega usava antes da quebra em repositórios próprios —
+       agora aponta direto pro repo do vegad, sem precisar excluir
+       subdiretórios de outros componentes. -->
+  <service name="tar_scm">
+    <param name="scm">git</param>
+    <param name="url">https://github.com/lyra-os-linux/vegad.git</param>
+    <param name="revision">main</param>
+    <param name="match-tag">v*</param>
+    <param name="versionformat">@PARENT_TAG@</param>
+    <param name="versionrewrite-pattern">v(.*)</param>
+    <param name="versionrewrite-replacement">\1</param>
+    <param name="exclude">.git</param>
+    <param name="filename">vegad-src</param>
+  </service>
+  <service name="set_version" />
+  <!-- Gera vendor.tar.gz a partir do go.mod/go.sum na raiz do tarball —
+       a VM de build do OBS não tem rede pra "go build" baixar módulos
+       direto do proxy.golang.org. NOTA: esta configuração é uma
+       reconstrução best-effort feita durante a quebra do monorepo; a
+       versão exata que rodava no pacote vegad do projeto OBS
+       home:rodrigosbrito:vega não estava nos arquivos deste repositório —
+       confirme os parâmetros contra esse pacote (ou reconfigure-o) antes
+       de confiar neste _service em produção. -->
+  <service name="go_modules">
+    <param name="compression">gz</param>
+  </service>
+</services>

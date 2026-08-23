@@ -6,12 +6,11 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-vegad_dir="$repo_root/vegad"
-packaging_dir="$repo_root/packaging/vegad"
+packaging_dir="$repo_root/packaging"
 
-echo "==> Buildando vegad a partir de $vegad_dir"
+echo "==> Buildando vegad a partir de $repo_root"
 (
-  cd "$vegad_dir"
+  cd "$repo_root"
   go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=dev" -o vegad ./cmd/vegad
 )
 
@@ -19,7 +18,7 @@ echo "==> Ações polkit"
 sudo install -Dm644 "$packaging_dir/org.lyraos.vega.policy" /usr/share/polkit-1/actions/org.lyraos.vega.policy
 
 echo "==> Instalando binário em /usr/lib/vega/vegad"
-sudo install -Dm755 "$vegad_dir/vegad" /usr/lib/vega/vegad
+sudo install -Dm755 "$repo_root/vegad" /usr/lib/vega/vegad
 
 echo "==> Reiniciando vegad.service"
 sudo systemctl restart vegad.service

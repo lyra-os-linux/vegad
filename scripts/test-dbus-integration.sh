@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # Executa os testes marcados como integração contra o vegad recém-compilado
 # em um barramento privado, sem substituir o serviço instalado no host.
+#
+# Depende de um checkout irmão de lyra-vega-dbus (../lyra-vega-dbus a partir
+# deste repo) para rodar os testes --ignored do lado do cliente — desde a
+# quebra do monorepo vega, esse crate mora em repositório próprio.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+dbus_client_dir="$repo_root/../lyra-vega-dbus"
+if [ ! -d "$dbus_client_dir" ]; then
+  echo "esperava um checkout irmão em $dbus_client_dir (git clone https://github.com/lyra-os-linux/lyra-vega-dbus ../lyra-vega-dbus)" >&2
+  exit 1
+fi
 tmpdir="$(mktemp -d)"
 integration_gocache="${GOCACHE:-/tmp/vega-integration-go-cache}"
 integration_gopath="${GOPATH:-/tmp/vega-integration-gopath}"
@@ -28,7 +37,7 @@ export DBUS_SYSTEM_BUS_ADDRESS="${bus_info[0]}"
 bus_pid="${bus_info[1]}"
 
 (
-  cd "$repo_root/vegad"
+  cd "$repo_root"
   GOCACHE="$integration_gocache" GOPATH="$integration_gopath" \
     go build -o "$tmpdir/vegad" ./cmd/vegad
 )
@@ -64,5 +73,5 @@ if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect org.lyraos.Vega1 \
   exit 1
 fi
 
-cd "$repo_root"
-cargo test --locked -p lyra-vega-dbus -- --ignored --test-threads=1
+cd "$dbus_client_dir"
+cargo test --locked -- --ignored --test-threads=1

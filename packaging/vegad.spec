@@ -1,6 +1,6 @@
-# Empacotamento para Linux. Ainda não publicado
-# em nenhum repositório oficial (OBS ou similar) — ver packaging/opensuse/
-# no topo do repositório para o script de instalação manual equivalente.
+# Empacotamento manual para Linux, a partir de um tarball "achatado" do
+# próprio repositório (sem diretório de nível superior) — ver
+# packaging/vegad.obs.spec para a variante consumida pelo OBS via tar_scm.
 #
 # %%{version} é passado pela release/CI via `rpmbuild --define "version X.Y.Z"`
 # (a tag `vX.Y.Z` sem o "v"). Buildar sem essa define usa o default abaixo.
@@ -11,8 +11,8 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        Daemon privilegiado do Vega, centro de controle para Linux
 License:        GPL-3.0-only
-URL:            https://github.com/britors/Vega
-Source0:        vega-src.tar.gz
+URL:            https://github.com/lyra-os-linux/vegad
+Source0:        vegad-src.tar.gz
 
 BuildRequires:  go
 BuildRequires:  checkpolicy
@@ -44,10 +44,9 @@ firewall, usuários) via D-Bus, autorizadas por polkit. Ativado sob demanda
 pelo D-Bus (Type=dbus), não roda como serviço permanente.
 
 %prep
-%setup -q -c -n vega-src
+%setup -q -c -n vegad-src
 
 %build
-cd vegad
 go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
   -o vegad ./cmd/vegad
 
@@ -57,55 +56,55 @@ go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version
 # "permission denied" em /etc/default/grub. Regra mínima (init_t +
 # bootloader_etc_t + write), carregada condicionalmente em %post — ver o
 # comentário no próprio .te para o porquê de não ser um domínio dedicado.
-cd ..
-checkmodule -M -m -o packaging/vegad/selinux/vegad_bootloader.mod \
-  packaging/vegad/selinux/vegad_bootloader.te
-semodule_package -o packaging/vegad/selinux/vegad_bootloader.pp \
-  -m packaging/vegad/selinux/vegad_bootloader.mod
+
+checkmodule -M -m -o packaging/selinux/vegad_bootloader.mod \
+  packaging/selinux/vegad_bootloader.te
+semodule_package -o packaging/selinux/vegad_bootloader.pp \
+  -m packaging/selinux/vegad_bootloader.mod
 
 %install
-install -Dm755 vegad/vegad %{buildroot}%{_prefix}/lib/vega/vegad
-install -Dm644 packaging/vegad/vegad.service \
+install -Dm755 vegad %{buildroot}%{_prefix}/lib/vega/vegad
+install -Dm644 packaging/vegad.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad.service
-install -Dm644 packaging/vegad/vegad-update-check.service \
+install -Dm644 packaging/vegad-update-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.service
-install -Dm644 packaging/vegad/vegad-update-check.timer \
+install -Dm644 packaging/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
-install -Dm644 packaging/vegad/vegad-update-check-retry.timer \
+install -Dm644 packaging/vegad-update-check-retry.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
-install -Dm644 packaging/vegad/vegad.conf \
+install -Dm644 packaging/vegad.conf \
   %{buildroot}%{_sysconfdir}/vega/vegad.conf
-install -Dm644 packaging/vegad/profiles/desktop.conf \
+install -Dm644 packaging/profiles/desktop.conf \
   %{buildroot}%{_datadir}/vega/profiles/desktop.conf
-install -Dm644 packaging/vegad/profiles/server.conf \
+install -Dm644 packaging/profiles/server.conf \
   %{buildroot}%{_datadir}/vega/profiles/server.conf
-install -Dm644 packaging/vegad/org.lyraos.Vega1.conf \
+install -Dm644 packaging/org.lyraos.Vega1.conf \
   %{buildroot}%{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
-install -Dm644 packaging/vegad/org.lyraos.Vega1.service \
+install -Dm644 packaging/org.lyraos.Vega1.service \
   %{buildroot}%{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
-install -Dm644 packaging/vegad/org.lyraos.vega.policy \
+install -Dm644 packaging/org.lyraos.vega.policy \
   %{buildroot}%{_datadir}/polkit-1/actions/org.lyraos.vega.policy
-install -Dm644 vegad/internal/i18n/catalog/en-US.json \
+install -Dm644 internal/i18n/catalog/en-US.json \
   %{buildroot}%{_datadir}/locale/en_US/LC_MESSAGES/vegad.json
-install -Dm644 vegad/internal/i18n/catalog/pt-BR.json \
+install -Dm644 internal/i18n/catalog/pt-BR.json \
   %{buildroot}%{_datadir}/locale/pt_BR/LC_MESSAGES/vegad.json
-install -Dm644 vegad/internal/i18n/catalog/es-ES.json \
+install -Dm644 internal/i18n/catalog/es-ES.json \
   %{buildroot}%{_datadir}/locale/es_ES/LC_MESSAGES/vegad.json
 
 # Exportação periódica do journal do vegad para /var/log/vega/vegad.log —
 # journalctl continua sendo a fonte de verdade (o módulo Log do Sistema do
 # vega-cli lê o journal direto), isso só mantém uma cópia persistente em
 # arquivo, com rotação via logrotate.
-install -Dm644 packaging/vegad/tmpfiles.d/vega-log.conf \
+install -Dm644 packaging/tmpfiles.d/vega-log.conf \
   %{buildroot}%{_prefix}/lib/tmpfiles.d/vega-log.conf
-install -Dm644 packaging/vegad/vegad-log-export.service \
+install -Dm644 packaging/vegad-log-export.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-log-export.service
-install -Dm644 packaging/vegad/vegad-log-export.timer \
+install -Dm644 packaging/vegad-log-export.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-log-export.timer
-install -Dm644 packaging/vegad/logrotate.d/vegad \
+install -Dm644 packaging/logrotate.d/vegad \
   %{buildroot}%{_sysconfdir}/logrotate.d/vegad
 
-install -Dm644 packaging/vegad/selinux/vegad_bootloader.pp \
+install -Dm644 packaging/selinux/vegad_bootloader.pp \
   %{buildroot}%{_datadir}/selinux/packages/vegad_bootloader.pp
 
 %files
