@@ -15,15 +15,9 @@
     <param name="filename">vegad-src</param>
   </service>
   <service name="set_version" />
-  <!-- Gera vendor.tar.gz a partir do go.mod/go.sum na raiz do tarball —
-       a VM de build do OBS não tem rede pra "go build" baixar módulos
-       direto do proxy.golang.org. NOTA: esta configuração é uma
-       reconstrução best-effort feita durante a quebra do monorepo; a
-       versão exata que rodava no pacote vegad do projeto OBS
-       home:rodrigosbrito:vega não estava nos arquivos deste repositório —
-       confirme os parâmetros contra esse pacote (ou reconfigure-o) antes
-       de confiar neste _service em produção. -->
-  <service name="go_modules">
-    <param name="compression">gz</param>
-  </service>
+  <!-- vendor.tar.gz (vendor/ com "go mod vendor", gerado localmente) é
+       mantido manual, como Source1 no .spec, e enviado direto pro pacote
+       OBS — o serviço automático obs-service-go_modules falha na VM de
+       build do OBS por falta de rede ("Archive autodetection found no
+       matching archive"), confirmado em produção. -->
 </services>
