@@ -1,6 +1,6 @@
 [Unit]
 Description=Vega privileged system daemon
-Documentation=https://lyraos.org/vega
+Documentation=https://lyraos.com.br/vega
 
 [Service]
 Type=dbus

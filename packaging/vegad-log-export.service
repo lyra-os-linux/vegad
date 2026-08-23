@@ -1,6 +1,6 @@
 [Unit]
 Description=Exporta o journal do vegad para /var/log/vega/vegad.log
-Documentation=https://lyraos.org/vega
+Documentation=https://lyraos.com.br/vega
 
 [Service]
 Type=oneshot

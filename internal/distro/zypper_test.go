@@ -9,7 +9,7 @@ const zypperRejectedKeyBlock = `
 New repository or package signing key received:
 
   Repository:       home_rodrigosbrito_vega
-  Key Name:         Rodrigo Brito <rodrigo@w3ti.com.br>
+  Key Name:         Rodrigo Brito <rodrigo@lyraos.com.br>
   Key Fingerprint:  AB12 CD34 EF56 AB12 CD34  EF56 AB12 CD34 EF56 AB12
   Key Created:      Tue Jul 22 00:00:00 2026
   Key Expires:      (does not expire)
@@ -35,7 +35,7 @@ func TestParseZypperUntrustedKey(t *testing.T) {
 	if keyErr.Fingerprint != wantFingerprint {
 		t.Errorf("Fingerprint = %q, want %q", keyErr.Fingerprint, wantFingerprint)
 	}
-	if keyErr.UserId != "Rodrigo Brito <rodrigo@w3ti.com.br>" {
+	if keyErr.UserId != "Rodrigo Brito <rodrigo@lyraos.com.br>" {
 		t.Errorf("UserId = %q", keyErr.UserId)
 	}
 	if keyErr.KeyId != "AB12" {

@@ -1,6 +1,6 @@
 [Unit]
 Description=Executa periodicamente a exportação do journal do vegad para /var/log/vega/vegad.log
-Documentation=https://lyraos.org/vega
+Documentation=https://lyraos.com.br/vega
 
 [Timer]
 OnBootSec=2min
