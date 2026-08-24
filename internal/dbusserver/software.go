@@ -214,6 +214,7 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 		message := "Concluído"
 		if err != nil {
 			message = err.Error()
+			log.Printf("vegad: transação %d (%s) falhou: %v", txID, why, err)
 		}
 		if emitErr := s.emitTransactionFinished(txID, success, message); emitErr != nil {
 			log.Printf("vegad: emit TransactionFinished: %v", emitErr)
@@ -735,6 +736,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 		message := "Concluído"
 		if err != nil {
 			message = err.Error()
+			log.Printf("vegad: transação %d (%s) falhou: %v", txID, why, err)
 		}
 		if emitErr := s.emitTransactionFinished(txID, success, message); emitErr != nil {
 			log.Printf("vegad: emit TransactionFinished: %v", emitErr)
