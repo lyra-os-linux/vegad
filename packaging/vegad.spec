@@ -50,17 +50,15 @@ pelo D-Bus (Type=dbus), não roda como serviço permanente.
 go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
   -o vegad ./cmd/vegad
 
-# Módulo SELinux da issue #118: init_t (domínio do vegad, ainda sem
-# domínio dedicado) não tem permissão de escrita em bootloader_etc_t na
-# política padrão do openSUSE, então Kernel.ApplyBootConfig falhava com
-# "permission denied" em /etc/default/grub. Regra mínima (init_t +
-# bootloader_etc_t + write), carregada condicionalmente em %post — ver o
-# comentário no próprio .te para o porquê de não ser um domínio dedicado.
+# Domínio SELinux dedicado e inicialmente permissivo. Isso remove a permissão
+# global de init_t sem bloquear operações existentes antes de o gate integrado
+# fechar a allowlist enforcing.
 
 checkmodule -M -m -o packaging/selinux/vegad_bootloader.mod \
   packaging/selinux/vegad_bootloader.te
 semodule_package -o packaging/selinux/vegad_bootloader.pp \
-  -m packaging/selinux/vegad_bootloader.mod
+  -m packaging/selinux/vegad_bootloader.mod \
+  -f packaging/selinux/vegad_bootloader.fc
 
 %install
 install -Dm755 vegad %{buildroot}%{_prefix}/lib/vega/vegad

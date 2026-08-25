@@ -31,4 +31,14 @@ para instalar um build local como o daemon do sistema, e
 `scripts/test-dbus-integration.sh` para os testes de integração (precisa de
 um checkout irmão de `lyra-vega-dbus`).
 
+## Validação
+
+```sh
+test -z "$(gofmt -l .)"
+go vet ./...
+go test ./...
+./scripts/check-packaging-contracts.sh
+./scripts/test-dbus-integration.sh
+```
+
 Licenciado sob GPL-3.0.

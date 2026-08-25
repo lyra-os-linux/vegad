@@ -1,25 +1,33 @@
-module vegad_bootloader 1.0.0;
+module vegad_bootloader 2.0.0;
 
-# Corrige a issue #118: Kernel.ApplyBootConfig falha com "permission
-# denied" escrevendo /etc/default/grub, mesmo rodando como root, porque o
-# vegad roda em init_t (ainda não tem domínio dedicado) e a política
-# padrão não concede escrita em bootloader_etc_t pra esse domínio — só
-# leitura (via o atributo "configfile", que já cobre open/read/lock/
-# ioctl). Confirmado com `sesearch --allow -s init_t -t
-# bootloader_etc_t` antes de escrever esta regra: não existia nenhuma
-# permissão de escrita, nem um boolean pronto pra isso.
-#
-# Regra mínima e específica (init_t + bootloader_etc_t + write), no
-# estilo audit2allow — não cria um domínio próprio pro vegad (isso seria
-# um endurecimento maior, mais isolado, mas bem mais trabalho: exigiria
-# tipo de execução dedicado, regras de transição a partir do systemd,
-# etc.). Essa regra concede a permissão a TODO processo em init_t, não só
-# ao vegad — aceitável pra corrigir o bug relatado, mas vale revisitar se
-# um domínio vegad_t dedicado for justificado no futuro.
+# Transitional dedicated domain for vegad. The domain starts permissive so
+# existing D-Bus, zypper, NetworkManager and boot-management operations keep
+# working while the integrated VM gate collects the complete AVC allowlist.
+# Bootloader write access is no longer granted to every process in init_t.
 require {
-	type init_t;
-	type bootloader_etc_t;
-	class file write;
+    role system_r;
+    attribute domain;
+    attribute exec_type;
+    attribute file_type;
+    type init_t;
+    type bootloader_etc_t;
+    class process transition;
+    class file { entrypoint execute getattr map open read write };
 }
 
-allow init_t bootloader_etc_t:file write;
+type vegad_t;
+typeattribute vegad_t domain;
+permissive vegad_t;
+
+type vegad_exec_t;
+typeattribute vegad_exec_t exec_type;
+typeattribute vegad_exec_t file_type;
+
+role system_r types vegad_t;
+
+allow init_t vegad_t:process transition;
+allow init_t vegad_exec_t:file { execute getattr map open read };
+allow vegad_t vegad_exec_t:file entrypoint;
+type_transition init_t vegad_exec_t:process vegad_t;
+
+allow vegad_t bootloader_etc_t:file write;
