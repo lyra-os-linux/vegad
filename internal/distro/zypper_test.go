@@ -1,6 +1,16 @@
 package distro
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestZypperSearchUsesLocalMetadataWithoutRefresh(t *testing.T) {
+	want := []string{"--non-interactive", "--no-refresh", "search", "--", "firefox"}
+	if got := zypperSearchArgs("firefox"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("zypperSearchArgs() = %q, want %q", got, want)
+	}
+}
 
 // zypperRejectedKeyBlock is a synthetic but format-accurate rendition of
 // what `zypper --non-interactive refresh` prints (and rejects) when a

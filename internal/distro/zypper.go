@@ -56,6 +56,14 @@ func isZypperTableRule(line string) bool {
 	return strings.Trim(trimmed, "-+") == ""
 }
 
+func zypperSearchArgs(query string) []string {
+	// Search must remain a read-only, fast operation over the existing local
+	// metadata. Repository refresh belongs to the explicit refresh/update
+	// flows; doing it here makes every Vega search depend on network and on
+	// the availability of every configured mirror.
+	return []string{"--non-interactive", "--no-refresh", "search", "--", query}
+}
+
 // Search shells out to `zypper search`, which (like pacman -Ss) only reads
 // the already-refreshed local metadata — no network access, no privilege.
 func (z *zypperBackend) Search(query string) ([]PackageRef, error) {
@@ -64,7 +72,7 @@ func (z *zypperBackend) Search(query string) ([]PackageRef, error) {
 		return nil, err
 	}
 
-	out, err := runCommandOutput("zypper", "--non-interactive", "search", "--", query)
+	out, err := runCommandOutput("zypper", zypperSearchArgs(query)...)
 	if err != nil {
 		// zypper exits non-zero with no results when nothing matches —
 		// not a real error condition for a search.
