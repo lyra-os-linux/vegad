@@ -61,22 +61,11 @@ type KernelBackend interface {
 	GrubConfigPath() string
 }
 
-// HardwareBackend knows the distro-specific package names/steps to switch
-// GPU drivers.
-type HardwareBackend interface {
-	// AvailableNvidiaDrivers lists the driver identifiers this backend
-	// accepts, in display order — the UI populates its dropdown from this
-	// instead of hardcoding package names.
-	AvailableNvidiaDrivers() []string
-	SwitchNvidiaDriver(driver string, report ProgressFunc) error
-}
-
 // Provider bundles every distro-specific backend for one detected distro.
 type Provider interface {
 	Distro() ID
 	Package() PackageBackend
 	Kernel() KernelBackend
-	Hardware() HardwareBackend
 	// AdminGroup is the group membership that grants sudo/wheel access
 	// ("wheel" on openSUSE).
 	AdminGroup() string

@@ -22,26 +22,6 @@
     </defaults>
   </action>
 
-  <action id="org.lyraos.vega.software.install-nvidia">
-    <description>Instalar o driver NVIDIA G06</description>
-    <message>Autenticação é necessária para instalar o driver NVIDIA e criar um snapshot de recuperação</message>
-    <defaults>
-      <allow_any>no</allow_any>
-      <allow_inactive>no</allow_inactive>
-      <allow_active>auth_admin</allow_active>
-    </defaults>
-  </action>
-
-  <action id="org.lyraos.vega.software.install-firmware">
-    <description>Instalar firmware não livre compatível</description>
-    <message>Autenticação é necessária para instalar firmware do repositório non-oss e criar um snapshot de recuperação</message>
-    <defaults>
-      <allow_any>no</allow_any>
-      <allow_inactive>no</allow_inactive>
-      <allow_active>auth_admin</allow_active>
-    </defaults>
-  </action>
-
   <action id="org.lyraos.vega.software.remove">
     <description>Remover pacotes de software</description>
     <message>Autenticação é necessária para remover software</message>
@@ -145,16 +125,6 @@
   <action id="org.lyraos.vega.backup.restore">
     <description>Restaurar arquivos a partir de um backup</description>
     <message>Autenticação é necessária para restaurar arquivos</message>
-    <defaults>
-      <allow_any>no</allow_any>
-      <allow_inactive>no</allow_inactive>
-      <allow_active>auth_admin</allow_active>
-    </defaults>
-  </action>
-
-  <action id="org.lyraos.vega.hardware.switch-driver">
-    <description>Trocar driver de hardware</description>
-    <message>Autenticação é necessária para trocar o driver de hardware</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>

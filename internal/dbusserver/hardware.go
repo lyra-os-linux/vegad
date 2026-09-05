@@ -10,17 +10,13 @@ import (
 	"strings"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/lyraos/vegad/internal/distro"
 	vegai18n "github.com/lyraos/vegad/internal/i18n"
 )
 
-// HardwareService backs org.lyraos.Vega1.Hardware: inventory, NVIDIA
-// driver switching (via distro.HardwareBackend) and
+// HardwareService backs org.lyraos.Vega1.Hardware inventory and
 // fwupd/LVFS firmware status.
 type HardwareService struct {
 	activity *Activity
-	conn     *dbus.Conn
-	provider distro.Provider
 }
 
 type HardwareInventory struct {
@@ -42,34 +38,10 @@ func (h *HardwareService) InventoryLocalized(locale string) (HardwareInventory, 
 	}, nil
 }
 
-// SwitchNvidiaDriver accepts whatever distro.HardwareBackend.AvailableNvidiaDrivers
-// reports for the active distro (e.g. "nvidia-open-dkms"/"nvidia-580xx-dkms"/
-// "nouveau") — validity for the detected GPU generation is enforced before
-// this is called.
-func (h *HardwareService) SwitchNvidiaDriver(sender dbus.Sender, driver string) *dbus.Error {
-	h.activity.Touch()
-	if err := requirePolkit(sender, "org.lyraos.vega.hardware.switch-driver"); err != nil {
-		return err
-	}
-
-	hw := h.provider.Hardware()
-	valid := false
-	for _, candidate := range hw.AvailableNvidiaDrivers() {
-		if candidate == driver {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return dbus.MakeFailedError(fmt.Errorf("driver NVIDIA inválido: %s", driver))
-	}
-
-	if err := withSnapshots("Troca de driver NVIDIA: "+driver, func() error {
-		return hw.SwitchNvidiaDriver(driver, func(uint32, string) {})
-	}); err != nil {
-		return dbus.MakeFailedError(err)
-	}
-	return nil
+// SwitchNvidiaDriver keeps the v1 wire signature for older clients, but
+// driver switching is no longer a Vega operation.
+func (h *HardwareService) SwitchNvidiaDriver(_ dbus.Sender, _ string) *dbus.Error {
+	return driverManagementRemoved()
 }
 
 func (h *HardwareService) FirmwareStatus() (string, *dbus.Error) {

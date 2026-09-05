@@ -1,7 +1,6 @@
 package dbusserver
 
 import (
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -15,8 +14,6 @@ import (
 )
 
 const (
-	nvidiaRepoAlias             = "repo-nvidia"
-	nvidiaRepoURL               = "https://download.nvidia.com/opensuse/leap/16.0/"
 	nvidiaKMPMeta               = "nvidia-open-driver-G06-signed-kmp-meta"
 	nvidiaUserspaceMeta         = "nvidia-userspace-meta-G06"
 	nvidiaSleepQuarantinePath   = "/etc/systemd/sleep.conf.d/90-lyra-nvidia-quarantine.conf"
@@ -25,7 +22,7 @@ const (
 
 // NvidiaStatus is deliberately compact because it is also the stable D-Bus
 // wire contract consumed by vega-gtk. State is one of unavailable,
-// available, installed, reboot-required, active or quarantined.
+// installed, reboot-required, active or quarantined. Installation is retired.
 type NvidiaStatus struct {
 	Supported        bool
 	Installed        bool
@@ -258,8 +255,7 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 		status.Detail = "Não foi possível verificar o estado do Secure Boot; a instalação foi bloqueada para evitar um módulo que não carregue após reiniciar."
 		return status, nil
 	}
-	status.State = "available"
-	status.Detail = "GPU G06 compatível; a instalação opcional está disponível."
+	status.Detail = "A instalação e a troca de drivers foram removidas do Vega."
 	kmpVersion := m.packageVersion(nvidiaKMPMeta)
 	userspaceVersion := m.packageVersion(nvidiaUserspaceMeta)
 	if kmpVersion == "" && userspaceVersion == "" {
@@ -317,235 +313,6 @@ func (m nvidiaManager) driverActive() bool {
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
-func (m nvidiaManager) rejectPartialPackages() error {
-	out, _ := m.run.Output("rpm", "-qa", "--qf", "%{NAME}\n")
-	var individual []string
-	for _, name := range strings.Split(out, "\n") {
-		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "nvidia-") && strings.Contains(name, "G06") && name != nvidiaKMPMeta && name != nvidiaUserspaceMeta {
-			individual = append(individual, name)
-		}
-	}
-	if len(individual) > 0 && (m.packageVersion(nvidiaKMPMeta) == "" || m.packageVersion(nvidiaUserspaceMeta) == "") {
-		return fmt.Errorf("pacotes G06 individuais já instalados (%s); remova-os ou restaure um snapshot antes de usar a instalação em lockstep", strings.Join(individual, ", "))
-	}
-	return nil
-}
-
-func (m nvidiaManager) snapshot() (uint32, error) {
-	out, err := m.run.Output("snapper", "-c", "root", "create", "--type", "single", "--read-only", "--description", "antes do driver NVIDIA G06", "--cleanup-algorithm", "number", "--print-number")
-	if err != nil {
-		return 0, fmt.Errorf("a instalação foi abortada porque o snapshot de recuperação não pôde ser criado: %w", err)
-	}
-	id, err := strconv.ParseUint(strings.TrimSpace(out), 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("snapper retornou um identificador inválido %q", out)
-	}
-	return uint32(id), nil
-}
-
-func (m nvidiaManager) ensureRepository() error {
-	out, err := m.run.Output("zypper", "--non-interactive", "lr", "-u", nvidiaRepoAlias)
-	if err == nil {
-		if !strings.Contains(out, nvidiaRepoURL) {
-			return fmt.Errorf("o repositório %s já existe com outra URL; esperado %s", nvidiaRepoAlias, nvidiaRepoURL)
-		}
-	} else if err := m.run.Run("zypper", "--non-interactive", "addrepo", "--refresh", "--check", nvidiaRepoURL, nvidiaRepoAlias); err != nil {
-		return fmt.Errorf("não foi possível adicionar o repositório NVIDIA oficial: %w", err)
-	}
-	if err := m.run.Run("zypper", "--non-interactive", "--gpg-auto-import-keys", "refresh", nvidiaRepoAlias); err != nil {
-		return fmt.Errorf("não foi possível validar/atualizar o repositório NVIDIA: %w", err)
-	}
-	return nil
-}
-
-type nvidiaZypperSearch struct {
-	Solvables []struct {
-		Edition string `xml:"edition,attr"`
-	} `xml:"search-result>solvable-list>solvable"`
-}
-
-// repoEditions lists the package editions (version-release) that
-// repo-nvidia currently offers for name, newest metadata order first as
-// reported by zypper. NVIDIA occasionally publishes the userspace and the
-// signed kmp meta packages on different schedules, so callers must not
-// assume the newest edition of one package has a matching edition of the
-// other.
-func (m nvidiaManager) repoEditions(name string) ([]string, error) {
-	out, err := m.run.Output("zypper", "--xmlout", "--non-interactive", "se", "-s", "-t", "package", "-r", nvidiaRepoAlias, name)
-	if err != nil {
-		return nil, fmt.Errorf("não foi possível consultar as versões de %s no repositório NVIDIA: %w", name, err)
-	}
-	var parsed nvidiaZypperSearch
-	if err := xml.Unmarshal([]byte(out), &parsed); err != nil {
-		return nil, fmt.Errorf("resposta inesperada do zypper ao consultar %s: %w", name, err)
-	}
-	seen := make(map[string]struct{}, len(parsed.Solvables))
-	editions := make([]string, 0, len(parsed.Solvables))
-	for _, solvable := range parsed.Solvables {
-		if solvable.Edition == "" {
-			continue
-		}
-		if _, ok := seen[solvable.Edition]; ok {
-			continue
-		}
-		seen[solvable.Edition] = struct{}{}
-		editions = append(editions, solvable.Edition)
-	}
-	return editions, nil
-}
-
-// splitVersionSegments breaks a version/release string into alternating
-// runs of digits and non-digits, the same shape rpmvercmp compares, which
-// is enough to order the purely numeric NVIDIA version and openSUSE
-// release strings used here.
-func splitVersionSegments(s string) []string {
-	var segments []string
-	var current strings.Builder
-	var digit bool
-	for i, r := range s {
-		isDigit := r >= '0' && r <= '9'
-		if i > 0 && isDigit != digit {
-			segments = append(segments, current.String())
-			current.Reset()
-		}
-		current.WriteRune(r)
-		digit = isDigit
-	}
-	if current.Len() > 0 {
-		segments = append(segments, current.String())
-	}
-	return segments
-}
-
-// compareEditions returns >0 if a is newer than b, <0 if older, 0 if equal.
-func compareEditions(a, b string) int {
-	as, bs := splitVersionSegments(a), splitVersionSegments(b)
-	for i := 0; i < len(as) || i < len(bs); i++ {
-		var sa, sb string
-		if i < len(as) {
-			sa = as[i]
-		}
-		if i < len(bs) {
-			sb = bs[i]
-		}
-		if sa == sb {
-			continue
-		}
-		na, aErr := strconv.Atoi(sa)
-		nb, bErr := strconv.Atoi(sb)
-		if aErr == nil && bErr == nil {
-			if na != nb {
-				if na > nb {
-					return 1
-				}
-				return -1
-			}
-			continue
-		}
-		if sa > sb {
-			return 1
-		}
-		return -1
-	}
-	return 0
-}
-
-// lockstepVersion picks the newest package edition that repo-nvidia
-// currently offers for both the signed kmp meta package and the userspace
-// meta package. NVIDIA sometimes publishes one ahead of the other, which
-// makes a plain "install latest of each" call fail the solver even though
-// an older, fully aligned pair is available.
-func (m nvidiaManager) lockstepVersion() (string, error) {
-	kmpEditions, err := m.repoEditions(nvidiaKMPMeta)
-	if err != nil {
-		return "", err
-	}
-	userspaceEditions, err := m.repoEditions(nvidiaUserspaceMeta)
-	if err != nil {
-		return "", err
-	}
-	kmpSet := make(map[string]struct{}, len(kmpEditions))
-	for _, edition := range kmpEditions {
-		kmpSet[edition] = struct{}{}
-	}
-	best := ""
-	for _, edition := range userspaceEditions {
-		if _, ok := kmpSet[edition]; !ok {
-			continue
-		}
-		if best == "" || compareEditions(edition, best) > 0 {
-			best = edition
-		}
-	}
-	if best == "" {
-		return "", fmt.Errorf("o repositório NVIDIA está temporariamente desalinhado entre %s e %s (nenhuma versão em comum); tente novamente mais tarde", nvidiaKMPMeta, nvidiaUserspaceMeta)
-	}
-	return best, nil
-}
-
-func (m nvidiaManager) install(report progressFunc) (uint32, error) {
-	status, err := m.status()
-	if err != nil {
-		return 0, err
-	}
-	if !status.Supported {
-		return 0, errors.New(status.Detail)
-	}
-	if status.State == "unavailable" {
-		return 0, errors.New(status.Detail)
-	}
-	if status.Installed {
-		return 0, errors.New("o driver NVIDIA G06 já está instalado; reinicie e use Verificar driver")
-	}
-	if err := m.rejectPartialPackages(); err != nil {
-		return 0, err
-	}
-	report(5, "Preflight concluído; criando snapshot de recuperação")
-	snapshot, err := m.snapshot()
-	if err != nil {
-		return 0, err
-	}
-	report(20, fmt.Sprintf("Snapshot %d criado; configurando repositório NVIDIA", snapshot))
-	if err := m.ensureRepository(); err != nil {
-		return snapshot, fmt.Errorf("%w. Nenhum driver foi instalado; snapshot de recuperação: %d", err, snapshot)
-	}
-	report(35, "Resolvendo a versão em lockstep disponível no repositório NVIDIA")
-	version, err := m.lockstepVersion()
-	if err != nil {
-		return snapshot, fmt.Errorf("%w. Nenhum driver foi instalado; snapshot de recuperação: %d", err, snapshot)
-	}
-	report(45, fmt.Sprintf("Instalando módulo assinado, userspace e firmware G06 %s em lockstep", version))
-	if err := m.run.Run("zypper", "--non-interactive", "install", "--no-recommends",
-		nvidiaKMPMeta+"="+version, nvidiaUserspaceMeta+"="+version); err != nil {
-		return snapshot, fmt.Errorf("a transação NVIDIA falhou; use o snapshot %d para recuperação: %w", snapshot, err)
-	}
-	kmpVersion := m.packageVersion(nvidiaKMPMeta)
-	userspaceVersion := m.packageVersion(nvidiaUserspaceMeta)
-	if kmpVersion == "" || kmpVersion != userspaceVersion {
-		return snapshot, fmt.Errorf("a transação deixou KMP e userspace desalinhados; use o snapshot %d para recuperação", snapshot)
-	}
-	stackVersions, err := m.installedStackVersions()
-	if err != nil || len(stackVersions) != 1 {
-		return snapshot, fmt.Errorf("a auditoria da pilha NVIDIA instalada falhou (%v, versões=%v); use o snapshot %d para recuperação", err, stackVersions, snapshot)
-	}
-	report(80, "Regenerando initramfs")
-	if err := m.run.Run("dracut", "--force"); err != nil {
-		return snapshot, fmt.Errorf("o initramfs não pôde ser regenerado; use o snapshot %d para recuperação: %w", snapshot, err)
-	}
-	quarantined, err := m.reconcileSuspendPolicy(kmpVersion)
-	if err != nil {
-		return snapshot, fmt.Errorf("o driver foi instalado, mas a política de suspensão não pôde ser aplicada; use o snapshot %d para recuperação: %w", snapshot, err)
-	}
-	if quarantined {
-		report(95, "Driver instalado; suspensão e hibernação foram bloqueadas por uma regressão conhecida nesta combinação")
-		report(100, fmt.Sprintf("Driver G06 %s instalado com suspensão em quarentena. Reinicie e use Verificar driver. Snapshot de recuperação: %d", kmpVersion, snapshot))
-		return snapshot, nil
-	}
-	report(100, fmt.Sprintf("Driver G06 %s instalado. Reinicie e use Verificar driver. Snapshot de recuperação: %d", kmpVersion, snapshot))
-	return snapshot, nil
-}
-
 func (m nvidiaManager) check() error {
 	status, err := m.status()
 	if err != nil {
@@ -582,18 +349,10 @@ func (s *SoftwareService) NvidiaStatus() (NvidiaStatus, *dbus.Error) {
 	return status, nil
 }
 
-func (s *SoftwareService) InstallNvidia(sender dbus.Sender, confirmed bool) (uint32, *dbus.Error) {
-	s.activity.Touch()
-	if !confirmed {
-		return 0, dbus.MakeFailedError(errors.New("confirmação explícita é obrigatória"))
-	}
-	if err := requirePolkit(sender, "org.lyraos.vega.software.install-nvidia"); err != nil {
-		return 0, err
-	}
-	return s.startTransaction("Instalação do driver NVIDIA G06", func(report progressFunc, _ packageProgressFunc) error {
-		_, err := newNvidiaManager().install(report)
-		return err
-	}), nil
+// InstallNvidia is a compatibility endpoint only. It never authorizes or
+// starts a package transaction, including for explicitly confirmed requests.
+func (s *SoftwareService) InstallNvidia(_ dbus.Sender, _ bool) (uint32, *dbus.Error) {
+	return 0, driverManagementRemoved()
 }
 
 func (s *SoftwareService) CheckNvidia() (bool, string, *dbus.Error) {
@@ -605,7 +364,7 @@ func (s *SoftwareService) CheckNvidia() (bool, string, *dbus.Error) {
 }
 
 // ReconcileNvidiaSuspendPolicy applies the managed power guard at daemon
-// startup as well as during install/check. This also removes a Vega-owned
+// startup as well as during legacy driver checks. This also removes a Vega-owned
 // quarantine after a qualified driver replaces the affected version.
 func ReconcileNvidiaSuspendPolicy() error {
 	manager := newNvidiaManager()

@@ -101,7 +101,7 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	hardware := &HardwareService{activity: s.activity, provider: s.provider}
+	hardware := &HardwareService{activity: s.activity}
 	if err := s.conn.Export(hardware, ObjectPath, BusName+".Hardware"); err != nil {
 		return err
 	}

@@ -47,20 +47,3 @@ func TestNonFreeFirmwareOffersOnlyAvailableMatchingPackage(t *testing.T) {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 }
-
-func TestNonFreeFirmwareInstallPinsRepositoryAndCreatesSnapshot(t *testing.T) {
-	runner := &fakeFirmwareRunner{outputs: map[string]string{
-		"lspci -Dn": "0000:03:00.0 0400: 4444:0016",
-		"lsusb":     "",
-		"zypper --no-refresh info --repo repo-non-oss ivtv-firmware":                                                                         "Name : ivtv-firmware",
-		"snapper -c root create --type single --read-only --description antes do firmware non-oss --cleanup-algorithm number --print-number": "7",
-	}, errors: map[string]error{"rpm -q ivtv-firmware": fmt.Errorf("missing")}}
-	_, err := (firmwareManager{run: runner}).install(func(uint32, string) {})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "zypper --non-interactive install --from repo-non-oss --no-recommends ivtv-firmware"
-	if !containsString(runner.calls, want) {
-		t.Fatalf("repository-pinned install missing: %v", runner.calls)
-	}
-}
