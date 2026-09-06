@@ -239,8 +239,12 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 			return 0, err
 		}
 	case "flathub":
-		// Deliberately no polkit prompt: Flathub installs should run
-		// unattended ahead of zypper installs in the install queue.
+		if err := validateFlatpakAppID(id); err != nil {
+			return 0, dbus.MakeFailedError(err)
+		}
+		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
+			return 0, err
+		}
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -270,8 +274,9 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			return 0, err
 		}
 	case "flathub":
-		// Deliberately no polkit prompt, same reasoning as Install: vegad
-		// already runs as root and calls flatpak directly.
+		if err := validateFlatpakAppID(id); err != nil {
+			return 0, dbus.MakeFailedError(err)
+		}
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -283,11 +288,21 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			})
 		}), nil
 	case "flathub":
-		u := desktopUserOrNil(s.conn, sender, "Remove")
+		u, err := resolveDesktopUser(s.conn, sender)
+		if err != nil {
+			return 0, dbus.MakeFailedError(err)
+		}
 		scope := "system"
-		if apps, err := flatpakInstalledApps(u); err == nil {
-			if app, ok := apps[id]; ok {
-				scope = app.Scope
+		apps, err := flatpakInstalledApps(u)
+		if err != nil {
+			return 0, dbus.MakeFailedError(err)
+		}
+		if app, ok := apps[id]; ok {
+			scope = app.Scope
+		}
+		if scope == "system" {
+			if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
+				return 0, err
 			}
 		}
 		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return removeFlatpak(id, scope, u, report) }), nil
@@ -588,6 +603,11 @@ func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (
 	s.activity.Touch()
 	if origin == "flathub" && !s.flatpakEnabled() {
 		return 0, capabilityUnavailable("flatpak")
+	}
+	if origin == "flathub" {
+		if err := validateFlatpakAppID(id); err != nil {
+			return 0, dbus.MakeFailedError(err)
+		}
 	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
