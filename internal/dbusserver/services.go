@@ -211,13 +211,7 @@ func setServiceEnabled(name string, enabled bool) error {
 		args = append(args, "disable", "--now", name)
 	}
 	if out, err := runCommandOutput("systemctl", args...); err != nil {
-		if enabled {
-			// Some units are static or instantiated; if enable failed, keep the
-			// explicit error because the user asked for a persistent change.
-			return fmt.Errorf("systemctl %s: %w — %s", strings.Join(args, " "), err, out)
-		}
-		// Disabling an already-disabled or unavailable unit is not fatal for the
-		// UI surface; we still want the running state to be adjusted below.
+		return fmt.Errorf("systemctl %s: %w — %s", strings.Join(args, " "), err, out)
 	}
 	return nil
 }
