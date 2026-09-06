@@ -286,23 +286,7 @@ func (b *BackupService) RestoreSnapshot(sender dbus.Sender, snapshotID, targetPa
 		if err := ensureResticRepository(cfg, report); err != nil {
 			return err
 		}
-
-		restoreTarget := validatedTarget
-		switch mode {
-		case "replace":
-			if err := os.RemoveAll(validatedTarget); err != nil {
-				return err
-			}
-		case "separate-folder":
-			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
-		default:
-			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
-		}
-
-		if err := os.MkdirAll(restoreTarget, 0o755); err != nil {
-			return err
-		}
-		return runResticCommand(cfg, []string{"restore", snapshotID, "--target", restoreTarget}, report, "Iniciando restauração...", "Restauração concluída")
+		return restoreBackup(cfg, snapshotID, validatedTarget, mode, nil, report)
 	}), nil
 }
 
@@ -413,30 +397,9 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 	}
 	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
-			if errors.Is(err, errBackupDeferred) {
-				return err
-			}
 			return err
 		}
-		restoreTarget := validatedTarget
-		switch mode {
-		case "replace":
-			if err := os.RemoveAll(validatedTarget); err != nil {
-				return err
-			}
-		case "separate-folder":
-			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
-		default:
-			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
-		}
-		if err := os.MkdirAll(restoreTarget, 0o755); err != nil {
-			return err
-		}
-		args := []string{"restore", snapshotID, "--target", restoreTarget}
-		for _, path := range filterEmpty(paths) {
-			args = append(args, "--include", path)
-		}
-		return runResticCommand(cfg, args, report, "Iniciando restauração...", "Restauração concluída")
+		return restoreBackup(cfg, snapshotID, validatedTarget, mode, paths, report)
 	}), nil
 }
 
