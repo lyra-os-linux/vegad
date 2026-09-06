@@ -28,7 +28,12 @@ jobs:
 
   system-contracts:
     runs-on: ubuntu-latest
-    container: registry.opensuse.org/opensuse/leap:16.0
+    container:
+      image: registry.opensuse.org/opensuse/leap:16.0
+      env:
+        # The image has no PATH in its OCI config. Preserve system tools when
+        # setup-go/rust-toolchain prepend their own directories for later steps.
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
       - name: Install build tools and contract validators on the supported distro
         run: >-
