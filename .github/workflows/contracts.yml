@@ -33,7 +33,7 @@ jobs:
       - name: Install build tools and contract validators on the supported distro
         run: >-
           zypper --non-interactive install --no-recommends
-          ca-certificates curl git tar gzip xz gcc make gettext-tools
+          bash ca-certificates curl git tar gzip xz gcc make gettext-tools
           libxml2-tools rpm dbus-1-daemon systemd util-linux
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
