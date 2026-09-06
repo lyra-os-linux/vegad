@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/distro"
@@ -259,7 +258,7 @@ func applyGrubBootConfigAt(path, defaultEntry string, timeout uint32, cmdline st
 		return err
 	}
 	if err := rebuild(); err != nil {
-		if restoreErr := writeBootConfigAtomically(path, previous); restoreErr != nil {
+		if restoreErr := writeConfigAtomically(path, previous); restoreErr != nil {
 			return errors.Join(err, fmt.Errorf("recuperar configuração anterior do GRUB: %w", restoreErr))
 		}
 		return err
@@ -370,7 +369,7 @@ func rewriteConfigFile(path, separator string, values map[string]string) error {
 			lines = append(lines, key+separator+values[key])
 		}
 	}
-	return writeBootConfigAtomically(path, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"))
+	return writeConfigAtomically(path, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"))
 }
 
 func quoteShell(value string) string {
@@ -406,87 +405,6 @@ func validateBootValues(values ...string) error {
 	for _, value := range values {
 		if strings.ContainsAny(value, "\x00\r\n") {
 			return fmt.Errorf("parâmetros de boot não podem conter NUL ou quebras de linha")
-		}
-	}
-	return nil
-}
-
-func writeBootConfigAtomically(path string, data []byte) error {
-	mode := os.FileMode(0o644)
-	info, err := os.Lstat(path)
-	if err == nil {
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("configuração de boot não é um arquivo regular: %s", path)
-		}
-		mode = info.Mode().Perm()
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".vega-boot-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	defer file.Close()
-	if _, err := file.Write(data); err != nil {
-		return err
-	}
-	if err := file.Chmod(mode); err != nil {
-		return err
-	}
-	if info != nil {
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			if err := file.Chown(int(stat.Uid), int(stat.Gid)); err != nil {
-				return err
-			}
-		}
-		if err := copyBootConfigXattrs(path, file.Name()); err != nil {
-			return err
-		}
-	}
-	if err := file.Sync(); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
-
-func copyBootConfigXattrs(source, destination string) error {
-	size, err := syscall.Listxattr(source, nil)
-	if errors.Is(err, syscall.ENOTSUP) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	names := make([]byte, size)
-	if _, err := syscall.Listxattr(source, names); err != nil {
-		return err
-	}
-	for _, name := range strings.Split(string(names), "\x00") {
-		if name == "" {
-			continue
-		}
-		size, err := syscall.Getxattr(source, name, nil)
-		if err != nil {
-			return err
-		}
-		value := make([]byte, size)
-		if _, err := syscall.Getxattr(source, name, value); err != nil {
-			return err
-		}
-		if err := syscall.Setxattr(destination, name, value, 0); err != nil {
-			return err
 		}
 	}
 	return nil
