@@ -10,7 +10,10 @@ import (
 )
 
 func writeConfigAtomically(path string, data []byte) error {
-	mode := os.FileMode(0o644)
+	return writeConfigAtomicallyWithMode(path, data, 0o644)
+}
+
+func writeConfigAtomicallyWithMode(path string, data []byte, mode os.FileMode) error {
 	info, err := os.Lstat(path)
 	if err == nil {
 		if !info.Mode().IsRegular() {
