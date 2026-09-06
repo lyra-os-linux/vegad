@@ -190,6 +190,10 @@ func (s *SoftwareService) SearchNative(query string) ([]PackageRef, *dbus.Error)
 // shutdown request doesn't cut a package transaction short (see
 // withShutdownInhibit).
 func (s *SoftwareService) startTransaction(why string, work func(report progressFunc, pkgReport packageProgressFunc) error) uint32 {
+	done, ok := s.activity.begin()
+	if !ok {
+		return 0
+	}
 	txID := s.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
 		if err := s.emitTransactionProgress(txID, percent, message); err != nil {
@@ -205,6 +209,7 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 		_ = s.emitTransactionConsoleLine(txID, "stdout", sanitizeSoftwareConsoleLine(line))
 	}
 	go func() {
+		defer done()
 		err := withShutdownInhibit(why, func() error { return work(report, pkgReport) })
 		// Every transaction funnels through here, and any of them can change
 		// what is still pending — drop the cached lists before the UI reacts
@@ -723,6 +728,10 @@ func (s *SoftwareService) emitRepoKeyPending(txID uint32, repo, keyId, fingerpri
 // repo's signing key still needs the user's approval, ahead of the
 // TransactionFinished that follows either way.
 func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint32, report progressFunc) error) uint32 {
+	done, ok := s.activity.begin()
+	if !ok {
+		return 0
+	}
 	txID := s.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
 		if err := s.emitTransactionProgress(txID, percent, message); err != nil {
@@ -730,6 +739,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 		}
 	}
 	go func() {
+		defer done()
 		err := withShutdownInhibit(why, func() error { return work(txID, report) })
 		s.invalidateUpdateCaches()
 		success := err == nil

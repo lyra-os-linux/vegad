@@ -68,7 +68,7 @@ profile="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
 }
 
 if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect org.lyraos.Vega1 \
-  /org/lyraos/Vega1 | rg -q 'org.lyraos.Vega1.Bluetooth'; then
+  /org/lyraos/Vega1 | grep -q 'org.lyraos.Vega1.Bluetooth'; then
   echo "Bluetooth foi exportado no perfil server" >&2
   exit 1
 fi

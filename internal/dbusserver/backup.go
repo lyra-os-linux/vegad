@@ -507,6 +507,10 @@ func (b *BackupService) startTransaction(
 	emitFinished func(uint32, bool, string) error,
 	work func(report progressFunc) error,
 ) uint32 {
+	done, ok := b.activity.begin()
+	if !ok {
+		return 0
+	}
 	txID := b.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
 		if err := emitProgress(txID, percent, message); err != nil {
@@ -514,6 +518,7 @@ func (b *BackupService) startTransaction(
 		}
 	}
 	go func() {
+		defer done()
 		err := withShutdownInhibit(why, func() error { return work(report) })
 		success := err == nil
 		message := "Concluído"

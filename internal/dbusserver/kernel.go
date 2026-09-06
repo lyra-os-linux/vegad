@@ -60,8 +60,13 @@ func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbu
 		return 0, dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))
 	}
 
+	done, ok := k.activity.begin()
+	if !ok {
+		return 0, dbus.MakeFailedError(fmt.Errorf("daemon encerrando; repita a chamada"))
+	}
 	txID := k.nextTxID.Add(1)
 	go func() {
+		defer done()
 		err := withSnapshots("Instalação de kernel: "+kernel, func() error {
 			return kb.Install(kernel, func(uint32, string) {})
 		})
