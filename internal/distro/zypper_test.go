@@ -48,8 +48,8 @@ func TestParseZypperUntrustedKey(t *testing.T) {
 	if keyErr.UserId != "Rodrigo Brito <rodrigo@lyraos.com.br>" {
 		t.Errorf("UserId = %q", keyErr.UserId)
 	}
-	if keyErr.KeyId != "AB12" {
-		t.Errorf("KeyId = %q, want the last fingerprint group", keyErr.KeyId)
+	if keyErr.KeyId != "AB12CD34EF56AB12CD34EF56AB12CD34EF56AB12" {
+		t.Errorf("KeyId = %q, want the full fingerprint", keyErr.KeyId)
 	}
 }
 
