@@ -1,6 +1,7 @@
 package dbusserver
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -115,5 +116,73 @@ func TestBootWriterDoesNotFollowSymlinkOrOverwriteDirectory(t *testing.T) {
 	}
 	if err := rewriteKeyValueFile(base, map[string]string{"key": "value"}); err == nil {
 		t.Fatal("directory accepted as config")
+	}
+}
+
+func TestSystemdBootConfigParsedByBackendVM(t *testing.T) {
+	if os.Getenv("VEGA_BACKUP_VM_TEST") != "1" {
+		t.Skip("requires disposable boot configuration VM")
+	}
+	if _, err := os.Stat("/run/vega-backup-test-vm"); err != nil || os.Geteuid() != 0 {
+		t.Fatal("disposable VM marker/root missing")
+	}
+	base := t.TempDir()
+	volume := filepath.Join(base, "boot.ext4")
+	file, err := os.Create(volume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = file.Truncate(64 << 20)
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("mkfs.ext4", "-q", "-F", volume)
+	device := run("losetup", "--find", "--show", volume)
+	esp := filepath.Join(base, "esp")
+	if err := os.Mkdir(esp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run("mount", "-t", "ext4", device, esp)
+	t.Cleanup(func() { exec.Command("umount", esp).Run(); exec.Command("losetup", "--detach", device).Run() })
+	t.Setenv("SYSTEMD_RELAX_ESP_CHECKS", "1")
+	t.Setenv("SYSTEMD_RELAX_XBOOTLDR_CHECKS", "1")
+	restoreFixture(t, esp, "vmlinuz", "configuration parser fixture")
+	for _, id := range []string{"a", "z"} {
+		restoreFixture(t, esp, "loader/entries/"+id+".conf", "title Test "+id+"\nlinux /vmlinuz\n")
+	}
+	for _, original := range []string{"# loader\n", "default z.conf\ntimeout 3\n", "default=z.conf\ntimeout=3\n"} {
+		path := filepath.Join(esp, "loader/loader.conf")
+		if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := rewriteConfigFile(path, " ", map[string]string{"default": "a.conf", "timeout": "5"}); err != nil {
+			t.Fatal(err)
+		}
+		out := run("bootctl", "--esp-path="+esp, "--boot-path="+esp, "--no-variables", "--no-pager", "--json=short", "list")
+		var entries []struct {
+			ID      string `json:"id"`
+			Default bool   `json:"isDefault"`
+		}
+		if err := json.Unmarshal([]byte(out), &entries); err != nil {
+			t.Fatalf("bootctl output: %s: %v", out, err)
+		}
+		found := false
+		for _, entry := range entries {
+			if entry.ID == "a.conf" && entry.Default {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("backend did not parse the configured default: %s", out)
+		}
 	}
 }
