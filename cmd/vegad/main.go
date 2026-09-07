@@ -5,9 +5,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/lyraos/vegad/internal/dbusserver"
 	"github.com/lyraos/vegad/internal/profile"
@@ -64,13 +67,20 @@ func main() {
 		return
 	}
 
+	if len(os.Args) == 4 && os.Args[1] == "backup" && os.Args[2] == "prepare-target" {
+		if err := dbusserver.PrepareBackupMountTarget(os.Args[3]); err != nil {
+			log.Fatalf("vegad backup prepare-target failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) >= 4 && os.Args[1] == "backup" && os.Args[2] == "run" {
 		configID := os.Args[3]
 		log.Printf("vegad backup job %s starting", configID)
-		err := dbusserver.WithShutdownInhibit("Backup: "+configID, func() error {
-			return dbusserver.RunBackupJob(configID, func(percent uint32, message string) {
-				log.Printf("backup %s: %d%% %s", configID, percent, message)
-			})
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		err := dbusserver.RunScheduledBackupJob(ctx, configID, func(percent uint32, message string) {
+			log.Printf("backup %s: %d%% %s", configID, percent, message)
 		})
 		if err != nil {
 			log.Fatalf("vegad backup job %s failed: %v", configID, err)

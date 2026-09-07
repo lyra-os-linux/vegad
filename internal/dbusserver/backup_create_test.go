@@ -35,7 +35,7 @@ func backupCreateFixture(t *testing.T) (BackupConfig, string) {
 }
 
 func TestBackupCreationResumesEveryStepWithSameRepositoryAndPassword(t *testing.T) {
-	for _, phase := range []string{"pending", "password", "repository", "units", "config", "activation"} {
+	for _, phase := range []string{"pending", "password", "mount-target", "repository", "units", "config", "activation"} {
 		t.Run(phase, func(t *testing.T) {
 			cfg, unitDir := backupCreateFixture(t)
 			err := createBackupConfig(cfg, unitDir, func(step string) error {

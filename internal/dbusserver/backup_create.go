@@ -60,8 +60,11 @@ func createBackupConfig(cfg BackupConfig, unitDir string, afterStep func(string)
 	}{
 		{"pending", func() error { return nil }},
 		{"password", func() error { return ensureBackupPassword(cfg.Id) }},
+		{"mount-target", func() error { return prepareBackupMountTarget(cfg) }},
 		{"repository", func() error {
-			if cfg.Frequency == "on-connect" && !backupDestinationIsAvailable(cfg) {
+			if cfg.Frequency == "on-connect" {
+				// The scheduled/manual job opens the mounted destination first;
+				// preparing it here could race with unplugging during creation.
 				return nil
 			}
 			err := ensureResticRepository(cfg, nil)
