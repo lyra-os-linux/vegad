@@ -1,10 +1,12 @@
 package dbusserver
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -60,8 +62,13 @@ func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbu
 		return 0, dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))
 	}
 
+	done, ok := k.activity.begin()
+	if !ok {
+		return 0, dbus.MakeFailedError(fmt.Errorf("daemon encerrando; repita a chamada"))
+	}
 	txID := k.nextTxID.Add(1)
 	go func() {
+		defer done()
 		err := withSnapshots("Instalação de kernel: "+kernel, func() error {
 			return kb.Install(kernel, func(uint32, string) {})
 		})
@@ -161,6 +168,9 @@ func (k *KernelService) ListBootEntries() ([]string, *dbus.Error) {
 
 func (k *KernelService) ApplyBootConfig(sender dbus.Sender, defaultEntry string, timeout uint32, cmdline string) *dbus.Error {
 	k.activity.Touch()
+	if err := validateBootValues(defaultEntry, cmdline); err != nil {
+		return dbus.MakeFailedError(err)
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
 		return err
 	}
@@ -220,14 +230,25 @@ func grubSetting(key, fallback string) string {
 	for _, line := range strings.Split(string(data), "\n") {
 		m := re.FindStringSubmatch(strings.TrimSpace(line))
 		if len(m) == 2 {
-			return strings.Trim(strings.TrimSpace(m[1]), `"`)
+			return unquoteShell(strings.TrimSpace(m[1]))
 		}
 	}
 	return fallback
 }
 
 func applyGrubBootConfig(defaultEntry string, timeout uint32, cmdline string, kb distro.KernelBackend) error {
-	if err := rewriteKeyValueFile("/etc/default/grub", map[string]string{
+	return applyGrubBootConfigAt("/etc/default/grub", defaultEntry, timeout, cmdline, kb.RebuildBootArtifacts)
+}
+
+func applyGrubBootConfigAt(path, defaultEntry string, timeout uint32, cmdline string, rebuild func() error) error {
+	if err := validateBootValues(defaultEntry, cmdline); err != nil {
+		return err
+	}
+	previous, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := rewriteKeyValueFile(path, map[string]string{
 		"GRUB_DEFAULT":               quoteShell(defaultEntry),
 		"GRUB_TIMEOUT":               fmt.Sprintf("%d", timeout),
 		"GRUB_CMDLINE_LINUX_DEFAULT": quoteShell(cmdline),
@@ -236,7 +257,13 @@ func applyGrubBootConfig(defaultEntry string, timeout uint32, cmdline string, kb
 	}); err != nil {
 		return err
 	}
-	return kb.RebuildBootArtifacts()
+	if err := rebuild(); err != nil {
+		if restoreErr := writeConfigAtomically(path, previous); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("recuperar configuração anterior do GRUB: %w", restoreErr))
+		}
+		return err
+	}
+	return nil
 }
 
 func systemdBootLoaderConf() (string, uint32) {
@@ -284,10 +311,13 @@ func systemdBootCmdline() string {
 }
 
 func applySystemdBootConfig(defaultEntry string, timeout uint32, cmdline string) error {
+	if err := validateBootValues(defaultEntry, cmdline); err != nil {
+		return err
+	}
 	if defaultEntry != "" && !strings.HasSuffix(defaultEntry, ".conf") {
 		defaultEntry += ".conf"
 	}
-	if err := rewriteKeyValueFile("/boot/loader/loader.conf", map[string]string{
+	if err := rewriteConfigFile("/boot/loader/loader.conf", " ", map[string]string{
 		"default": defaultEntry,
 		"timeout": fmt.Sprintf("%d", timeout),
 	}); err != nil {
@@ -305,32 +335,79 @@ func applySystemdBootConfig(defaultEntry string, timeout uint32, cmdline string)
 }
 
 func rewriteKeyValueFile(path string, values map[string]string) error {
-	data, _ := os.ReadFile(path)
+	return rewriteConfigFile(path, "=", values)
+}
+
+func rewriteConfigFile(path, separator string, values map[string]string) error {
+	for key, value := range values {
+		if strings.ContainsAny(key+value, "\x00\r\n") {
+			return fmt.Errorf("configuração de boot deve conter valores de uma única linha")
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	lines := strings.Split(string(data), "\n")
 	seen := map[string]bool{}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		for key, value := range values {
-			if strings.HasPrefix(trimmed, key+"=") || strings.HasPrefix(trimmed, key+" ") {
-				sep := "="
-				if !strings.Contains(trimmed, "=") {
-					sep = " "
-				}
-				lines[i] = key + sep + value
+			if strings.HasPrefix(trimmed, key+"=") || strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"\t") {
+				lines[i] = key + separator + value
 				seen[key] = true
 			}
 		}
 	}
-	for key, value := range values {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
 		if !seen[key] {
-			lines = append(lines, key+"="+value)
+			lines = append(lines, key+separator+values[key])
 		}
 	}
-	return os.WriteFile(path, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"), 0644)
+	return writeConfigAtomically(path, []byte(strings.TrimSpace(strings.Join(lines, "\n"))+"\n"))
 }
 
 func quoteShell(value string) string {
-	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(value) + `"`
+}
+
+// Decode quotes and escapes without ever asking a shell to evaluate the file.
+func unquoteShell(value string) string {
+	var out strings.Builder
+	var quote byte
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '\\' && quote != '\'' && i+1 < len(value) {
+			next := value[i+1]
+			if quote == 0 || strings.ContainsRune("\\\"$`", rune(next)) {
+				out.WriteByte(next)
+				i++
+				continue
+			}
+		}
+		if quote == 0 && (c == '\'' || c == '"') {
+			quote = c
+		} else if quote != 0 && c == quote {
+			quote = 0
+		} else {
+			out.WriteByte(c)
+		}
+	}
+	return out.String()
+}
+
+func validateBootValues(values ...string) error {
+	for _, value := range values {
+		if strings.ContainsAny(value, "\x00\r\n") {
+			return fmt.Errorf("parâmetros de boot não podem conter NUL ou quebras de linha")
+		}
+	}
+	return nil
 }
 
 func logKernelError(action, kernel string, err error) {

@@ -10,6 +10,7 @@ package dbusserver
 import (
 	"fmt"
 	"log"
+	"reflect"
 	"sync"
 	"time"
 
@@ -31,8 +32,10 @@ const (
 // Activity tracks the last time any exported method was invoked, so the
 // server can decide when it's safe to exit under bus activation.
 type Activity struct {
-	mu   sync.Mutex
-	last time.Time
+	mu       sync.Mutex
+	last     time.Time
+	active   int
+	stopping bool
 }
 
 func (a *Activity) Touch() {
@@ -44,7 +47,69 @@ func (a *Activity) Touch() {
 func (a *Activity) idleFor() time.Duration {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.active != 0 {
+		return 0
+	}
 	return time.Since(a.last)
+}
+
+// begin and stopIfIdle share the same lock: once idle shutdown is committed,
+// queued D-Bus calls cannot start work on the retiring daemon.
+func (a *Activity) begin() (func(), bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopping {
+		return nil, false
+	}
+	a.active++
+	a.last = time.Now()
+	return func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.active--
+		a.last = time.Now()
+	}, true
+}
+
+func (a *Activity) stopIfIdle(timeout time.Duration) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active != 0 || time.Since(a.last) < timeout {
+		return false
+	}
+	a.stopping = true
+	return true
+}
+
+func trackedMethods(service interface{}, activity *Activity) map[string]interface{} {
+	value := reflect.ValueOf(service)
+	methods := make(map[string]interface{})
+	errorType := reflect.TypeOf((*dbus.Error)(nil))
+	for i := 0; i < value.NumMethod(); i++ {
+		method := value.Method(i)
+		typeOf := method.Type()
+		if typeOf.NumOut() == 0 || typeOf.Out(typeOf.NumOut()-1) != errorType {
+			continue
+		}
+		methods[value.Type().Method(i).Name] = reflect.MakeFunc(typeOf, func(args []reflect.Value) []reflect.Value {
+			done, ok := activity.begin()
+			if !ok {
+				result := make([]reflect.Value, typeOf.NumOut())
+				for i := range result {
+					result[i] = reflect.Zero(typeOf.Out(i))
+				}
+				result[len(result)-1] = reflect.ValueOf(dbus.NewError(BusName+".Error.ShuttingDown", []interface{}{"daemon encerrando; repita a chamada"}))
+				return result
+			}
+			defer done()
+			return method.Call(args)
+		}).Interface()
+	}
+	return methods
+}
+
+func (s *Server) export(service interface{}, iface string) error {
+	return s.conn.ExportMethodTable(trackedMethods(service, s.activity), ObjectPath, iface)
 }
 
 // Server owns the system bus connection and the lifecycle of the exported
@@ -77,85 +142,85 @@ func New(activeProfile profile.Profile) (*Server, error) {
 // BusName. Call Run afterwards to block until idle shutdown.
 func (s *Server) Export() error {
 	metadata := &MetadataService{activity: s.activity, profile: s.profile}
-	if err := s.conn.Export(metadata, ObjectPath, BusName+".Metadata"); err != nil {
+	if err := s.export(metadata, BusName+".Metadata"); err != nil {
 		return err
 	}
 
 	system := &SystemService{activity: s.activity}
-	if err := s.conn.Export(system, ObjectPath, BusName+".System"); err != nil {
+	if err := s.export(system, BusName+".System"); err != nil {
 		return err
 	}
 
 	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider, profile: s.profile}
-	if err := s.conn.Export(software, ObjectPath, BusName+".Software"); err != nil {
+	if err := s.export(software, BusName+".Software"); err != nil {
 		return err
 	}
 
 	snapshots := &SnapshotsService{activity: s.activity, conn: s.conn}
-	if err := s.conn.Export(snapshots, ObjectPath, BusName+".Snapshots"); err != nil {
+	if err := s.export(snapshots, BusName+".Snapshots"); err != nil {
 		return err
 	}
 
 	backup := &BackupService{activity: s.activity, conn: s.conn}
-	if err := s.conn.Export(backup, ObjectPath, BusName+".Backup"); err != nil {
+	if err := s.export(backup, BusName+".Backup"); err != nil {
 		return err
 	}
 
 	hardware := &HardwareService{activity: s.activity}
-	if err := s.conn.Export(hardware, ObjectPath, BusName+".Hardware"); err != nil {
+	if err := s.export(hardware, BusName+".Hardware"); err != nil {
 		return err
 	}
 
 	kernel := &KernelService{activity: s.activity, conn: s.conn, provider: s.provider}
-	if err := s.conn.Export(kernel, ObjectPath, BusName+".Kernel"); err != nil {
+	if err := s.export(kernel, BusName+".Kernel"); err != nil {
 		return err
 	}
 
 	users := &UsersService{activity: s.activity}
-	if err := s.conn.Export(users, ObjectPath, BusName+".Users"); err != nil {
+	if err := s.export(users, BusName+".Users"); err != nil {
 		return err
 	}
 
 	firewall := &FirewallService{activity: s.activity}
-	if err := s.conn.Export(firewall, ObjectPath, BusName+".Firewall"); err != nil {
+	if err := s.export(firewall, BusName+".Firewall"); err != nil {
 		return err
 	}
 
 	services := &ServicesService{activity: s.activity}
-	if err := s.conn.Export(services, ObjectPath, BusName+".Services"); err != nil {
+	if err := s.export(services, BusName+".Services"); err != nil {
 		return err
 	}
 
 	logs := &LogsService{activity: s.activity}
-	if err := s.conn.Export(logs, ObjectPath, BusName+".Logs"); err != nil {
+	if err := s.export(logs, BusName+".Logs"); err != nil {
 		return err
 	}
 
 	dateTime := &DateTimeService{activity: s.activity}
-	if err := s.conn.Export(dateTime, ObjectPath, BusName+".DateTime"); err != nil {
+	if err := s.export(dateTime, BusName+".DateTime"); err != nil {
 		return err
 	}
 
 	network := &NetworkService{activity: s.activity}
-	if err := s.conn.Export(network, ObjectPath, BusName+".Network"); err != nil {
+	if err := s.export(network, BusName+".Network"); err != nil {
 		return err
 	}
 
 	var bluetooth *BluetoothService
 	if s.profile == profile.Desktop {
 		bluetooth = &BluetoothService{activity: s.activity}
-		if err := s.conn.Export(bluetooth, ObjectPath, BusName+".Bluetooth"); err != nil {
+		if err := s.export(bluetooth, BusName+".Bluetooth"); err != nil {
 			return err
 		}
 	}
 
 	storage := &StorageService{activity: s.activity}
-	if err := s.conn.Export(storage, ObjectPath, BusName+".Storage"); err != nil {
+	if err := s.export(storage, BusName+".Storage"); err != nil {
 		return err
 	}
 
 	monitor := &MonitorService{activity: s.activity}
-	if err := s.conn.Export(monitor, ObjectPath, BusName+".Monitor"); err != nil {
+	if err := s.export(monitor, BusName+".Monitor"); err != nil {
 		return err
 	}
 
@@ -248,7 +313,7 @@ func (s *Server) Export() error {
 	if bluetooth != nil {
 		node.Interfaces = append(node.Interfaces, introspect.Interface{Name: BusName + ".Bluetooth", Methods: introspect.Methods(bluetooth)})
 	}
-	if err := s.conn.Export(introspect.NewIntrospectable(node), ObjectPath, "org.freedesktop.DBus.Introspectable"); err != nil {
+	if err := s.export(introspect.NewIntrospectable(node), "org.freedesktop.DBus.Introspectable"); err != nil {
 		return err
 	}
 
@@ -269,7 +334,7 @@ func (s *Server) Run() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if s.activity.idleFor() >= IdleTimeout {
+		if s.activity.stopIfIdle(IdleTimeout) {
 			log.Printf("vegad: idle for %s, releasing %s", IdleTimeout, BusName)
 			return
 		}

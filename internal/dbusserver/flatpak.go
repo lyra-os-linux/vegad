@@ -7,10 +7,42 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/lyraos/vegad/internal/distro"
 )
+
+var flatpakAppIDPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+\.[A-Za-z_][A-Za-z0-9_-]*$`)
+
+func validateFlatpakAppID(id string) error {
+	if len(id) > 255 || !flatpakAppIDPattern.MatchString(id) {
+		return fmt.Errorf("identificador de aplicativo Flatpak inválido: %q", id)
+	}
+	return nil
+}
+
+func flatpakAppCommand(operation, appID, scope string, u *desktopUser) (*exec.Cmd, error) {
+	if err := validateFlatpakAppID(appID); err != nil {
+		return nil, err
+	}
+	args := []string{operation, "-y", "--noninteractive", "--app"}
+	switch scope {
+	case "user":
+		if u == nil || u.Uid == 0 || u.Username == "" {
+			return nil, fmt.Errorf("operação Flatpak user exige identidade do chamador")
+		}
+		return flatpakUserCmd(u, append(args, "--user", "--", appID)...), nil
+	case "system":
+		args = append(args, "--system", "--")
+		if operation == "install" {
+			args = append(args, "flathub")
+		}
+		return exec.Command("flatpak", append(args, appID)...), nil
+	default:
+		return nil, fmt.Errorf("escopo Flatpak inválido: %q", scope)
+	}
+}
 
 // flatpakApp is one entry from `flatpak list`, tagged with which
 // installation it came from so removal/update targets the right one.
@@ -341,8 +373,12 @@ func fetchFlatpakDetails(appID string, u *desktopUser) (PackageDetails, error) {
 // installation — there's no scope picker in the UI yet, so installs always
 // target --system, same as before.
 func installFlatpak(appID string, report progressFunc) error {
+	cmd, err := flatpakAppCommand("install", appID, "system", nil)
+	if err != nil {
+		return err
+	}
 	return runStreamingCmd(
-		exec.Command("flatpak", "install", "-y", "--noninteractive", "--system", "flathub", appID),
+		cmd,
 		report, "Iniciando instalação...", "Concluído",
 	)
 }
@@ -351,14 +387,12 @@ func installFlatpak(appID string, report progressFunc) error {
 // actually found in (see SoftwareService.Remove) — system-wide, or the
 // desktop user's own --user installation when scope is "user".
 func removeFlatpak(appID, scope string, u *desktopUser, report progressFunc) error {
-	if scope == "user" && u != nil {
-		return runStreamingCmd(
-			flatpakUserCmd(u, "uninstall", "-y", "--noninteractive", "--user", appID),
-			report, "Iniciando remoção...", "Concluído",
-		)
+	cmd, err := flatpakAppCommand("uninstall", appID, scope, u)
+	if err != nil {
+		return err
 	}
 	return runStreamingCmd(
-		exec.Command("flatpak", "uninstall", "-y", "--noninteractive", "--system", appID),
+		cmd,
 		report, "Iniciando remoção...", "Concluído",
 	)
 }
@@ -367,14 +401,12 @@ func removeFlatpak(appID, scope string, u *desktopUser, report progressFunc) err
 // installation it was actually found in (scope, resolved the same way
 // removeFlatpak does) rather than every installed app like updateAllFlatpak.
 func updateFlatpak(appID, scope string, u *desktopUser, report progressFunc) error {
-	if scope == "user" && u != nil {
-		return runStreamingCmd(
-			flatpakUserCmd(u, "update", "-y", "--noninteractive", "--user", appID),
-			report, "Iniciando atualização...", "Concluído",
-		)
+	cmd, err := flatpakAppCommand("update", appID, scope, u)
+	if err != nil {
+		return err
 	}
 	return runStreamingCmd(
-		exec.Command("flatpak", "update", "-y", "--noninteractive", "--system", appID),
+		cmd,
 		report, "Iniciando atualização...", "Concluído",
 	)
 }

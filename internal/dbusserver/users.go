@@ -2,6 +2,7 @@ package dbusserver
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -203,8 +204,12 @@ func isSupportedImage(photo []byte) bool {
 }
 
 func installUserPhoto(username string, photo []byte) error {
-	const iconsDir = "/var/lib/AccountsService/icons"
-	const usersDir = "/var/lib/AccountsService/users"
+	return installUserPhotoAt("/var/lib/AccountsService", username, photo)
+}
+
+func installUserPhotoAt(root, username string, photo []byte) error {
+	iconsDir := filepath.Join(root, "icons")
+	usersDir := filepath.Join(root, "users")
 	if err := os.MkdirAll(iconsDir, 0755); err != nil {
 		return fmt.Errorf("criando diretório de fotos: %w", err)
 	}
@@ -212,15 +217,65 @@ func installUserPhoto(username string, photo []byte) error {
 		return fmt.Errorf("criando configuração da conta: %w", err)
 	}
 	iconPath := filepath.Join(iconsDir, username)
-	if err := os.WriteFile(iconPath, photo, 0644); err != nil {
+	configPath := filepath.Join(usersDir, username)
+	previousConfig, err := os.ReadFile(configPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("lendo configuração da conta: %w", err)
+	}
+	previousPhoto, photoErr := os.ReadFile(iconPath)
+	if photoErr != nil && !errors.Is(photoErr, os.ErrNotExist) {
+		return photoErr
+	}
+	if err := writeConfigAtomically(iconPath, photo); err != nil {
 		return fmt.Errorf("salvando foto: %w", err)
 	}
-	config := []byte("[User]\nIcon=" + iconPath + "\n")
-	if err := os.WriteFile(filepath.Join(usersDir, username), config, 0644); err != nil {
-		_ = os.Remove(iconPath)
-		return fmt.Errorf("configurando foto: %w", err)
+	config := updateAccountIcon(previousConfig, iconPath)
+	if err := writeConfigAtomically(configPath, config); err != nil {
+		var recoveryErr error
+		if photoErr == nil {
+			recoveryErr = writeConfigAtomically(iconPath, previousPhoto)
+		} else {
+			recoveryErr = os.Remove(iconPath)
+		}
+		return errors.Join(fmt.Errorf("configurando foto: %w", err), recoveryErr)
 	}
 	return nil
+}
+
+func updateAccountIcon(data []byte, iconPath string) []byte {
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	var result []string
+	inUser, foundUser, wroteIcon := false, false, false
+	flushIcon := func() {
+		if inUser && !wroteIcon {
+			result = append(result, "Icon="+iconPath)
+			wroteIcon = true
+		}
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			flushIcon()
+			inUser = trimmed == "[User]"
+			foundUser = foundUser || inUser
+		}
+		if inUser {
+			key, _, hasValue := strings.Cut(trimmed, "=")
+			if hasValue && strings.TrimSpace(key) == "Icon" {
+				if !wroteIcon {
+					result = append(result, "Icon="+iconPath)
+					wroteIcon = true
+				}
+				continue
+			}
+		}
+		result = append(result, line)
+	}
+	flushIcon()
+	if !foundUser {
+		result = append(result, "[User]", "Icon="+iconPath)
+	}
+	return []byte(strings.Join(result, "\n") + "\n")
 }
 
 func readGroupNames() ([]string, error) {

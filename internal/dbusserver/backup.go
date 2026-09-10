@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +31,7 @@ var (
 	errBackupUnavailable = errors.New("restic não está disponível neste sistema")
 	errBackupDeferred    = errors.New("destino do backup indisponível; execução adiada")
 	backupIDRe           = regexp.MustCompile(`[^a-z0-9]+`)
+	backupConfigMu       sync.Mutex
 )
 
 var criticalRestoreRoots = []string{
@@ -157,6 +159,14 @@ func backupPathTrigger(cfg BackupConfig) string {
 	if strings.TrimSpace(cfg.DestinationUUID) != "" {
 		return backupRemovableUUIDPath(cfg.DestinationUUID)
 	}
+	// The repository directory need not exist yet. Watch the remembered
+	// mountpoint so its first mount can also initialize a new repository.
+	if data, err := os.ReadFile(backupMountTargetPath(cfg.Id)); err == nil {
+		var mount backupMount
+		if json.Unmarshal(data, &mount) == nil && filepath.IsAbs(mount.Target) {
+			return mount.Target
+		}
+	}
 	return cfg.Destination
 }
 
@@ -187,28 +197,7 @@ func (b *BackupService) CreateConfig(sender dbus.Sender, cfg BackupConfig) (stri
 	if err != nil {
 		return "", dbus.MakeFailedError(err)
 	}
-	if err := ensureBackupDirs(); err != nil {
-		return "", dbus.MakeFailedError(err)
-	}
-
-	cfgPath := backupConfigPath(normalized.Id)
-	if _, err := os.Stat(cfgPath); err == nil {
-		return "", dbus.MakeFailedError(fmt.Errorf("configuração %q já existe", normalized.Id))
-	}
-
-	if err := writeBackupConfig(cfgPath, normalized); err != nil {
-		return "", dbus.MakeFailedError(err)
-	}
-	if err := ensureBackupPassword(normalized.Id); err != nil {
-		return "", dbus.MakeFailedError(err)
-	}
-
-	if normalized.Frequency != "on-connect" || backupDestinationIsAvailable(normalized) {
-		if err := ensureResticRepository(normalized, nil); err != nil && !errors.Is(err, errBackupUnavailable) {
-			return "", dbus.MakeFailedError(err)
-		}
-	}
-	if err := writeBackupSystemdUnits(normalized); err != nil {
+	if err := createBackupConfig(normalized, backupSystemdDir, nil); err != nil {
 		return "", dbus.MakeFailedError(err)
 	}
 	return normalized.Id, nil
@@ -286,23 +275,7 @@ func (b *BackupService) RestoreSnapshot(sender dbus.Sender, snapshotID, targetPa
 		if err := ensureResticRepository(cfg, report); err != nil {
 			return err
 		}
-
-		restoreTarget := validatedTarget
-		switch mode {
-		case "replace":
-			if err := os.RemoveAll(validatedTarget); err != nil {
-				return err
-			}
-		case "separate-folder":
-			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
-		default:
-			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
-		}
-
-		if err := os.MkdirAll(restoreTarget, 0o755); err != nil {
-			return err
-		}
-		return runResticCommand(cfg, []string{"restore", snapshotID, "--target", restoreTarget}, report, "Iniciando restauração...", "Restauração concluída")
+		return restoreBackup(cfg, snapshotID, validatedTarget, mode, nil, report)
 	}), nil
 }
 
@@ -311,11 +284,21 @@ func (b *BackupService) DeleteConfig(sender dbus.Sender, configID string) *dbus.
 	if err := requirePolkit(sender, "org.lyraos.vega.backup.configure"); err != nil {
 		return err
 	}
+	backupConfigMu.Lock()
+	defer backupConfigMu.Unlock()
 	if err := removeBackupSystemdUnits(configID); err != nil {
 		return dbus.MakeFailedError(err)
 	}
 	if err := os.Remove(backupConfigPath(configID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return dbus.MakeFailedError(err)
+	}
+	if err := os.Remove(backupPendingPath(configID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return dbus.MakeFailedError(err)
+	}
+	for _, path := range []string{backupMountTargetPath(configID), filepath.Join(backupConnectionDir(), configID+".last")} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return dbus.MakeFailedError(err)
+		}
 	}
 	if err := os.Remove(backupPasswordPath(configID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return dbus.MakeFailedError(err)
@@ -330,11 +313,14 @@ func RunBackupJob(configID string, report progressFunc) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Frequency == "on-connect" && !backupDestinationIsAvailable(cfg) {
-		if report != nil {
-			report(100, "Destino indisponível; backup adiado até a próxima conexão")
-		}
-		return nil
+	return runBackupConfig(cfg, report)
+}
+
+func runBackupConfig(cfg BackupConfig, report progressFunc) error {
+	if cfg.Frequency == "on-connect" {
+		return withMountedBackup(cfg, func(resolved BackupConfig, _ backupMount) error {
+			return runBackupConfig(resolved, report)
+		})
 	}
 	if err := ensureResticRepository(cfg, report); err != nil {
 		if errors.Is(err, errBackupDeferred) {
@@ -413,30 +399,9 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 	}
 	return b.startTransaction("Restauração: "+snapshotID, b.emitRestoreProgress, b.emitRestoreFinished, func(report progressFunc) error {
 		if err := ensureResticRepository(cfg, report); err != nil {
-			if errors.Is(err, errBackupDeferred) {
-				return err
-			}
 			return err
 		}
-		restoreTarget := validatedTarget
-		switch mode {
-		case "replace":
-			if err := os.RemoveAll(validatedTarget); err != nil {
-				return err
-			}
-		case "separate-folder":
-			restoreTarget = filepath.Join(validatedTarget, "restored-"+snapshotID)
-		default:
-			return fmt.Errorf("modo de restauração desconhecido: %s", mode)
-		}
-		if err := os.MkdirAll(restoreTarget, 0o755); err != nil {
-			return err
-		}
-		args := []string{"restore", snapshotID, "--target", restoreTarget}
-		for _, path := range filterEmpty(paths) {
-			args = append(args, "--include", path)
-		}
-		return runResticCommand(cfg, args, report, "Iniciando restauração...", "Restauração concluída")
+		return restoreBackup(cfg, snapshotID, validatedTarget, mode, paths, report)
 	}), nil
 }
 
@@ -544,6 +509,10 @@ func (b *BackupService) startTransaction(
 	emitFinished func(uint32, bool, string) error,
 	work func(report progressFunc) error,
 ) uint32 {
+	done, ok := b.activity.begin()
+	if !ok {
+		return 0
+	}
 	txID := b.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
 		if err := emitProgress(txID, percent, message); err != nil {
@@ -551,6 +520,7 @@ func (b *BackupService) startTransaction(
 		}
 	}
 	go func() {
+		defer done()
 		err := withShutdownInhibit(why, func() error { return work(report) })
 		success := err == nil
 		message := "Concluído"
@@ -593,6 +563,12 @@ func normalizeBackupConfig(cfg BackupConfig) (BackupConfig, error) {
 	}
 	if cfg.DestinationUUID != "" && strings.HasPrefix(cfg.Destination, "/") {
 		cfg.Destination = strings.TrimLeft(cfg.Destination, "/")
+	}
+	if cfg.DestinationUUID != "" && (!filepath.IsLocal(cfg.Destination) || strings.ContainsAny(cfg.DestinationUUID, "/\\\x00\r\n")) {
+		return BackupConfig{}, fmt.Errorf("UUID ou caminho relativo de destino inválido")
+	}
+	if cfg.Frequency == "on-connect" && (strings.ContainsAny(cfg.Destination, "\x00\r\n") || (cfg.DestinationUUID == "" && !filepath.IsAbs(cfg.Destination))) {
+		return BackupConfig{}, fmt.Errorf("on-connect requer um destino local absoluto ou um caminho relativo ao UUID")
 	}
 	return cfg, nil
 }
@@ -680,7 +656,7 @@ func writeBackupConfig(path string, cfg BackupConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	return writeConfigAtomicallyWithMode(path, data, 0o600)
 }
 
 func readBackupConfig(id string) (BackupConfig, error) {
@@ -738,18 +714,28 @@ func findBackupConfigBySnapshot(snapshotID string) (BackupConfig, error) {
 }
 
 func ensureBackupPassword(id string) error {
+	// Keep a durable credential across retries, including failures after restic
+	// init. A session keyring may be unavailable to the later systemd job.
+	path := backupPasswordPath(id)
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return fmt.Errorf("arquivo de senha inválido: %s", path)
+		}
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if secretToolAvailable() {
+		if password, err := lookupBackupPasswordSecret(id); err == nil && password != "" {
+			return writeConfigAtomicallyWithMode(path, []byte(password), 0o600)
+		}
+	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return err
 	}
 	password := fmt.Sprintf("%x", buf)
-	if secretToolAvailable() {
-		if err := storeBackupPasswordSecret(id, password); err == nil {
-			_ = os.Remove(backupPasswordPath(id))
-			return nil
-		}
-	}
-	return os.WriteFile(backupPasswordPath(id), []byte(password), 0o600)
+	return writeConfigAtomicallyWithMode(path, []byte(password), 0o600)
 }
 
 func resticPasswordFile(id string) string {
@@ -761,18 +747,15 @@ func resticPasswordCommand(id string) string {
 }
 
 func backupCommandEnv(id string) []string {
+	if _, err := os.Stat(resticPasswordFile(id)); err == nil {
+		return append(os.Environ(), "RESTIC_PASSWORD_FILE="+resticPasswordFile(id))
+	}
 	if secretToolAvailable() {
 		if password, err := lookupBackupPasswordSecret(id); err == nil && password != "" {
 			return append(os.Environ(), "RESTIC_PASSWORD_COMMAND="+resticPasswordCommand(id))
 		}
 	}
 	return append(os.Environ(), "RESTIC_PASSWORD_FILE="+resticPasswordFile(id))
-}
-
-func storeBackupPasswordSecret(id, password string) error {
-	cmd := exec.Command("secret-tool", "store", "--label=Vega restic password", "service", "vega", "backup-id", id)
-	cmd.Stdin = strings.NewReader(password)
-	return cmd.Run()
 }
 
 func lookupBackupPasswordSecret(id string) (string, error) {
@@ -901,7 +884,7 @@ func runResticCommand(cfg BackupConfig, args []string, report progressFunc, star
 	return nil
 }
 
-func writeBackupSystemdUnits(cfg BackupConfig) error {
+func writeBackupSystemdUnitsAt(cfg BackupConfig, unitDir string) error {
 	if cfg.Frequency == "manual" {
 		return nil
 	}
@@ -909,16 +892,16 @@ func writeBackupSystemdUnits(cfg BackupConfig) error {
 		return fmt.Errorf("systemd não está disponível")
 	}
 
-	if err := os.MkdirAll(backupSystemdDir, 0o755); err != nil {
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
 		return err
 	}
 
 	serviceName := backupServiceUnitName(cfg.Id)
 	timerName := backupTimerUnitName(cfg.Id)
-	servicePath := filepath.Join(backupSystemdDir, serviceName)
-	timerPath := filepath.Join(backupSystemdDir, timerName)
+	servicePath := filepath.Join(unitDir, serviceName)
+	timerPath := filepath.Join(unitDir, timerName)
 	pathName := backupPathUnitName(cfg.Id)
-	pathPath := filepath.Join(backupSystemdDir, pathName)
+	pathPath := filepath.Join(unitDir, pathName)
 
 	serviceUnit := fmt.Sprintf(`[Unit]
 Description=Vega backup job for %s
@@ -932,7 +915,10 @@ ExecStart=/usr/lib/vega/vegad backup run %s
 # restic operations must remain resumable after interruption.
 TimeoutStopSec=1800
 `, cfg.Id, cfg.Id)
-	if err := os.WriteFile(servicePath, []byte(serviceUnit), 0o644); err != nil {
+	if cfg.Frequency == "on-connect" {
+		serviceUnit = strings.Replace(serviceUnit, "Type=oneshot", "Type=simple", 1)
+	}
+	if err := writeConfigAtomically(servicePath, []byte(serviceUnit)); err != nil {
 		return err
 	}
 
@@ -948,7 +934,7 @@ Unit=%s
 [Install]
 WantedBy=timers.target
 `, cfg.Id, backupTimerCalendar(cfg.Frequency), serviceName)
-		if err := os.WriteFile(timerPath, []byte(timerUnit), 0o644); err != nil {
+		if err := writeConfigAtomically(timerPath, []byte(timerUnit)); err != nil {
 			return err
 		}
 	} else if cfg.Frequency == "on-connect" {
@@ -961,37 +947,76 @@ Unit=%s
 
 [Install]
 WantedBy=multi-user.target
-`, cfg.Id, backupPathTrigger(cfg), serviceName)
-		if err := os.WriteFile(pathPath, []byte(pathUnit), 0o644); err != nil {
+`, cfg.Id, backupUnitPath(backupPathTrigger(cfg)), serviceName)
+		if err := writeConfigAtomically(pathPath, []byte(pathUnit)); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+func activateBackupSystemdUnits(cfg BackupConfig) error {
+	if cfg.Frequency == "manual" {
+		return nil
+	}
 	if err := runCommand("systemctl", "daemon-reload"); err != nil {
 		return err
 	}
 	if cfg.Frequency == "daily" || cfg.Frequency == "weekly" {
-		return runCommand("systemctl", "enable", "--now", timerName)
+		return runCommand("systemctl", "enable", "--now", backupTimerUnitName(cfg.Id))
 	}
 	if cfg.Frequency == "on-connect" {
-		return runCommand("systemctl", "enable", "--now", pathName)
+		return runCommand("systemctl", "enable", "--now", backupPathUnitName(cfg.Id))
 	}
 	return nil
 }
 
 func removeBackupSystemdUnits(configID string) error {
+	return removeBackupSystemdUnitsAt(configID, backupSystemdDir)
+}
+
+func removeBackupSystemdUnitsAt(configID, unitDir string) error {
 	if !commandAvailable("systemctl") {
-		return nil
+		return fmt.Errorf("systemd não está disponível")
 	}
 	timerName := backupTimerUnitName(configID)
 	pathName := backupPathUnitName(configID)
 	serviceName := backupServiceUnitName(configID)
-	_ = runCommand("systemctl", "disable", "--now", timerName)
-	_ = runCommand("systemctl", "disable", "--now", pathName)
-	_ = os.Remove(filepath.Join(backupSystemdDir, timerName))
-	_ = os.Remove(filepath.Join(backupSystemdDir, pathName))
-	_ = os.Remove(filepath.Join(backupSystemdDir, serviceName))
+	for _, name := range []string{timerName, pathName, serviceName} {
+		state, err := runCommandOutput("systemctl", "show", "--property=LoadState", "--value", name)
+		if err != nil {
+			return fmt.Errorf("consultar %s: %w", name, err)
+		}
+		if strings.TrimSpace(state) == "not-found" {
+			continue
+		}
+		args := []string{"disable", "--now", name}
+		if name == serviceName {
+			args = []string{"stop", name}
+		}
+		if err := runCommand("systemctl", args...); err != nil {
+			return err
+		}
+	}
+	// Stop the watcher before removing its configuration/credential. Stopping
+	// a .path alone does not stop the service it previously activated.
+	for _, name := range []string{timerName, pathName, serviceName} {
+		if err := os.Remove(filepath.Join(unitDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	return runCommand("systemctl", "daemon-reload")
+}
+
+func backupUnitPath(path string) string {
+	// PathExists takes one literal path, not a quoted/escaped word list.
+	// A directory suffix prevents a final backslash from continuing the line
+	// and keeps trailing whitespace from being stripped by the unit parser.
+	if strings.HasSuffix(path, `\`) || strings.TrimSpace(path) != path {
+		path += "/."
+	}
+	return strings.ReplaceAll(path, "%", "%%")
 }
 
 func backupServiceUnitName(id string) string {

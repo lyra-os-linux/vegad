@@ -193,7 +193,20 @@ func (n *NetworkService) SetProxy(sender dbus.Sender, http string, https string,
 }
 
 func splitNM(line string) []string {
-	return strings.Split(strings.ReplaceAll(line, `\:`, "\x00"), ":")
+	var fields []string
+	var field strings.Builder
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\\' && i+1 < len(line) && (line[i+1] == ':' || line[i+1] == '\\') {
+			i++
+			field.WriteByte(line[i])
+		} else if line[i] == ':' {
+			fields = append(fields, field.String())
+			field.Reset()
+		} else {
+			field.WriteByte(line[i])
+		}
+	}
+	return append(fields, field.String())
 }
 
 func fillIPDetails(info *NetworkInterfaceInfo) {
@@ -220,8 +233,8 @@ func fillIPDetails(info *NetworkInterfaceInfo) {
 }
 
 func valueAfterColon(line string) string {
-	if idx := strings.Index(line, ":"); idx >= 0 {
-		return strings.TrimSpace(line[idx+1:])
+	if fields := splitNM(line); len(fields) > 1 {
+		return strings.TrimSpace(strings.Join(fields[1:], ":"))
 	}
 	return ""
 }
