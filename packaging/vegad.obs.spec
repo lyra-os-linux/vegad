@@ -56,7 +56,7 @@ pelo D-Bus (Type=dbus), não roda como serviço permanente.
 tar xzf %{SOURCE1}
 
 %build
-GOFLAGS=-mod=vendor go build -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
+GOFLAGS=-mod=vendor go build -buildvcs=false -trimpath -ldflags "-X github.com/lyraos/vegad/internal/version.Version=%{version}" \
   -o vegad ./cmd/vegad
 
 # Domínio SELinux dedicado e inicialmente permissivo. Isso remove a permissão
@@ -101,6 +101,8 @@ install -Dm644 internal/i18n/catalog/es-ES.json \
 # journalctl continua sendo a fonte de verdade (o módulo Log do Sistema do
 # vega-cli lê o journal direto), isso só mantém uma cópia persistente em
 # arquivo, com rotação via logrotate.
+install -Dm644 packaging/sysusers.d/vegad.conf \
+  %{buildroot}%{_prefix}/lib/sysusers.d/vegad.conf
 install -Dm644 packaging/tmpfiles.d/vega-log.conf \
   %{buildroot}%{_prefix}/lib/tmpfiles.d/vega-log.conf
 install -Dm644 packaging/vegad-log-export.service \
@@ -114,7 +116,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
   %{buildroot}%{_datadir}/selinux/packages/vegad_bootloader.pp
 
 %files
-%doc docs/backup-creation.md docs/backup-restore.md docs/backup-connection.md
+%doc docs/backup-creation.md docs/backup-restore.md docs/backup-connection.md docs/privilege-boundaries.md
 %dir %{_prefix}/lib/vega
 %{_prefix}/lib/vega/vegad
 %{_prefix}/lib/systemd/system/vegad.service
@@ -130,6 +132,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad-log-export.service
 %{_prefix}/lib/systemd/system/vegad-log-export.timer
 %{_prefix}/lib/tmpfiles.d/vega-log.conf
+%{_prefix}/lib/sysusers.d/vegad.conf
 %config(noreplace) %{_sysconfdir}/logrotate.d/vegad
 %{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
 %{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
@@ -146,9 +149,10 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 #
 # O módulo SELinux só é carregado se o sistema tiver SELinux habilitado
 # (selinuxenabled) e as ferramentas certas instaladas — máquinas sem
-# SELinux (a maioria das instalações openSUSE, que usa AppArmor por
-# padrão) simplesmente pulam essa parte sem erro.
+# SELinux ou sem essas ferramentas simplesmente pulam essa parte sem erro.
+# O baseline local e as limitações estão em docs/privilege-boundaries.md.
 %post
+systemd-sysusers %{_prefix}/lib/sysusers.d/vegad.conf
 systemd-tmpfiles --create %{_prefix}/lib/tmpfiles.d/vega-log.conf 2>/dev/null || true
 systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true

@@ -1,4 +1,4 @@
-module vegad_bootloader 2.0.0;
+module vegad_bootloader 2.0.1;
 
 # Transitional dedicated domain for vegad. The domain starts permissive so
 # existing D-Bus, zypper, NetworkManager and boot-management operations keep
@@ -10,8 +10,13 @@ require {
     attribute exec_type;
     attribute file_type;
     type init_t;
+    type system_dbusd_t;
     type bootloader_etc_t;
     class process transition;
+    class process2 nnp_transition;
+    class dbus send_msg;
+    class fd use;
+    class fifo_file { getattr ioctl read write };
     class file { entrypoint execute getattr map open read write };
 }
 
@@ -26,8 +31,22 @@ typeattribute vegad_exec_t file_type;
 role system_r types vegad_t;
 
 allow init_t vegad_t:process transition;
+allow init_t vegad_t:process2 nnp_transition;
 allow init_t vegad_exec_t:file { execute getattr map open read };
 allow vegad_t vegad_exec_t:file entrypoint;
 type_transition init_t vegad_exec_t:process vegad_t;
+
+# Vega exposes its API to local clients and receives replies from system
+# services. The bus ownership policy and original-sender Polkit checks remain
+# the authorization boundary. A permissive vegad_t alone does not allow an
+# enforcing client domain to send messages to this new domain.
+allow domain vegad_t:dbus send_msg;
+allow vegad_t domain:dbus send_msg;
+
+# systemd-run --pipe transfers the bounded IPC pipes through the system bus
+# to PID 1. Permit only these infrastructure domains to relay Vega's FDs.
+allow { init_t system_dbusd_t } vegad_t:fd use;
+allow { init_t system_dbusd_t } vegad_t:fifo_file { getattr read write };
+allow init_t vegad_t:fifo_file ioctl;
 
 allow vegad_t bootloader_etc_t:file write;

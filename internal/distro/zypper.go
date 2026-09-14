@@ -68,6 +68,19 @@ func zypperSearchArgs(query string) []string {
 	return []string{"--non-interactive", "--no-refresh", "search", "--", query}
 }
 
+// Only the documented no-match result is an empty successful query. Permission,
+// lock, metadata and backend errors must reach the caller instead of looking
+// like an empty repository or a fully up-to-date system.
+func zypperReadError(out string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 104 {
+		return nil
+	}
+	return fmt.Errorf("zypper query: %w — %s", err, out)
+}
+
 // Search shells out to `zypper search`, which (like pacman -Ss) only reads
 // the already-refreshed local metadata — no network access, no privilege.
 func (z *zypperBackend) Search(query string) ([]PackageRef, error) {
@@ -78,12 +91,7 @@ func (z *zypperBackend) Search(query string) ([]PackageRef, error) {
 
 	out, err := runCommandOutput("zypper", zypperSearchArgs(query)...)
 	if err != nil {
-		// zypper exits non-zero with no results when nothing matches —
-		// not a real error condition for a search.
-		if _, ok := err.(*exec.ExitError); ok {
-			return nil, nil
-		}
-		return nil, err
+		return nil, zypperReadError(out, err)
 	}
 
 	var results []PackageRef
@@ -166,13 +174,10 @@ func (z *zypperBackend) SyncDatabase() error {
 // such as --all) and parses its "S | Repository | Name | Current Version |
 // Available Version | Arch" table.
 func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
-	args := append([]string{"--non-interactive", "list-updates"}, extraArgs...)
+	args := append([]string{"--non-interactive", "--no-refresh", "list-updates"}, extraArgs...)
 	out, err := runCommandOutput("zypper", args...)
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return nil, nil
-		}
-		return nil, err
+		return nil, zypperReadError(out, err)
 	}
 
 	var results []PackageRef
@@ -394,7 +399,7 @@ func (z *zypperBackend) GetDetails(id string) (PackageDetails, error) {
 		}
 	}
 
-	if out, err := runCommandOutput("zypper", "--non-interactive", "info", "--", id); err == nil {
+	if out, err := runCommandOutput("zypper", "--non-interactive", "--no-refresh", "info", "--", id); err == nil {
 		info := parseZypperInfoBlock(out)
 		if details.Name == "" {
 			details.Name = info["Name"]
@@ -405,6 +410,11 @@ func (z *zypperBackend) GetDetails(id string) (PackageDetails, error) {
 		}
 		if size := info["Download Size"]; size != "" {
 			details.DownloadSize = size
+		}
+	} else {
+		// An absent repository entry may still have valid installed RPM data.
+		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 104 || !details.Installed {
+			return details, fmt.Errorf("zypper info %s: %w — %s", id, err, out)
 		}
 	}
 

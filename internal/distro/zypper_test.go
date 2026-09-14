@@ -1,7 +1,10 @@
 package distro
 
 import (
+	"os/exec"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +60,23 @@ func TestParseZypperUntrustedKeyUnrelatedError(t *testing.T) {
 	_, ok := parseZypperUntrustedKey("repo", "curl error 6: Could not resolve host: example.invalid")
 	if ok {
 		t.Fatalf("expected parseZypperUntrustedKey to reject an unrelated error")
+	}
+}
+
+// Permission failures must not masquerade as an empty successful query when
+// moving these operations from root to an ordinary user.
+func TestZypperReadQueriesDistinguishNoResultsFromFailures(t *testing.T) {
+	for _, code := range []int{0, 104, 4, 5, 7, 106} {
+		err := exec.Command("/bin/sh", "-c", "exit "+strconv.Itoa(code)).Run()
+		got := zypperReadError("repository diagnostic", err)
+		if (got == nil) != (code == 0 || code == 104) {
+			t.Errorf("exit %d: %v", code, got)
+		}
+		if got != nil && !strings.Contains(got.Error(), "repository diagnostic") {
+			t.Errorf("diagnostic lost: %v", got)
+		}
+	}
+	if err := zypperReadError("", &exec.Error{Name: "zypper", Err: exec.ErrNotFound}); err == nil {
+		t.Fatal("missing executable treated as no updates")
 	}
 }

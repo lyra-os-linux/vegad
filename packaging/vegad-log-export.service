@@ -4,6 +4,11 @@ Documentation=https://lyraos.com.br/vega
 
 [Service]
 Type=oneshot
+User=vegad-log
+Group=vegad-log
+SupplementaryGroups=systemd-journal
+LogsDirectory=vega
+LogsDirectoryMode=0750
 # --cursor-file guarda a posição já exportada entre execuções, então cada
 # rodada só acrescenta as entradas novas desde a última vez — sem isso,
 # cada execução do timer duplicaria o log inteiro no arquivo. journalctl
@@ -20,11 +25,24 @@ ProtectHome=true
 ReadWritePaths=/var/log/vega
 ProtectKernelTunables=true
 ProtectKernelModules=true
-ProtectKernelLogs=false
+ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_UNIX
 LockPersonality=true
 RestrictRealtime=true
 CapabilityBoundingSet=
 SystemCallArchitectures=native
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+PrivateNetwork=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Hide the runtime directories, avoiding SELinux mounton of individual sockets.
+InaccessiblePaths=-/run/dbus -/run/user
+TimeoutStartSec=60
+TimeoutStopSec=5
 UMask=0077
