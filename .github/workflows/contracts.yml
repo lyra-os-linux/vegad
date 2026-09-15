@@ -12,13 +12,6 @@ jobs:
   go:
     runs-on: ubuntu-latest
     steps:
-      - name: Controlled failure for branch-protection qualification
-        if: github.event_name == 'pull_request' && github.head_ref == 'test/ci-protection-37'
-        run: |
-          echo "Issue 37: allow time to verify pending-check merge rejection."
-          sleep 45
-          echo "::error::Intentional CI protection probe; remove before merge."
-          exit 1
       - name: Install backup integration dependencies
         run: sudo apt-get update && sudo apt-get install -y restic
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
