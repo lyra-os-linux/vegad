@@ -25,7 +25,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command in busctl cargo dbus-daemon go; do
+for command in busctl cargo dbus-daemon go pkcheck; do
   command -v "$command" >/dev/null || {
     echo "dependência ausente: $command" >&2
     exit 1
