@@ -84,7 +84,9 @@ func (n *NetworkService) ListWifi() ([]WifiNetworkInfo, *dbus.Error) {
 	if !commandAvailable("nmcli") {
 		return []WifiNetworkInfo{}, nil
 	}
-	out, err := runCommandOutput("nmcli", "-t", "-f", "IN-USE,SSID,SECURITY,SIGNAL,DEVICE", "device", "wifi", "list", "--rescan", "yes")
+	// Listing uses NetworkManager's current scan results. A background read
+	// must not request the separate wifi.scan authorization on app startup.
+	out, err := runCommandOutput("nmcli", "-t", "-f", "IN-USE,SSID,SECURITY,SIGNAL,DEVICE", "device", "wifi", "list", "--rescan", "no")
 	if err != nil {
 		return []WifiNetworkInfo{}, nil
 	}

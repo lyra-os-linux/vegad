@@ -34,6 +34,7 @@ type SoftwareService struct {
 	updates         []PackageRef
 	updateCheckMu   sync.Mutex
 	updateChecking  bool
+	queryCache      *queryCache
 }
 
 const nativeUpdateCacheTTL = 5 * time.Minute
@@ -81,6 +82,9 @@ func (s *SoftwareService) invalidateThenListUpdates() ([]PackageRef, error) {
 // transaction, a repository toggle, a database sync — must call this, or the
 // Updates tab keeps showing packages that are already installed.
 func (s *SoftwareService) invalidateUpdateCaches() {
+	if s.queryCache != nil {
+		s.queryCache.invalidate()
+	}
 	s.nativeUpdatesMu.Lock()
 	s.nativeUpdatesAt = time.Time{}
 	s.nativeUpdates = nil
@@ -378,22 +382,12 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 
 func (s *SoftwareService) ListNativeUpdates() ([]PackageRef, *dbus.Error) {
 	s.activity.Touch()
-	updates, refreshed, err := s.cachedNativeUpdates()
+	updates, _, err := s.cachedNativeUpdates()
 	if err != nil {
 		return nil, dbus.MakeFailedError(err)
 	}
-	if !refreshed {
-		return updates, nil
-	}
-	status := UpdateStatus{
-		CheckedAt:   time.Now().UTC().Format(time.RFC3339),
-		Profile:     string(s.profile),
-		NativeCount: uint32(len(updates)),
-		TotalCount:  uint32(len(updates)),
-	}
-	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
-		log.Printf("vegad: persistir consulta nativa de atualizações: %v", err)
-	}
+	// A public query never writes the privileged shared update state. The
+	// scheduled/explicit metadata refresh owns that state and its timestamp.
 	return updates, nil
 }
 

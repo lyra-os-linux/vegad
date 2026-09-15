@@ -34,7 +34,7 @@ func TestFlatpakMutationRejectsOptionsAndNonIDsBeforeExecution(t *testing.T) {
 }
 
 func TestFlatpakAppCommandsSeparateArgumentsAndKeepUserIdentity(t *testing.T) {
-	u := &desktopUser{Uid: 1001, Username: "alice", HomeDir: "/home/alice", RuntimeDir: t.TempDir()}
+	u := &desktopUser{Uid: uint32(os.Geteuid() + 1), Username: "alice", HomeDir: "/home/alice", RuntimeDir: t.TempDir()}
 	for _, id := range []string{"org.mozilla.firefox", "io.github.example.App-name", "org.freedesktop.Platform.GL.default"} {
 		for _, operation := range []string{"install", "uninstall", "update"} {
 			cmd, err := flatpakAppCommand(operation, id, "system", nil)
@@ -86,7 +86,7 @@ func TestFlatpakSystemInstallRequiresPolkit(t *testing.T) {
 
 func TestFlatpakUserCmdUsesRunuserOutsideFork(t *testing.T) {
 	u := &desktopUser{
-		Uid:        1001,
+		Uid:        uint32(os.Geteuid() + 1),
 		Gid:        1001,
 		Username:   "alice",
 		HomeDir:    "/home/alice",
@@ -108,6 +108,21 @@ func TestFlatpakUserCmdUsesRunuserOutsideFork(t *testing.T) {
 		t.Fatalf("SysProcAttr = %#v, want nil: credential changes during fork cause EPERM", cmd.SysProcAttr)
 	}
 	assertSingleEnvValue(t, cmd.Env, "HOME", "/home/alice")
+	assertSingleEnvValue(t, cmd.Env, "XDG_RUNTIME_DIR", u.RuntimeDir)
+}
+
+func TestFlatpakUserCmdKeepsUnprivilegedWorkerIdentity(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires ordinary user; also qualified in VM")
+	}
+	// The worker's runtime directory must exist, independently of the host's
+	// login sessions or UID allocation (including isolated offline builds).
+	u := &desktopUser{Uid: uint32(os.Geteuid()), HomeDir: "/home/alice", RuntimeDir: t.TempDir()}
+	cmd := flatpakUserCmd(u, "list", "--user")
+	if cmd.Path != "/usr/bin/flatpak" || !reflect.DeepEqual(cmd.Args, []string{"/usr/bin/flatpak", "list", "--user"}) || cmd.SysProcAttr != nil {
+		t.Fatalf("worker attempted identity change: %#v", cmd)
+	}
+	assertSingleEnvValue(t, cmd.Env, "HOME", u.HomeDir)
 	assertSingleEnvValue(t, cmd.Env, "XDG_RUNTIME_DIR", u.RuntimeDir)
 }
 

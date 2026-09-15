@@ -241,4 +241,42 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <action id="org.lyraos.vega.snapshots.read-admin">
+    <description>Read protected system snapshots</description>
+    <description xml:lang="pt_BR">Ler snapshots protegidos do sistema</description>
+    <description xml:lang="es">Leer instantáneas protegidas del sistema</description>
+    <message>Authentication is required to read protected system data</message>
+    <message xml:lang="pt_BR">É necessário autenticar para ler dados protegidos do sistema</message>
+    <message xml:lang="es">Es necesario autenticarse para leer datos protegidos del sistema</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+
+  <action id="org.lyraos.vega.backup.read-admin">
+    <description>Read administrative backup configuration and archives</description>
+    <description xml:lang="pt_BR">Ler configurações e arquivos de backups administrativos</description>
+    <description xml:lang="es">Leer configuraciones y archivos de copias administrativas</description>
+    <message>Authentication is required to read protected system data</message>
+    <message xml:lang="pt_BR">É necessário autenticar para ler dados protegidos do sistema</message>
+    <message xml:lang="es">Es necesario autenticarse para leer datos protegidos del sistema</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+
+  <action id="org.lyraos.vega.kernel.read-admin">
+    <description>Read protected boot entries</description>
+    <description xml:lang="pt_BR">Ler entradas de boot protegidas</description>
+    <description xml:lang="es">Leer entradas de arranque protegidas</description>
+    <message>Authentication is required to read protected system data</message>
+    <message xml:lang="pt_BR">É necessário autenticar para ler dados protegidos do sistema</message>
+    <message xml:lang="es">Es necesario autenticarse para leer datos protegidos del sistema</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+  <action id="org.lyraos.vega.firewall.read-admin">
+    <description>Read firewall services and ports</description>
+    <description xml:lang="pt_BR">Consultar serviços e portas do firewall</description>
+    <description xml:lang="es">Consultar servicios y puertos del cortafuegos</description>
+    <message>Access to firewall information is not allowed for this session</message>
+    <message xml:lang="pt_BR">Esta sessão não tem acesso às informações do firewall</message>
+    <message xml:lang="es">Esta sesión no tiene acceso a la información del cortafuegos</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
 </policyconfig>

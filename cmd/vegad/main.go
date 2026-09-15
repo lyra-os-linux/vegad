@@ -55,6 +55,12 @@ func main() {
 		log.Fatalf("vegad: carregar perfil: %v", err)
 	}
 	log.Printf("vegad: perfil %s (%s)", activeProfile, profileSource)
+	if len(os.Args) == 2 && os.Args[1] == "query" {
+		if err := dbusserver.RunQueryWorker(activeProfile, os.Stdin, os.Stdout); err != nil {
+			log.Fatalf("vegad query: %v", err)
+		}
+		return
+	}
 
 	if len(os.Args) >= 2 && os.Args[1] == "check-updates" {
 		if activeProfile != profile.Desktop {
@@ -90,8 +96,10 @@ func main() {
 	}
 
 	log.Printf("vegad %s starting", version.Version)
-	if err := dbusserver.ReconcileNvidiaSuspendPolicy(); err != nil {
-		log.Printf("vegad: não foi possível reconciliar a política de suspensão NVIDIA: %v", err)
+	if os.Geteuid() == 0 {
+		if err := dbusserver.ReconcileNvidiaSuspendPolicy(); err != nil {
+			log.Printf("vegad: não foi possível reconciliar a política de suspensão NVIDIA: %v", err)
+		}
 	}
 
 	srv, err := dbusserver.New(activeProfile)

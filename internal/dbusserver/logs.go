@@ -10,8 +10,8 @@ import (
 )
 
 // LogsService backs org.lyraos.Vega1.Logs (issue #14): a read-only
-// journalctl viewer. vegad executes journalctl as root, so every method uses
-// a dedicated administrative Polkit action.
+// journalctl viewer. Every method requires administrative Polkit approval;
+// journalctl itself runs in a confined worker with journal-group access.
 type LogsService struct {
 	activity  *Activity
 	authorize func(dbus.Sender, string) *dbus.Error

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-dbus_client_dir="$repo_root/../lyra-vega-dbus"
+dbus_client_dir="${VEGA_DBUS_CLIENT_DIR:-$repo_root/../lyra-vega-dbus}"
 if [ ! -d "$dbus_client_dir" ]; then
   echo "esperava um checkout irmão em $dbus_client_dir (git clone https://github.com/lyra-os-linux/lyra-vega-dbus ../lyra-vega-dbus)" >&2
   exit 1
@@ -25,14 +25,23 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command in busctl cargo dbus-daemon go; do
+for command in busctl cargo dbus-daemon go pkcheck; do
   command -v "$command" >/dev/null || {
     echo "dependência ausente: $command" >&2
     exit 1
   }
 done
 
-mapfile -t bus_info < <(dbus-daemon --session --fork --print-address=1 --print-pid=1)
+# Container CI has no system manager. Exercise the wire contracts with the
+# daemon already unprivileged; the real root-to-worker boundary is tested in
+# scripts/check-query-vm.py against systemd and Polkit.
+chmod 0755 "$tmpdir"
+cat > "$tmpdir/bus.conf" <<EOF
+<busconfig><type>session</type><listen>unix:path=$tmpdir/bus</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow user="*"/><allow own="*"/>
+<allow send_destination="*"/><allow receive_sender="*"/></policy></busconfig>
+EOF
+mapfile -t bus_info < <(dbus-daemon --config-file="$tmpdir/bus.conf" --fork --print-address=1 --print-pid=1)
 export DBUS_SYSTEM_BUS_ADDRESS="${bus_info[0]}"
 bus_pid="${bus_info[1]}"
 
@@ -42,7 +51,11 @@ bus_pid="${bus_info[1]}"
     go build -o "$tmpdir/vegad" ./cmd/vegad
 )
 
-VEGAD_PROFILE=server "$tmpdir/vegad" >"$tmpdir/vegad.log" 2>&1 &
+daemon_command=("$tmpdir/vegad")
+if [ "$EUID" = 0 ]; then
+  daemon_command=(runuser --user nobody -- "$tmpdir/vegad")
+fi
+VEGAD_PROFILE=server "${daemon_command[@]}" >"$tmpdir/vegad.log" 2>&1 &
 vegad_pid=$!
 
 ready=false
@@ -74,4 +87,17 @@ if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect org.lyraos.Vega1 \
 fi
 
 cd "$dbus_client_dir"
-cargo test --locked -- --ignored --test-threads=1
+# This private bus deliberately has no Polkit authority. Backup reads now
+# require authorization; their successful path and denial are covered with
+# real Polkit in check-query-vm.py. Keep the private-bus negative check here.
+if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Backup ListConfigs >"$tmpdir/backup-read.log" 2>&1; then
+  echo "leitura protegida de backup foi autorizada sem Polkit" >&2
+  exit 1
+fi
+grep -q 'org.lyraos.vega.backup.read-admin' "$tmpdir/backup-read.log" || {
+  cat "$tmpdir/backup-read.log" >&2
+  exit 1
+}
+cargo test --locked -- --ignored --test-threads=1 \
+  --skip backup::tests::real_daemon_exposes_the_read_only_backup_contract

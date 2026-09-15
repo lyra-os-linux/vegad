@@ -61,6 +61,10 @@ func flatpakUserCmd(u *desktopUser, args ...string) *exec.Cmd {
 	runuserArgs := []string{"--user", u.Username, "--", "/usr/bin/flatpak"}
 	runuserArgs = append(runuserArgs, args...)
 	cmd := exec.Command("/usr/sbin/runuser", runuserArgs...)
+	if os.Geteuid() != 0 && os.Geteuid() == int(u.Uid) {
+		// Public queries already run as the authenticated desktop caller.
+		cmd = exec.Command("/usr/bin/flatpak", args...)
+	}
 	env := environmentWith(os.Environ(), "HOME", u.HomeDir)
 	if _, err := os.Stat(u.RuntimeDir); err == nil {
 		env = environmentWith(env, "XDG_RUNTIME_DIR", u.RuntimeDir)

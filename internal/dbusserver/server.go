@@ -109,16 +109,21 @@ func trackedMethods(service interface{}, activity *Activity) map[string]interfac
 }
 
 func (s *Server) export(service interface{}, iface string) error {
-	return s.conn.ExportMethodTable(trackedMethods(service, s.activity), ObjectPath, iface)
+	methods, err := s.routedMethods(service, iface)
+	if err != nil {
+		return err
+	}
+	return s.conn.ExportMethodTable(methods, ObjectPath, iface)
 }
 
 // Server owns the system bus connection and the lifecycle of the exported
 // interfaces.
 type Server struct {
-	conn     *dbus.Conn
-	activity *Activity
-	provider distro.Provider
-	profile  profile.Profile
+	conn       *dbus.Conn
+	activity   *Activity
+	provider   distro.Provider
+	profile    profile.Profile
+	queryCache queryCache
 }
 
 func New(activeProfile profile.Profile) (*Server, error) {
@@ -151,7 +156,7 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider, profile: s.profile}
+	software := &SoftwareService{activity: s.activity, conn: s.conn, provider: s.provider, profile: s.profile, queryCache: &s.queryCache}
 	if err := s.export(software, BusName+".Software"); err != nil {
 		return err
 	}
