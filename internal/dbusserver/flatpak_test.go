@@ -115,7 +115,9 @@ func TestFlatpakUserCmdKeepsUnprivilegedWorkerIdentity(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("requires ordinary user; also qualified in VM")
 	}
-	u := &desktopUser{Uid: uint32(os.Geteuid()), HomeDir: "/home/alice", RuntimeDir: "/run/user/1001"}
+	// The worker's runtime directory must exist, independently of the host's
+	// login sessions or UID allocation (including isolated offline builds).
+	u := &desktopUser{Uid: uint32(os.Geteuid()), HomeDir: "/home/alice", RuntimeDir: t.TempDir()}
 	cmd := flatpakUserCmd(u, "list", "--user")
 	if cmd.Path != "/usr/bin/flatpak" || !reflect.DeepEqual(cmd.Args, []string{"/usr/bin/flatpak", "list", "--user"}) || cmd.SysProcAttr != nil {
 		t.Fatalf("worker attempted identity change: %#v", cmd)
