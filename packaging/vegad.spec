@@ -31,7 +31,7 @@ Requires(preun):  systemd
 Requires(postun): systemd
 
 Recommends:     NetworkManager
-Recommends:     restic
+Requires:       restic >= 0.17
 Recommends:     firewalld
 Recommends:     fwupd
 Recommends:     bluez
@@ -108,7 +108,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
   %{buildroot}%{_datadir}/selinux/packages/vegad_bootloader.pp
 
 %files
-%doc docs/backup-creation.md docs/backup-restore.md docs/backup-connection.md docs/privilege-boundaries.md
+%doc docs/backup-creation.md docs/backup-restore.md docs/backup-connection.md docs/privilege-boundaries.md docs/nvidia.md
 %dir %{_prefix}/lib/vega
 %{_prefix}/lib/vega/vegad
 %{_prefix}/lib/systemd/system/vegad.service
@@ -142,7 +142,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 # O módulo SELinux só é carregado se o sistema tiver SELinux habilitado
 # (selinuxenabled) e as ferramentas certas instaladas — máquinas sem
 # SELinux ou sem essas ferramentas simplesmente pulam essa parte sem erro.
-# O baseline local e as limitações estão em docs/privilege-boundaries.md.
+# O baseline local e as limitações estão em docs/privilege-boundaries.md docs/nvidia.md.
 %post
 systemd-sysusers %{_prefix}/lib/sysusers.d/vegad.conf
 systemd-tmpfiles --create %{_prefix}/lib/tmpfiles.d/vega-log.conf 2>/dev/null || true

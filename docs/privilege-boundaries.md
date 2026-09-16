@@ -12,9 +12,9 @@ unclassified method, and its coverage is checked against every exported method.
 | Public queries | 47 | Caller UID; the dedicated `vegad-query` account for a root caller; no capabilities or elevation |
 | Journal queries | 2 | Polkit `logs.read-admin`, then a non-root worker with the journal group |
 | Brokered reads | 10 | Noninteractive Polkit session check; active local desktop allowed without a password; root coordinator reads the required system files and protected firewall information |
-| Administrative operations | 53 | Existing per-operation Polkit and transaction handlers |
+| Administrative operations | 54 | Existing per-operation Polkit and transaction handlers |
 | Metadata refresh | 1 | Existing rate-limited background maintenance; shared with the scheduled refresh |
-| Retired driver operations | 3 | Existing explicit unsupported-operation responses |
+| Retired driver operations | 2 | Existing explicit unsupported-operation responses |
 
 An administrative operation can already demote a subprocess when appropriate,
 for example an authorized operation on the caller's user Flatpak installation.
@@ -183,3 +183,7 @@ that the complete Vega domain is enforcing or that a new ISO has been tested.
 
 References: [Zypper return codes](https://manpages.opensuse.org/Tumbleweed/zypper/zypper.8.en.html),
 [systemd execution properties](https://github.com/systemd/systemd/blob/v257/man/systemd.exec.xml).
+
+`Software.InstallNvidia` is an explicitly confirmed administrative operation
+under `software.install`; see [NVIDIA integration](nvidia.md). Status and checks
+remain public worker queries and never reconcile suspend policy.

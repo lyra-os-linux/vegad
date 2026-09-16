@@ -17,6 +17,9 @@ O contrato D-Bus que este daemon implementa vive em
 Ver [`docs/vegad-profiles.md`](docs/vegad-profiles.md) para os perfis
 `desktop`/`server`.
 
+A integração opcional do driver NVIDIA oficial está documentada em
+[`docs/nvidia.md`](docs/nvidia.md).
+
 ## Build
 
 ```sh
