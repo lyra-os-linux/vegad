@@ -44,3 +44,8 @@ contagens nativa, Flatpak, total e de segurança (zero quando o backend não
 classifica patches), além de indicar andamento e o último erro.
 Uma falha de rede ou de repositório agenda nova tentativa em duas horas, com
 até cinco minutos de atraso aleatório, sem alterar o ciclo diário normal.
+
+Desktop e Server anunciam `nvidia-official-v1` e `nvidia-recovery-v1`.
+Consultas continuam públicas. A instalação exige confirmação e recuperação
+verificada: Snapper no Btrfs; Restic e restauração offline no layout Server/ext4
+simples. Outros layouts são recusados. Ver [NVIDIA](nvidia.md).

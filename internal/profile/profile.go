@@ -66,7 +66,7 @@ func Load(path string) (Profile, string, error) {
 }
 
 func (p Profile) Capabilities() []string {
-	common := []string{"backup", "datetime", "firewall", "hardware", "kernel", "logs", "monitor", "network", "packages-native", "services", "snapshots", "storage", "users"}
+	common := []string{"backup", "datetime", "firewall", "hardware", "kernel", "logs", "monitor", "network", "packages-native", "services", "snapshots", "storage", "users", "nvidia-official-v1", "nvidia-recovery-v1"}
 	if p == Desktop {
 		return append(common, "bluetooth", "flatpak", "session-desktop")
 	}

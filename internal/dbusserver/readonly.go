@@ -170,7 +170,7 @@ func queryProperties(caller *desktopUser, journal bool) ([]string, error) {
 	return properties, nil
 }
 
-func queryCommand(ctx context.Context, caller *desktopUser, journal bool, activeProfile profile.Profile) (*exec.Cmd, error) {
+func queryCommand(ctx context.Context, caller *desktopUser, journal bool, activeProfile profile.Profile, requests ...queryRequest) (*exec.Cmd, error) {
 	properties, err := queryProperties(caller, journal)
 	if err != nil {
 		return nil, err
@@ -198,6 +198,19 @@ func queryCommand(ctx context.Context, caller *desktopUser, journal bool, active
 	} else {
 		// The service account uses only the unit's private temporary cache.
 		args = append(args, "--setenv=HOME=/tmp", "--setenv=XDG_CACHE_HOME=/tmp/vega-query-cache")
+	}
+	if len(requests) == 1 && requests[0].Interface == "Software" && (requests[0].Method == "NvidiaStatus" || requests[0].Method == "CheckNvidia") {
+		// ProtectKernelModules also hides /usr/lib/modules, including the
+		// target of /boot/vmlinuz. These two public diagnostics need file
+		// reads, not module administration. Retain the read-only filesystem,
+		// caller UID, empty capabilities and NoNewPrivileges; explicitly deny
+		// module syscalls even though their files are now visible.
+		for i, p := range properties {
+			if p == "ProtectKernelModules=yes" {
+				properties[i] = "ProtectKernelModules=no"
+			}
+		}
+		properties = append(properties, "SystemCallFilter=~@module")
 	}
 	for _, property := range properties {
 		args = append(args, "--property="+property)
@@ -262,7 +275,7 @@ func executeQuery(request queryRequest, caller *desktopUser, journal bool, activ
 	// slot until the service has exited (8s start + 60s runtime + 1s stop).
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
-	cmd, err := queryCommand(ctx, caller, journal, activeProfile)
+	cmd, err := queryCommand(ctx, caller, journal, activeProfile, request)
 	if err != nil {
 		return reply, err
 	}

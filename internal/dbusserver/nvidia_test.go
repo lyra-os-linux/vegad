@@ -2,7 +2,7 @@ package dbusserver
 
 import (
 	"errors"
-	"fmt"
+	"github.com/lyraos/vegad/internal/profile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +46,10 @@ func compatibleRunner() *fakeNvidiaRunner {
 		"lspci -Dnd 10de:":                  "0000:01:00.0 0300: 10de:1f99 (rev a1)",
 		"lspci -s 0000:01:00.0":             "01:00.0 VGA compatible controller: NVIDIA Corporation TU117M",
 		"mokutil --sb-state":                "SecureBoot enabled",
-		"rpm -qa --qf %{NAME}|%{VERSION}\n": "bash|5.2",
+		"uname -m":                          "x86_64",
+		"uname -r":                          "6.12.0-160100.4-default",
+		"readlink -f /boot/vmlinuz":         "/usr/lib/modules/6.12.0-160100.4-default/vmlinuz",
+		"rpm -qa --qf %{NAME}|%{VERSION}\n": "bash|5.2\nLeap-release|16.1",
 	}, errors: map[string]error{}, sequences: map[string][]fakeNvidiaResponse{}}
 }
 
@@ -73,19 +76,6 @@ func TestNvidiaHardwareParsesNumericLspciOutput(t *testing.T) {
 	}
 }
 
-func TestNvidiaStatusRejectsPartialLockstep(t *testing.T) {
-	runner := compatibleRunner()
-	runner.outputs["rpm -q --qf %{VERSION}-%{RELEASE} "+nvidiaKMPMeta] = "580.1-1"
-	runner.errors["rpm -q --qf %{VERSION}-%{RELEASE} "+nvidiaUserspaceMeta] = fmt.Errorf("not installed")
-	status, err := (nvidiaManager{run: runner}).status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.State != "unavailable" || !strings.Contains(status.Detail, "desalinhada") {
-		t.Fatalf("unexpected status: %+v", status)
-	}
-}
-
 func TestUpstreamVersionNormalizesRPMReleaseAndKMPKernelSuffix(t *testing.T) {
 	for input, want := range map[string]string{
 		"580.159.03-lp160.53.1":        "580.159.03",
@@ -95,21 +85,6 @@ func TestUpstreamVersionNormalizesRPMReleaseAndKMPKernelSuffix(t *testing.T) {
 		if got := upstreamVersion(input); got != want {
 			t.Fatalf("upstreamVersion(%q)=%q, want %q", input, got, want)
 		}
-	}
-}
-
-func TestNvidiaStatusRejectsMisalignedLeafPackages(t *testing.T) {
-	runner := compatibleRunner()
-	runner.outputs["rpm -q --qf %{VERSION}-%{RELEASE} "+nvidiaKMPMeta] = "580.159.03-1"
-	runner.outputs["rpm -q --qf %{VERSION}-%{RELEASE} "+nvidiaUserspaceMeta] = "580.159.03-1"
-	runner.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = "nvidia-video-G06|580.159.03\nnvidia-gl-G06|580.142"
-
-	status, err := (nvidiaManager{run: runner}).status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.State != "unavailable" || !strings.Contains(status.Detail, "580.142, 580.159.03") {
-		t.Fatalf("unexpected status: %+v", status)
 	}
 }
 
@@ -198,4 +173,183 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func officialManager(t *testing.T) (nvidiaManager, *fakeNvidiaRunner) {
+	t.Helper()
+	r := compatibleRunner()
+	inventory := "Leap-release|16.1\nlyra-nvidia|" + nvidiaIntegrationVersion
+	for _, pkg := range nvidiaRequiredPackages {
+		inventory += "\n" + pkg + "|" + nvidiaIntegrationVersion
+	}
+	r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = inventory
+	kernel := "6.12.0-160100.4-default"
+	module := "/usr/lib/modules/" + kernel + "/updates/nvidia.ko.zst"
+	r.outputs["modinfo -k "+kernel+" -F version nvidia"] = nvidiaIntegrationVersion
+	r.outputs["modinfo -k "+kernel+" -F signer nvidia"] = "SUSE Linux Enterprise Secure Boot CA"
+	r.outputs["modinfo -k "+kernel+" -F filename nvidia"] = module
+	r.outputs["readlink -f "+module] = module
+	r.outputs["rpm -qf --qf %{NAME} "+module] = nvidiaSignedKMP
+	r.outputs["nvidia-smi --query-gpu=pci.bus_id,driver_version --format=csv,noheader"] = "00000000:01:00.0, " + nvidiaIntegrationVersion
+	m := nvidiaManager{run: r, sysRoot: t.TempDir(), sleepQuarantinePath: filepath.Join(t.TempDir(), "sleep.conf"), recoveryPath: filepath.Join(t.TempDir(), "recovery")}
+	for path, data := range map[string]string{"module/nvidia/version": nvidiaIntegrationVersion, "bus/pci/drivers/nvidia/.placeholder": ""} {
+		dest := m.sysPath(path)
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dest, []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dest := m.sysPath("bus/pci/devices/0000:01:00.0/driver")
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(m.sysPath("bus/pci/drivers/nvidia"), dest); err != nil {
+		t.Fatal(err)
+	}
+	return m, r
+}
+
+func TestOfficialNvidiaStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		change      func(nvidiaManager, *fakeNvidiaRunner)
+	}{
+		{"healthy", "active", func(m nvidiaManager, r *fakeNvidiaRunner) {}},
+		{"missing-guard", "unmanaged", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = strings.ReplaceAll(r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"], "lyra-nvidia|610.57.04", "")
+		}},
+		{"legacy", "conflict", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nnvidia-gl-G06|580.159.03"
+		}},
+		{"dkms", "conflict", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nnvidia-open-driver-G07|610.57.04"
+		}},
+		{"615-library", "inconsistent", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			key := "rpm -qa --qf %{NAME}|%{VERSION}\n"
+			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|610.57.04", "nvidia-gl-G07|615.71.09")
+		}},
+		{"missing-library", "inconsistent", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			key := "rpm -qa --qf %{NAME}|%{VERSION}\n"
+			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|610.57.04", "")
+		}},
+		{"independent-egl", "active", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nlibnvidia-egl-gbm1|1.1.3"
+		}},
+		{"nvml-failed", "driver-error", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.errors["nvidia-smi --query-gpu=pci.bus_id,driver_version --format=csv,noheader"] = errors.New("mismatch")
+		}},
+		{"loaded-old", "reboot-required", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			if err := os.WriteFile(m.sysPath("module/nvidia/version"), []byte("595.1"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"kernel-module-missing", "kernel-missing", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["modinfo -k 6.12.0-160100.4-default -F version nvidia"] = ""
+		}},
+		{"next-kernel-missing", "kernel-missing", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["readlink -f /boot/vmlinuz"] = "/boot/vmlinuz-6.12.0-160100.5-default"
+		}},
+		{"unsigned", "unsigned-module", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["modinfo -k 6.12.0-160100.4-default -F signer nvidia"] = "Administrator key"
+		}},
+		{"wrong-owner", "unsigned-module", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["rpm -qf --qf %{NAME} /usr/lib/modules/6.12.0-160100.4-default/updates/nvidia.ko.zst"] = "nvidia-open-driver-G07"
+		}},
+		{"unknown-secure-boot", "unknown-secure-boot", func(m nvidiaManager, r *fakeNvidiaRunner) { r.errors["mokutil --sb-state"] = errors.New("unknown") }},
+		{"leap16", "unsupported-system", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			key := "rpm -qa --qf %{NAME}|%{VERSION}\n"
+			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "Leap-release|16.1", "Leap-release|16.0")
+		}},
+		{"mixed-gpus", "unsupported-gpu", func(m nvidiaManager, r *fakeNvidiaRunner) {
+			r.outputs["lspci -Dnd 10de:"] += "\n0000:02:00.0 0300: 10de:1c82"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, r := officialManager(t)
+			tc.change(m, r)
+			status, err := m.status()
+			if err != nil || status.State != tc.state {
+				t.Fatalf("%+v %v", status, err)
+			}
+		})
+	}
+}
+
+func TestNvidiaFreshInstallEligibility(t *testing.T) {
+	r := compatibleRunner()
+	m := nvidiaManager{run: r, recoveryPath: filepath.Join(t.TempDir(), "none")}
+	status, err := m.status()
+	if err != nil || !nvidiaInstallable(status) {
+		t.Fatalf("%+v %v", status, err)
+	}
+	r.outputs["modinfo -k 6.12.0-160100.4-default -F version nvidia"] = "610.57.04"
+	status, err = m.status()
+	if err != nil || status.State != "conflict" || nvidiaInstallable(status) {
+		t.Fatalf("unowned .run module: %+v %v", status, err)
+	}
+}
+
+func TestNvidiaUnknownPCIIsNotGuessed(t *testing.T) {
+	if supportedNvidiaDevice(0x2fff) {
+		t.Fatal("unknown device ID accepted by numeric range")
+	}
+}
+
+func TestNvidiaCheckNeverChangesSuspendPolicy(t *testing.T) {
+	m, r := officialManager(t)
+	data := []byte(nvidiaSleepQuarantineMarker + "\n[Sleep]\nAllowSuspend=no\n")
+	if err := os.WriteFile(m.quarantinePath(), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.check(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(m.quarantinePath())
+	if err != nil || string(after) != string(data) {
+		t.Fatal("public query modified suspend policy")
+	}
+	for _, call := range r.calls {
+		if strings.HasPrefix(call, "systemctl") || strings.HasPrefix(call, "pkcheck") || strings.HasPrefix(call, "zypper") {
+			t.Fatal(call)
+		}
+	}
+}
+
+func TestNvidiaCancellationHasNoDependencies(t *testing.T) {
+	id, err := (&SoftwareService{}).InstallNvidia("", false)
+	if id != 0 || err == nil || err.Name != BusName+".Error.Cancelled" {
+		t.Fatalf("%d %v", id, err)
+	}
+}
+
+func TestNvidiaDeniedAuthorizationNeverStartsTransaction(t *testing.T) {
+	bin := t.TempDir()
+	captured := filepath.Join(bin, "args")
+	t.Setenv("PATH", bin)
+	t.Setenv("NVIDIA_TEST_AUTH", captured)
+	if err := os.WriteFile(filepath.Join(bin, "pkcheck"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$NVIDIA_TEST_AUTH\"\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// No activity/provider/bus: touching transaction machinery would panic.
+	s := &SoftwareService{profile: profile.Desktop}
+	id, err := s.InstallNvidia(":1.42", true)
+	if id != 0 || err == nil || err.Name != BusName+".Error.AuthorizationFailed" {
+		t.Fatalf("%d %v", id, err)
+	}
+	data, readErr := os.ReadFile(captured)
+	if readErr != nil || !strings.Contains(string(data), "--system-bus-name\n:1.42\n--allow-user-interaction\n") {
+		t.Fatalf("%s %v", data, readErr)
+	}
+}
+
+func TestNvidiaBIOSDoesNotRequireUEFI(t *testing.T) {
+	m, r := officialManager(t)
+	r.outputs["mokutil --sb-state"] = "EFI variables are not supported on this system"
+	r.errors["mokutil --sb-state"] = errors.New("no EFI")
+	status, err := m.status()
+	if err != nil || status.State != "active" || status.SecureBoot != "not-applicable" {
+		t.Fatalf("%+v %v", status, err)
+	}
 }
