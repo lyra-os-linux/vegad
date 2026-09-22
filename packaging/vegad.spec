@@ -26,6 +26,8 @@ Requires:       mokutil
 Requires:       dracut
 Requires:       snapper
 Requires:       util-linux
+# vegad first-update confere os fingerprints do keyring antes do rpmkeys.
+Requires:       gpg2
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
@@ -70,6 +72,10 @@ install -Dm644 packaging/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
 install -Dm644 packaging/vegad-update-check-retry.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
+install -Dm644 packaging/vegad-first-update.service \
+  %{buildroot}%{_prefix}/lib/systemd/system/vegad-first-update.service
+install -Dm644 packaging/keys/lyra-package-signing-keyring.asc \
+  %{buildroot}%{_datadir}/vega/keys/lyra-package-signing-keyring.asc
 install -Dm644 packaging/vegad.conf \
   %{buildroot}%{_sysconfdir}/vega/vegad.conf
 install -Dm644 packaging/profiles/desktop.conf \
@@ -115,12 +121,15 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad-update-check.service
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
 %{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
+%{_prefix}/lib/systemd/system/vegad-first-update.service
 %dir %{_sysconfdir}/vega
 %config(noreplace) %{_sysconfdir}/vega/vegad.conf
 %dir %{_datadir}/vega
 %dir %{_datadir}/vega/profiles
 %{_datadir}/vega/profiles/desktop.conf
 %{_datadir}/vega/profiles/server.conf
+%dir %{_datadir}/vega/keys
+%{_datadir}/vega/keys/lyra-package-signing-keyring.asc
 %{_prefix}/lib/systemd/system/vegad-log-export.service
 %{_prefix}/lib/systemd/system/vegad-log-export.timer
 %{_prefix}/lib/tmpfiles.d/vega-log.conf
@@ -150,6 +159,16 @@ systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true
 systemctl enable --now vegad-update-check.timer 2>/dev/null || true
 systemctl enable --now vegad-log-export.timer 2>/dev/null || true
+# Atualização inicial: habilitada (sem --now) só na primeira instalação, que é
+# o caso da imagem da ISO; roda no primeiro boot do sistema instalado. Num
+# sistema que já existia, a atualização do pacote não dispara um zypper up
+# automático: o marcador registra que o sistema já passou dessa fase.
+if [ "$1" = "1" ]; then
+  systemctl enable vegad-first-update.service 2>/dev/null || true
+else
+  mkdir -p %{_localstatedir}/lib/vega
+  [ -e %{_localstatedir}/lib/vega/first-update.done ] || echo done > %{_localstatedir}/lib/vega/first-update.done
+fi
 if command -v semodule >/dev/null 2>&1 && command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
   semodule -i %{_datadir}/selinux/packages/vegad_bootloader.pp 2>/dev/null || true
 fi
@@ -159,6 +178,7 @@ if [ "$1" = "0" ]; then
   systemctl disable --now vegad-update-check.timer 2>/dev/null || true
   systemctl stop vegad-update-check-retry.timer 2>/dev/null || true
   systemctl disable --now vegad-log-export.timer 2>/dev/null || true
+  systemctl disable --now vegad-first-update.service 2>/dev/null || true
 fi
 
 %postun

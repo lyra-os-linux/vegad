@@ -1,0 +1,50 @@
+[Unit]
+Description=Vega first-boot repository refresh and system update
+Documentation=https://lyraos.com.br/vega
+# Runs once per installed system: the marker is written only after keys,
+# refresh and update all succeed. Never in the live ISO session.
+ConditionPathExists=!/var/lib/vega/first-update.done
+ConditionKernelCommandLine=!rd.live.image
+# Only the Lyra OS Desktop image ships this file. Installing vegad on an
+# existing openSUSE Leap must not trigger an unattended full update.
+ConditionPathExists=/usr/lib/lyra-os/release
+Wants=network-online.target
+After=network-online.target time-sync.target
+# A failure (typically no network yet) is retried below; after five tries in
+# three hours it waits for the next boot instead of looping.
+StartLimitIntervalSec=3h
+StartLimitBurst=5
+
+[Service]
+# exec, not oneshot: multi-user.target must not wait for a long update, so
+# the user can log in while it runs.
+Type=exec
+EnvironmentFile=-/etc/vega/vegad.conf
+# Wait for a Zypper lock held by Vega or another tool instead of failing.
+Environment=ZYPP_LOCK_TIMEOUT=600
+ExecStart=/usr/lib/vega/vegad first-update
+Restart=on-failure
+RestartSec=15min
+# Give Zypper time to finish the package it is installing when the user
+# shuts down mid-update.
+TimeoutStopSec=15min
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+IOWeight=20
+
+# Installs packages, so package scriptlets need the same freedom as
+# vegad.service: no ProtectSystem/ProtectHome/NoNewPrivileges here.
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
