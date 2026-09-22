@@ -1,17 +1,73 @@
 package dbusserver
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/distro"
 	"github.com/lyraos/vegad/internal/profile"
 )
 
-const defaultFirstUpdateMarkerPath = "/var/lib/vega/first-update.done"
+const (
+	defaultFirstUpdateMarkerPath = "/var/lib/vega/first-update.done"
+	firstUpdateUnit              = "vegad-first-update.service"
+	// ZYPPER_EXIT_ZYPP_LOCKED: another process holds the libzypp lock.
+	zypperExitLocked = 7
+)
+
+// errFirstUpdateInProgress is what the desktop shows while the first-boot
+// update holds the Zypper lock, instead of Zypper's raw "System management
+// is locked" output.
+var errFirstUpdateInProgress = errors.New("O sistema está aplicando a atualização inicial. Tente novamente em alguns minutos.")
+
+// firstUpdateRunning reports whether vegad-first-update.service is running.
+// While it waits for a retry (RestartSec) the unit is "activating", not
+// "active", and holds no lock. A variable so tests can stub systemctl.
+var firstUpdateRunning = func() bool {
+	return commandAvailable("systemctl") &&
+		systemCommand("systemctl", "is-active", "--quiet", firstUpdateUnit).Run() == nil
+}
+
+// requireFirstUpdateIdle refuses a native package transaction up front while
+// the first-boot update runs, before a Polkit prompt or a Snapper pre
+// snapshot is spent on an operation Zypper would reject.
+func requireFirstUpdateIdle() *dbus.Error {
+	if firstUpdateRunning() {
+		return firstUpdateBusyError()
+	}
+	return nil
+}
+
+func firstUpdateBusyError() *dbus.Error {
+	return dbus.NewError(BusName+".Error.FirstUpdateInProgress", []interface{}{errFirstUpdateInProgress.Error()})
+}
+
+// explainFirstUpdateLock turns a Zypper lock failure into
+// errFirstUpdateInProgress when the first-boot update is the lock holder. It
+// covers reads (search, details, updates) and a transaction that raced the
+// unit's start; any other failure is returned unchanged.
+func explainFirstUpdateLock(err error) error {
+	var exitErr *exec.ExitError
+	if err != nil && errors.As(err, &exitErr) && exitErr.ExitCode() == zypperExitLocked && firstUpdateRunning() {
+		return errFirstUpdateInProgress
+	}
+	return err
+}
+
+// packageQueryError is dbus.MakeFailedError for native package reads, keeping
+// the dedicated error name when the first-boot update holds the lock.
+func packageQueryError(err error) *dbus.Error {
+	if err = explainFirstUpdateLock(err); errors.Is(err, errFirstUpdateInProgress) {
+		return firstUpdateBusyError()
+	}
+	return dbus.MakeFailedError(err)
+}
 
 func firstUpdateMarkerPath() string {
 	if path := os.Getenv("VEGAD_FIRST_UPDATE_MARKER"); path != "" {

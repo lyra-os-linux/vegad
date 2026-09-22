@@ -1,10 +1,14 @@
 package dbusserver
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/profile"
 )
 
@@ -43,5 +47,100 @@ func TestWriteFirstUpdateMarkerCreatesParent(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func stubFirstUpdateRunning(t *testing.T, running bool) {
+	t.Helper()
+	previous := firstUpdateRunning
+	firstUpdateRunning = func() bool { return running }
+	t.Cleanup(func() { firstUpdateRunning = previous })
+}
+
+func exitError(t *testing.T, code int) error {
+	t.Helper()
+	err := exec.Command("/bin/sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
+		t.Fatalf("exit %d: got %v", code, err)
+	}
+	return err
+}
+
+func TestExplainFirstUpdateLockMapsZypperLockWhileRunning(t *testing.T) {
+	stubFirstUpdateRunning(t, true)
+	// Zypper errors reach dbusserver wrapped with context and output.
+	locked := fmt.Errorf("zypper query: %w — System management is locked", exitError(t, zypperExitLocked))
+	if got := explainFirstUpdateLock(locked); !errors.Is(got, errFirstUpdateInProgress) {
+		t.Fatalf("lock while first update runs: got %v", got)
+	}
+	other := fmt.Errorf("zypper query: %w", exitError(t, 1))
+	if got := explainFirstUpdateLock(other); got != other {
+		t.Fatalf("non-lock failure must be unchanged, got %v", got)
+	}
+	plain := errors.New("origem desconhecida")
+	if got := explainFirstUpdateLock(plain); got != plain {
+		t.Fatalf("non-exit failure must be unchanged, got %v", got)
+	}
+	if got := explainFirstUpdateLock(nil); got != nil {
+		t.Fatalf("nil must stay nil, got %v", got)
+	}
+}
+
+func TestExplainFirstUpdateLockKeepsOtherLockHolders(t *testing.T) {
+	// Another tool (YaST, a terminal zypper) holding the lock is not the
+	// first-boot update; its own message is more accurate.
+	stubFirstUpdateRunning(t, false)
+	locked := fmt.Errorf("zypper: %w", exitError(t, zypperExitLocked))
+	if got := explainFirstUpdateLock(locked); got != locked {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestRequireFirstUpdateIdle(t *testing.T) {
+	stubFirstUpdateRunning(t, false)
+	if err := requireFirstUpdateIdle(); err != nil {
+		t.Fatalf("idle: %v", err)
+	}
+	stubFirstUpdateRunning(t, true)
+	err := requireFirstUpdateIdle()
+	if err == nil || err.Name != BusName+".Error.FirstUpdateInProgress" {
+		t.Fatalf("running: got %v", err)
+	}
+	if len(err.Body) != 1 || err.Body[0] != errFirstUpdateInProgress.Error() {
+		t.Fatalf("body: %v", err.Body)
+	}
+}
+
+func TestPackageQueryErrorName(t *testing.T) {
+	stubFirstUpdateRunning(t, true)
+	if err := packageQueryError(fmt.Errorf("zypper: %w", exitError(t, zypperExitLocked))); err.Name != BusName+".Error.FirstUpdateInProgress" {
+		t.Fatalf("locked: %s", err.Name)
+	}
+	if err := packageQueryError(errors.New("rpm -q falhou")); err.Name != "org.freedesktop.DBus.Error.Failed" {
+		t.Fatalf("other: %s", err.Name)
+	}
+}
+
+func TestSoftwareTransactionsRefusedDuringFirstUpdate(t *testing.T) {
+	stubFirstUpdateRunning(t, true)
+	s := &SoftwareService{activity: &Activity{}}
+	want := BusName + ".Error.FirstUpdateInProgress"
+	calls := map[string]func() *dbus.Error{
+		"Install":          func() *dbus.Error { _, err := s.Install(":1.1", "official", "vim"); return err },
+		"Remove":           func() *dbus.Error { _, err := s.Remove(":1.1", "official", "vim"); return err },
+		"UpdateAll":        func() *dbus.Error { _, err := s.UpdateAll(":1.1"); return err },
+		"UpdateAllNative":  func() *dbus.Error { _, err := s.UpdateAllNative(":1.1"); return err },
+		"UpdatePackage":    func() *dbus.Error { _, err := s.UpdatePackage(":1.1", "official", "vim"); return err },
+		"ClearCache":       func() *dbus.Error { _, err := s.ClearCache(":1.1"); return err },
+		"ClearNativeCache": func() *dbus.Error { _, err := s.ClearNativeCache(":1.1"); return err },
+		"AddRepo":          func() *dbus.Error { _, err := s.AddRepo(":1.1", "x", "https://example.invalid"); return err },
+		"TrustRepoKey":     func() *dbus.Error { _, err := s.TrustRepoKey(":1.1", "x", "ABCD"); return err },
+		"SetRepoEnabled":   func() *dbus.Error { return s.SetRepoEnabled(":1.1", "x", true) },
+	}
+	for name, call := range calls {
+		if err := call(); err == nil || err.Name != want {
+			t.Errorf("%s: got %v, want %s before Polkit or a transaction", name, err, want)
+		}
 	}
 }

@@ -27,6 +27,18 @@ fingerprint completo no Vega, como em qualquer outro repositório.
   da imagem da ISO). Numa atualização do pacote, o `%post` grava o marcador.
 - É `Type=exec`: o boot e o login não esperam a atualização terminar.
 
+## Vega durante a atualização inicial
+
+Enquanto a unit está ativa, o Zypper fica bloqueado por ela. O vegad recusa
+logo de início instalar, remover ou atualizar pacotes nativos, limpar o cache
+e mexer em repositórios, antes de pedir senha ao Polkit ou de criar um
+snapshot, com o erro `org.lyraos.Vega1.Error.FirstUpdateInProgress`: "O sistema
+está aplicando a atualização inicial. Tente novamente em alguns minutos."
+Buscas, detalhes e listas de atualizações que esbarrarem no lock (saída 7 do
+Zypper) recebem a mesma mensagem. Operações Flatpak não usam o lock e seguem
+normalmente. Se o lock for de outra ferramenta, a mensagem original do Zypper
+é mantida.
+
 ## Falhas
 
 Sem o marcador, a unit tenta de novo a cada 15 minutos (até 5 vezes em 3 horas)
