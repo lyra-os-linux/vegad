@@ -92,6 +92,17 @@ func main() {
 		return
 	}
 
+	if len(os.Args) >= 2 && os.Args[1] == "first-update" {
+		if activeProfile != profile.Desktop {
+			log.Printf("vegad: atualização inicial ignorada no perfil %s", activeProfile)
+			return
+		}
+		if err := dbusserver.RunFirstUpdateJob(activeProfile); err != nil {
+			log.Fatalf("vegad first-update failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) == 4 && os.Args[1] == "backup" && os.Args[2] == "prepare-target" {
 		if err := dbusserver.PrepareBackupMountTarget(os.Args[3]); err != nil {
 			log.Fatalf("vegad backup prepare-target failed: %v", err)
