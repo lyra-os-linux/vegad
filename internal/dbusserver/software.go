@@ -52,7 +52,7 @@ func (s *SoftwareService) cachedNativeUpdates() (packages []PackageRef, refreshe
 	}
 	updates, err := s.provider.Package().ListUpdates()
 	if err != nil {
-		return nil, false, err
+		return nil, false, explainFirstUpdateLock(err)
 	}
 	s.nativeUpdates = append([]PackageRef(nil), updates...)
 	s.nativeUpdatesAt = time.Now()
@@ -132,6 +132,9 @@ func (s *SoftwareService) GetPackageDetails(sender dbus.Sender, origin, id strin
 	switch origin {
 	case "official":
 		details, err = s.provider.Package().GetDetails(id)
+		if err != nil {
+			return PackageDetails{}, packageQueryError(err)
+		}
 	case "flathub":
 		if !s.flatpakEnabled() {
 			return PackageDetails{}, capabilityUnavailable("flatpak")
@@ -158,7 +161,7 @@ func (s *SoftwareService) Search(sender dbus.Sender, query string) ([]PackageRef
 
 	official, err := s.provider.Package().Search(query)
 	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+		return nil, packageQueryError(err)
 	}
 	results = append(results, official...)
 
@@ -180,7 +183,7 @@ func (s *SoftwareService) SearchNative(query string) ([]PackageRef, *dbus.Error)
 	s.activity.Touch()
 	results, err := s.provider.Package().Search(query)
 	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+		return nil, packageQueryError(err)
 	}
 	return results, nil
 }
@@ -214,7 +217,7 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 	}
 	go func() {
 		defer done()
-		err := withShutdownInhibit(why, func() error { return work(report, pkgReport) })
+		err := explainFirstUpdateLock(withShutdownInhibit(why, func() error { return work(report, pkgReport) }))
 		// Every transaction funnels through here, and any of them can change
 		// what is still pending — drop the cached lists before the UI reacts
 		// to TransactionFinished and re-reads them.
@@ -239,6 +242,9 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 	}
 	switch origin {
 	case "official":
+		if err := requireFirstUpdateIdle(); err != nil {
+			return 0, err
+		}
 		if err := requirePolkit(sender, "org.lyraos.vega.software.install"); err != nil {
 			return 0, err
 		}
@@ -274,6 +280,9 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 	}
 	switch origin {
 	case "official":
+		if err := requireFirstUpdateIdle(); err != nil {
+			return 0, err
+		}
 		if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
 			return 0, err
 		}
@@ -459,6 +468,7 @@ func (s *SoftwareService) refreshUpdateStatus() {
 	if nativeErr = s.provider.Package().SyncDatabase(); nativeErr == nil {
 		updates, nativeErr = s.invalidateThenListUpdates()
 	}
+	nativeErr = explainFirstUpdateLock(nativeErr)
 	wg.Wait()
 
 	if nativeErr == nil {
@@ -558,6 +568,9 @@ func (s *SoftwareService) ListNativeInstalled() ([]PackageRef, *dbus.Error) {
 // origins.
 func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
@@ -580,6 +593,9 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 
 func (s *SoftwareService) UpdateAllNative(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
 		return 0, err
 	}
@@ -601,6 +617,11 @@ func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (
 	if origin == "flathub" {
 		if err := validateFlatpakAppID(id); err != nil {
 			return 0, dbus.MakeFailedError(err)
+		}
+	}
+	if origin == "official" {
+		if err := requireFirstUpdateIdle(); err != nil {
+			return 0, err
 		}
 	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.update"); err != nil {
@@ -633,13 +654,16 @@ func (s *SoftwareService) ListRepos() ([]distro.RepositoryRef, *dbus.Error) {
 	s.activity.Touch()
 	repos, err := s.provider.Package().ListRepos()
 	if err != nil {
-		return nil, dbus.MakeFailedError(err)
+		return nil, packageQueryError(err)
 	}
 	return repos, nil
 }
 
 func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enabled bool) *dbus.Error {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return err
 	}
@@ -656,6 +680,9 @@ func (s *SoftwareService) SetRepoEnabled(sender dbus.Sender, repo string, enable
 // runtimes as a single transaction.
 func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
@@ -680,6 +707,9 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 
 func (s *SoftwareService) ClearNativeCache(sender dbus.Sender) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.clear-cache"); err != nil {
 		return 0, err
 	}
@@ -754,7 +784,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 	}
 	go func() {
 		defer done()
-		err := withShutdownInhibit(why, func() error { return work(txID, report) })
+		err := explainFirstUpdateLock(withShutdownInhibit(why, func() error { return work(txID, report) }))
 		s.invalidateUpdateCaches()
 		success := err == nil
 		message := "Concluído"
@@ -777,6 +807,9 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 // distro.UntrustedKeyError.
 func (s *SoftwareService) AddRepo(sender dbus.Sender, name, url string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return 0, err
 	}
@@ -796,6 +829,9 @@ func (s *SoftwareService) AddRepo(sender dbus.Sender, name, url string) (uint32,
 // RepoKeyPending signal for repo) and retries refreshing the repository.
 func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return 0, err
 	}
