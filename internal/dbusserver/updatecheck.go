@@ -155,6 +155,29 @@ func RunUpdateCheckJob(activeProfile profile.Profile) error {
 	status.NativeCount = uint32(len(official))
 	status.FlatpakCount = uint32(len(flathub))
 	status.TotalCount = uint32(count)
+	return publishUpdateStatus(status)
+}
+
+// Keep the last known Flatpak count: repository preparation only checks native
+// packages. The periodic job will refresh both counts independently.
+func initialRepositoryStatus(activeProfile profile.Profile, updates []distro.PackageRef, previous UpdateStatus) UpdateStatus {
+	status := UpdateStatus{
+		CheckedAt:   time.Now().UTC().Format(time.RFC3339),
+		Profile:     string(activeProfile),
+		NativeCount: uint32(len(updates)),
+	}
+	if activeProfile == profile.Desktop && previous.Profile == string(activeProfile) {
+		status.FlatpakCount = previous.FlatpakCount
+	}
+	status.TotalCount = status.NativeCount + status.FlatpakCount
+	return status
+}
+
+// publishUpdateStatus stores and announces a collected result without doing
+// any package-manager refresh or query.
+func publishUpdateStatus(status UpdateStatus) error {
+	count := status.TotalCount
+
 	previous, previousErr := readUpdateStatus(updateStatePath())
 	if err := persistUpdateStatus(updateStatePath(), status); err != nil {
 		return fmt.Errorf("persistir estado de atualizações: %w", err)

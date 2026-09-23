@@ -24,7 +24,7 @@ const (
 // errFirstUpdateInProgress is what the desktop shows while the first-boot
 // update holds the Zypper lock, instead of Zypper's raw "System management
 // is locked" output.
-var errFirstUpdateInProgress = errors.New("O sistema está aplicando a atualização inicial. Tente novamente em alguns minutos.")
+var errFirstUpdateInProgress = errors.New("O sistema está preparando os repositórios. Tente novamente em alguns minutos.")
 
 // firstUpdateRunning reports whether vegad-first-update.service is running.
 // While it waits for a retry (RestartSec) the unit is "activating", not
@@ -102,25 +102,17 @@ func writeFirstUpdateMarker(path string) error {
 	return os.WriteFile(path, []byte("done\n"), 0o644)
 }
 
-// RunFirstUpdateJob runs once on the first boot of an installed system:
-// imports the pinned package-signing keys, refreshes every repository and
-// applies all pending package updates inside a Snapper pre/post pair. The
-// marker is written only after everything succeeds, so a failure (no
-// network, unknown repository key, solver problem) is retried by systemd and
-// on the next boot. It is invoked by vegad-first-update.service through
-// `vegad first-update`, not through the bus-activated Server.
-//
-// Zypper is never given --gpg-auto-import-keys: a repository whose key is
-// not pinned makes the refresh fail, and the user approves that key's full
-// fingerprint in Vega like any other repository key.
+// RunFirstUpdateJob prepares repositories on the first installed boot. The
+// historical command, service and marker names remain compatible with RPMs
+// already shipped. Package installation belongs to the normal Vega workflow.
 func RunFirstUpdateJob(activeProfile profile.Profile) error {
 	marker := firstUpdateMarkerPath()
 	if _, err := os.Stat(marker); err == nil {
-		log.Printf("vegad: atualização inicial já concluída (%s)", marker)
+		log.Printf("vegad: preparação dos repositórios já concluída (%s)", marker)
 		return nil
 	}
 	if cmdline, err := os.ReadFile("/proc/cmdline"); err == nil && isLiveCmdline(string(cmdline)) {
-		log.Printf("vegad: atualização inicial ignorada na sessão live")
+		log.Printf("vegad: preparação dos repositórios ignorada na sessão live")
 		return nil
 	}
 
@@ -133,38 +125,39 @@ func RunFirstUpdateJob(activeProfile profile.Profile) error {
 		return err
 	}
 
+	return prepareInitialRepositories(activeProfile, marker, provider.Package(), func() error {
+		return distro.ImportTrustedPackageKeys(trustedKeyringPath())
+	}, publishUpdateStatus)
+}
+
+// This deliberately small interface excludes package installation operations.
+type repositoryPreparer interface {
+	SyncDatabase() error
+	ListUpdates() ([]distro.PackageRef, error)
+}
+
+func prepareInitialRepositories(activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) error {
 	log.Printf("vegad: importando chaves de assinatura confiáveis")
-	if err := distro.ImportTrustedPackageKeys(trustedKeyringPath()); err != nil {
+	if err := importKeys(); err != nil {
 		return err
 	}
 	log.Printf("vegad: atualizando metadados dos repositórios")
-	if err := provider.Package().SyncDatabase(); err != nil {
+	if err := packages.SyncDatabase(); err != nil {
 		return err
 	}
-
-	lastPercent := uint32(101)
-	report := func(percent uint32, message string) {
-		if percent != lastPercent {
-			log.Printf("vegad: atualização inicial %d%% %s", percent, message)
-			lastPercent = percent
-		}
-	}
-	pkgReport := func(string, distro.PackagePhase, uint32) {}
-	if err := withSnapshots("Atualização inicial", func() error {
-		return provider.Package().UpdateAll(report, pkgReport)
-	}); err != nil {
+	// List from the refreshed metadata; do not refresh again or wait for
+	// Flatpak while this service is blocking native transactions.
+	updates, err := packages.ListUpdates()
+	if err != nil {
 		return err
 	}
-
+	previous, _ := readUpdateStatus(updateStatePath())
+	if err := publish(initialRepositoryStatus(activeProfile, updates, previous)); err != nil {
+		return err
+	}
 	if err := writeFirstUpdateMarker(marker); err != nil {
-		return fmt.Errorf("registrar atualização inicial: %w", err)
+		return fmt.Errorf("registrar preparação dos repositórios: %w", err)
 	}
-	log.Printf("vegad: atualização inicial concluída")
-
-	// Refresh the cached count so the desktop stops showing the updates that
-	// were just applied. Failing here does not undo the completed update.
-	if err := RunUpdateCheckJob(activeProfile); err != nil {
-		log.Printf("vegad: atualizar estado após a atualização inicial: %v", err)
-	}
+	log.Printf("vegad: preparação dos repositórios concluída")
 	return nil
 }

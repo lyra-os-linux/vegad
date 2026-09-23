@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/distro"
 	"github.com/lyraos/vegad/internal/profile"
 )
 
@@ -142,5 +144,84 @@ func TestSoftwareTransactionsRefusedDuringFirstUpdate(t *testing.T) {
 		if err := call(); err == nil || err.Name != want {
 			t.Errorf("%s: got %v, want %s before Polkit or a transaction", name, err, want)
 		}
+	}
+}
+
+// Embedding the real interface makes any accidental install/update call panic:
+// preparation only supplies refresh and read operations.
+type preparationBackend struct {
+	distro.PackageBackend
+	calls *[]string
+	fail  string
+}
+
+func (p preparationBackend) SyncDatabase() error {
+	*p.calls = append(*p.calls, "refresh")
+	if p.fail == "refresh" {
+		return errors.New("offline")
+	}
+	return nil
+}
+
+func (p preparationBackend) ListUpdates() ([]distro.PackageRef, error) {
+	*p.calls = append(*p.calls, "list")
+	if p.fail == "list" {
+		return nil, errors.New("query failed")
+	}
+	return []distro.PackageRef{{Id: "vim"}, {Id: "kernel-default"}}, nil
+}
+
+func TestPrepareInitialRepositories(t *testing.T) {
+	for _, fail := range []string{"", "import", "refresh", "list", "publish"} {
+		t.Run("failure="+fail, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "done")
+			t.Setenv("VEGAD_UPDATE_STATE", filepath.Join(t.TempDir(), "status.json"))
+			if err := persistUpdateStatus(updateStatePath(), UpdateStatus{Profile: "desktop", FlatpakCount: 3}); err != nil {
+				t.Fatal(err)
+			}
+			var calls []string
+			backend := preparationBackend{calls: &calls, fail: fail}
+			importKeys := func() error {
+				calls = append(calls, "import")
+				if fail == "import" {
+					return errors.New("invalid keyring")
+				}
+				return nil
+			}
+			publish := func(status UpdateStatus) error {
+				calls = append(calls, "publish")
+				if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatal("marker written before publication")
+				}
+				if status.NativeCount != 2 || status.FlatpakCount != 3 || status.TotalCount != 5 {
+					t.Fatalf("unexpected status: %+v", status)
+				}
+				if fail == "publish" {
+					return errors.New("publication failed")
+				}
+				return nil
+			}
+			err := prepareInitialRepositories(profile.Desktop, marker, backend, importKeys, publish)
+			if (err != nil) != (fail != "") {
+				t.Fatalf("error: %v", err)
+			}
+			want := []string{"import", "refresh", "list", "publish"}
+			for i, step := range want {
+				if step == fail {
+					want = want[:i+1]
+					break
+				}
+			}
+			if !reflect.DeepEqual(calls, want) {
+				t.Fatalf("calls: %v, want %v", calls, want)
+			}
+			_, markerErr := os.Stat(marker)
+			if fail == "" && markerErr != nil {
+				t.Fatal(markerErr)
+			}
+			if fail != "" && !os.IsNotExist(markerErr) {
+				t.Fatalf("failed preparation marked done: %v", markerErr)
+			}
+		})
 	}
 }
