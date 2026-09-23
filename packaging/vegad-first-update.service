@@ -1,12 +1,12 @@
 [Unit]
-Description=Vega first-boot repository refresh and system update
+Description=Vega first-boot repository preparation
 Documentation=https://lyraos.com.br/vega
 # Runs once per installed system: the marker is written only after keys,
-# refresh and update all succeed. Never in the live ISO session.
+# refresh and publication of pending updates succeed. Never in the live ISO session.
 ConditionPathExists=!/var/lib/vega/first-update.done
 ConditionKernelCommandLine=!rd.live.image
 # Only the Lyra OS Desktop image ships this file. Installing vegad on an
-# existing openSUSE Leap must not trigger an unattended full update.
+# existing openSUSE Leap must not trigger repository preparation.
 ConditionPathExists=/usr/lib/lyra-os/release
 Wants=network-online.target
 After=network-online.target time-sync.target
@@ -16,7 +16,7 @@ StartLimitIntervalSec=3h
 StartLimitBurst=5
 
 [Service]
-# exec, not oneshot: multi-user.target must not wait for a long update, so
+# exec, not oneshot: multi-user.target must not wait for repository preparation, so
 # the user can log in while it runs.
 Type=exec
 EnvironmentFile=-/etc/vega/vegad.conf
@@ -25,16 +25,14 @@ Environment=ZYPP_LOCK_TIMEOUT=600
 ExecStart=/usr/lib/vega/vegad first-update
 Restart=on-failure
 RestartSec=15min
-# Give Zypper time to finish the package it is installing when the user
-# shuts down mid-update.
+# Upper bound for stopping the repository preparation processes.
 TimeoutStopSec=15min
 Nice=10
 IOSchedulingClass=idle
 CPUWeight=20
 IOWeight=20
 
-# Installs packages, so package scriptlets need the same freedom as
-# vegad.service: no ProtectSystem/ProtectHome/NoNewPrivileges here.
+# Imports signing keys into the RPM database and writes repository metadata.
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelTunables=true

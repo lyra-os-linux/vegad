@@ -94,7 +94,7 @@ func main() {
 
 	if len(os.Args) >= 2 && os.Args[1] == "first-update" {
 		if activeProfile != profile.Desktop {
-			log.Printf("vegad: atualização inicial ignorada no perfil %s", activeProfile)
+			log.Printf("vegad: preparação dos repositórios ignorada no perfil %s", activeProfile)
 			return
 		}
 		if err := dbusserver.RunFirstUpdateJob(activeProfile); err != nil {

@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lyraos/vegad/internal/distro"
+	"github.com/lyraos/vegad/internal/profile"
 )
 
 func TestPersistUpdateStatus(t *testing.T) {
@@ -51,5 +54,26 @@ func TestUpdateStatusChangedIgnoresTimestamp(t *testing.T) {
 	b.InProgress = false
 	if updateResultChanged(a, b) {
 		t.Fatal("progress-only transition must not duplicate the availability alert")
+	}
+}
+
+func TestInitialRepositoryStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		profile  profile.Profile
+		previous UpdateStatus
+		flatpak  uint32
+	}{
+		{"fresh", profile.Desktop, UpdateStatus{}, 0},
+		{"cached flatpak", profile.Desktop, UpdateStatus{Profile: "desktop", FlatpakCount: 4, NativeCount: 99, Error: "old refresh failure", InProgress: true}, 4},
+		{"different profile", profile.Desktop, UpdateStatus{Profile: "server", FlatpakCount: 4}, 0},
+		{"server", profile.Server, UpdateStatus{Profile: "server", FlatpakCount: 4}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status := initialRepositoryStatus(tc.profile, []distro.PackageRef{{Id: "vim"}}, tc.previous)
+			if status.NativeCount != 1 || status.FlatpakCount != tc.flatpak || status.TotalCount != 1+tc.flatpak || status.Profile != string(tc.profile) || status.CheckedAt == "" || status.Error != "" || status.InProgress {
+				t.Fatalf("unexpected status: %+v", status)
+			}
+		})
 	}
 }

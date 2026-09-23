@@ -1,4 +1,4 @@
-# Atualização inicial (primeiro boot)
+# Preparação dos repositórios (primeiro boot)
 
 `vegad-first-update.service` roda `vegad first-update` uma única vez no
 primeiro boot de um Lyra OS Desktop instalado:
@@ -7,15 +7,22 @@ primeiro boot de um Lyra OS Desktop instalado:
    exatamente os fingerprints fixados em `internal/distro/trusted_keys.go` e
    importa essas chaves no RPM (`rpmkeys --import`);
 2. `zypper --non-interactive refresh` em todos os repositórios;
-3. atualiza todos os pacotes pendentes (`zypper update`, repositório por
-   repositório, o mesmo caminho da ação "Atualizar tudo" do Vega), entre um par
-   de snapshots Snapper pre/post;
-4. grava `/var/lib/vega/first-update.done` e atualiza o estado de atualizações
-   pendentes (`/var/lib/vega/update-status.json`).
+3. lista as atualizações nativas disponíveis usando os metadados recém-atualizados;
+4. publica o estado em `/var/lib/vega/update-status.json` e os sinais D-Bus
+   de atualizações disponíveis;
+5. grava `/var/lib/vega/first-update.done` após o sucesso dessas etapas.
 
-O Zypper nunca recebe `--gpg-auto-import-keys`. Se um repositório apresentar
-uma chave fora da lista fixada, o refresh falha e o usuário aprova o
-fingerprint completo no Vega, como em qualquer outro repositório.
+A instalação de pacotes fica no fluxo normal do Vega. Esta rotina não executa
+`zypper update` nem cria snapshots. A publicação do estado não faz outro
+refresh nem consulta Flatpak: preserva sua última contagem conhecida, quando
+existente. A verificação periódica continua atualizando as duas contagens.
+
+Os nomes `first-update` do comando, da unit e do marcador são preservados por
+compatibilidade com as instalações existentes.
+
+O Zypper nunca recebe `--gpg-auto-import-keys`. Uma chave fora da lista fixada
+faz o refresh falhar. O encaminhamento dessa falha à aprovação no Vega é
+acompanhado na [issue #58](https://github.com/lyra-os-linux/vegad/issues/58).
 
 ## Quando roda
 
@@ -25,15 +32,15 @@ fingerprint completo no Vega, como em qualquer outro repositório.
   kernel).
 - A unit é habilitada no `%post` apenas na primeira instalação do pacote (caso
   da imagem da ISO). Numa atualização do pacote, o `%post` grava o marcador.
-- É `Type=exec`: o boot e o login não esperam a atualização terminar.
+- É `Type=exec`: o boot e o login não esperam a preparação terminar.
 
-## Vega durante a atualização inicial
+## Vega durante a preparação
 
-Enquanto a unit está ativa, o Zypper fica bloqueado por ela. O vegad recusa
+Enquanto a unit está ativa, o vegad reserva as operações nativas para a preparação. O vegad recusa
 logo de início instalar, remover ou atualizar pacotes nativos, limpar o cache
 e mexer em repositórios, antes de pedir senha ao Polkit ou de criar um
 snapshot, com o erro `org.lyraos.Vega1.Error.FirstUpdateInProgress`: "O sistema
-está aplicando a atualização inicial. Tente novamente em alguns minutos."
+está preparando os repositórios. Tente novamente em alguns minutos."
 Buscas, detalhes e listas de atualizações que esbarrarem no lock (saída 7 do
 Zypper) recebem a mesma mensagem. Operações Flatpak não usam o lock e seguem
 normalmente. Se o lock for de outra ferramenta, a mensagem original do Zypper

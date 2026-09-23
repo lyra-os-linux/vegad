@@ -14,7 +14,7 @@ type PackageBackend interface {
 	ListUpdates() ([]PackageRef, error)
 	// SyncDatabase refreshes local package metadata from the configured
 	// repos (`zypper refresh`). Touches the network and needs root; only
-	// the periodic update-check job calls it.
+	// repository preparation and update-check jobs call it.
 	SyncDatabase() error
 	GetDetails(id string) (PackageDetails, error)
 	Install(id string, report ProgressFunc, pkgReport PackageProgressFunc) error

@@ -16,8 +16,8 @@ O contrato D-Bus que este daemon implementa vive em
 
 Ver [`docs/vegad-profiles.md`](docs/vegad-profiles.md) para os perfis
 `desktop`/`server`.
-[`docs/first-update.md`](docs/first-update.md) descreve a atualização
-inicial (chaves fixadas, `zypper refresh` e `zypper update`) feita uma vez no
+[`docs/first-update.md`](docs/first-update.md) descreve a preparação
+inicial dos repositórios (chaves fixadas e `zypper refresh`) feita uma vez no
 primeiro boot do Lyra OS Desktop instalado.
 
 A integração opcional do driver NVIDIA oficial está documentada em
