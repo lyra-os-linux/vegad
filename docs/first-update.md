@@ -308,3 +308,6 @@ criados por ferramentas externas não fazem parte dessa garantia do Vega.
 Esta política é intencional: falhar ao criar um snapshot não bloqueia a
 transação normal. Uma futura rotina que instale pacotes automaticamente deve
 reavaliar explicitamente essa decisão antes de reutilizar o wrapper.
+
+A [matriz de testes da preparação](preparation-test-matrix.md) relaciona cada
+cenário de falha/retomada aos testes de CI e às qualificações em VM.
