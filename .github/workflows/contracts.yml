@@ -41,7 +41,7 @@ jobs:
         run: >-
           zypper --non-interactive install --no-recommends
           bash ca-certificates curl git tar gzip xz gcc make gettext-tools
-          libxml2-tools rpm-build dbus-1-daemon systemd util-linux polkit
+          libxml2-tools rpm-build dbus-1-daemon systemd util-linux polkit gpg2
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: vegad
@@ -61,6 +61,9 @@ jobs:
         run: |
           go build -o /tmp/vegad-contract-check ./cmd/vegad
           install -Dm755 /tmp/vegad-contract-check /usr/lib/vega/vegad
+      - name: Validate trusted keys against a private RPM database
+        working-directory: vegad
+        run: go test ./internal/distro -run 'TestShippedKeyring|TestTrustedPackageKeys|TestCheckPinned'
       - name: Validate packaging contracts
         run: ./vegad/scripts/check-packaging-contracts.sh
       - name: Validate the running daemon against canonical D-Bus XML

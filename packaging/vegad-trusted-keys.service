@@ -1,0 +1,36 @@
+[Unit]
+Description=Vega authorized package-signing key maintenance
+Documentation=https://lyraos.com.br/vega
+ConditionPathExists=/usr/lib/lyra-os/release
+ConditionKernelCommandLine=!rd.live.image
+# Do not gate this on first-update.done or first-update.skipped: key policy
+# maintenance applies to existing installations as well as new images.
+Before=vegad-first-update.service vegad-update-check.service
+StartLimitIntervalSec=1h
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vega/vegad.conf
+ExecStart=/usr/lib/vega/vegad sync-trusted-keys
+# An RPM upgrade may still hold the database lock when the job is queued.
+Restart=on-failure
+RestartSec=5min
+TimeoutStartSec=2min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -72,3 +72,40 @@ SUSE 16, openSUSE Project, openSUSE Backports (duas), SUSE/SuSE legadas,
 `home:rodrigosbrito` (lyra/vega/fina) e Packman. Ao trocar uma chave, atualize
 o keyring e a lista em Go juntos; `TestShippedKeyringMatchesPinnedFingerprints`
 falha se divergirem.
+
+## Manutenção das chaves após o primeiro boot
+
+`vegad-trusted-keys.service` executa `vegad sync-trusted-keys` em cada boot
+instalado do Lyra OS Desktop e é enfileirado pelo RPM após instalação ou
+upgrade. O scriptlet usa `systemctl --no-block start`: não espera pela
+importação enquanto a própria transação RPM pode estar segurando o banco.
+Uma falha é tentada novamente após cinco minutos, com limite de cinco
+inícios por hora; o próximo boot também tenta novamente.
+
+Essa rotina é independente de `first-update.done` e `first-update.skipped`.
+Ela verifica o conjunto exato de fingerprints em toda execução e importa o
+keyring autorizado. Reimportar chaves já presentes é idempotente no RPM;
+não é necessário um marcador de versão que possa ficar desatualizado em
+relação ao banco. Não há refresh, instalação de pacotes nem alteração dos
+marcadores da preparação. A sessão live e o perfil server são excluídos.
+
+### Rotação e retenção
+
+Para introduzir uma chave, publique o keyring e a lista de fingerprints na
+mesma versão do vegad, antes de o repositório depender exclusivamente da
+nova chave. Durante a transição, mantenha ambas as chaves no conjunto
+aprovado; posteriormente, a antiga pode ser retirada dos dois arquivos.
+
+A manutenção é aditiva: retirar uma chave do keyring impede novas
+importações dessa chave, mas **não a remove do banco RPM**. Chaves antigas
+ou adicionadas pelo administrador podem atender outros repositórios e são
+preservadas. Revogação/remoção exige uma migração específica e revisada;
+remover uma entrada da lista não constitui revogação. Um downgrade também
+não apaga chaves previamente importadas.
+
+Diagnóstico e nova tentativa:
+
+```sh
+journalctl -u vegad-trusted-keys.service
+sudo systemctl restart vegad-trusted-keys.service
+```

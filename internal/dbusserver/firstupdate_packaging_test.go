@@ -144,6 +144,11 @@ func TestFirstUpdateRPMLifecycle(t *testing.T) {
 							t.Fatalf("unexpected preparation activation: %s", line)
 						}
 					}
+					for _, command := range []string{"enable vegad-trusted-keys.service\n", "--no-block start vegad-trusted-keys.service\n"} {
+						if !strings.Contains(string(log), command) {
+							t.Fatalf("missing independent key maintenance: %s", command)
+						}
+					}
 					if scenario == "fresh" && !strings.Contains(string(log), "enable vegad-first-update.service\n") {
 						t.Fatal("fresh install did not enable preparation")
 					}

@@ -18,7 +18,8 @@ Ver [`docs/vegad-profiles.md`](docs/vegad-profiles.md) para os perfis
 `desktop`/`server`.
 [`docs/first-update.md`](docs/first-update.md) descreve a preparação
 inicial dos repositórios (chaves fixadas e `zypper refresh`) feita uma vez no
-primeiro boot do Lyra OS Desktop instalado.
+primeiro boot do Lyra OS Desktop instalado, além da manutenção independente
+das chaves autorizadas no boot e após upgrades do vegad.
 
 A integração opcional do driver NVIDIA oficial está documentada em
 [`docs/nvidia.md`](docs/nvidia.md).
