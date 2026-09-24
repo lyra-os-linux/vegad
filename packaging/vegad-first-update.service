@@ -26,8 +26,10 @@ Environment=ZYPP_LOCK_TIMEOUT=600
 ExecStart=/usr/lib/vega/vegad first-update
 Restart=on-failure
 RestartSec=15min
-# Upper bound for stopping the repository preparation processes.
-TimeoutStopSec=15min
+# Signal the coordinator first: drain current command for 30s, then TERM/KILL
+# its process group. Final cgroup cleanup is bounded, not a completion guarantee.
+KillMode=mixed
+TimeoutStopSec=45s
 Nice=10
 IOSchedulingClass=idle
 CPUWeight=20

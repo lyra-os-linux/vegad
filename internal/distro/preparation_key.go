@@ -108,7 +108,7 @@ func ReadPreparationKey() ([]PreparationKey, error) {
 func (z *zypperBackend) DiscoverPreparationKey() error {
 	z.keyMu.Lock()
 	defer z.keyMu.Unlock()
-	out, err := repoKeyOutput("--xmlout", "--non-interactive", "repos", "--details")
+	out, err := z.repoKeyOutput("--xmlout", "--non-interactive", "repos", "--details")
 	if err != nil {
 		return err
 	}
@@ -118,6 +118,9 @@ func (z *zypperBackend) DiscoverPreparationKey() error {
 	}
 	var failures []error
 	for _, repo := range repos {
+		if z.preparationContext != nil && z.preparationContext.Err() != nil {
+			return z.preparationContext.Err()
+		}
 		if err := z.proposePreparationKey(repo); err != nil {
 			var key *UntrustedKeyError
 			if errors.As(err, &key) {

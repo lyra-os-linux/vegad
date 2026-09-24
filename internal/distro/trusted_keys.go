@@ -2,6 +2,7 @@ package distro
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -85,6 +86,9 @@ func checkPinnedFingerprints(found, pinned []string) error {
 // touching any real GnuPG home: --show-keys only parses, and the throwaway
 // homedir keeps gpg from creating ~root/.gnupg.
 func keyringFingerprints(path string) ([]string, error) {
+	return keyringFingerprintsContext(context.Background(), path)
+}
+func keyringFingerprintsContext(ctx context.Context, path string) ([]string, error) {
 	home, err := os.MkdirTemp("", "vegad-keyring-")
 	if err != nil {
 		return nil, err
@@ -92,7 +96,7 @@ func keyringFingerprints(path string) ([]string, error) {
 	defer os.RemoveAll(home)
 	cmd := exec.Command("gpg", "--batch", "--no-options", "--homedir", home, "--with-colons", "--show-keys", "--", path)
 	cmd.Env = commandEnvC()
-	out, err := cmd.Output()
+	out, err := preparationCommandOutput(ctx, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("ler keyring confiável %s: %w", path, err)
 	}
@@ -105,14 +109,17 @@ func keyringFingerprints(path string) ([]string, error) {
 // is verified against the pinned fingerprints before rpm sees it. Importing
 // a key rpm already has is a no-op.
 func ImportTrustedPackageKeys(path string) error {
-	found, err := keyringFingerprints(path)
+	return ImportTrustedPackageKeysContext(context.Background(), path)
+}
+func ImportTrustedPackageKeysContext(ctx context.Context, path string) error {
+	found, err := keyringFingerprintsContext(ctx, path)
 	if err != nil {
 		return err
 	}
 	if err := checkPinnedFingerprints(found, trustedPackageSigningFingerprints); err != nil {
 		return err
 	}
-	if out, err := runCommandOutput("rpmkeys", "--import", "--", path); err != nil {
+	if out, err := preparationCommandOutput(ctx, packageCommand("rpmkeys", "--import", "--", path)); err != nil {
 		return fmt.Errorf("importar chaves confiáveis no RPM: %w — %s", err, out)
 	}
 	return nil

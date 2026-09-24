@@ -2,6 +2,7 @@ package distro
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -14,8 +15,9 @@ import (
 // zypperBackend drives openSUSE Leap's Zypper as the PackageBackend, the
 // same pragmatic CLI-shelling approach pacmanBackend takes for Arch.
 type zypperBackend struct {
-	keyMu       sync.Mutex
-	pendingKeys map[string]repoKeyApproval
+	preparationContext context.Context
+	keyMu              sync.Mutex
+	pendingKeys        map[string]repoKeyApproval
 }
 
 func newZypperBackend() *zypperBackend { return &zypperBackend{} }
@@ -163,9 +165,7 @@ func (z *zypperBackend) ListInstalled() ([]PackageRef, error) {
 // configured repos — touches the network and needs root, same restriction
 // as pacmanBackend.SyncDatabase.
 func (z *zypperBackend) SyncDatabase() error {
-	cmd := packageCommand("zypper", "--non-interactive", "refresh")
-	cmd.Env = commandEnvC()
-	out, err := cmd.CombinedOutput()
+	out, err := z.preparationOutput("zypper", "--non-interactive", "refresh")
 	if err != nil {
 		return repositoryRefreshError(string(out), err)
 	}
@@ -176,8 +176,11 @@ func (z *zypperBackend) SyncDatabase() error {
 // such as --all) and parses its "S | Repository | Name | Current Version |
 // Available Version | Arch" table.
 func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
+	return zypperParseUpdatesWith(runCommandOutput, extraArgs...)
+}
+func zypperParseUpdatesWith(output func(string, ...string) (string, error), extraArgs ...string) ([]PackageRef, error) {
 	args := append([]string{"--non-interactive", "--no-refresh", "list-updates"}, extraArgs...)
-	out, err := runCommandOutput("zypper", args...)
+	out, err := output("zypper", args...)
 	if err != nil {
 		return nil, zypperReadError(out, err)
 	}
@@ -327,6 +330,9 @@ func zypperGroupedUpdates() ([]RepoUpdateGroup, error) {
 // so the Updates tab's list and the actual repo-by-repo update run always
 // agree on ordering.
 func (z *zypperBackend) ListUpdates() ([]PackageRef, error) {
+	if z.preparationContext != nil {
+		return zypperParseUpdatesWith(z.preparationOutput)
+	}
 	groups, err := zypperGroupedUpdates()
 	if err != nil {
 		return nil, err
