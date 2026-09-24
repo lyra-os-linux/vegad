@@ -128,7 +128,27 @@ func writeFirstUpdateMarker(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte("done\n"), 0o644)
+	// Publish completion atomically: a short write or sync failure must never
+	// leave a marker that a later invocation mistakes for completed preparation.
+	file, err := os.CreateTemp(filepath.Dir(path), ".first-update-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := file.Write([]byte("done\n")); err != nil {
+		return err
+	}
+	if err := file.Chmod(0644); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 // RunFirstUpdateJob prepares repositories on the first installed boot. The
@@ -138,11 +158,43 @@ func RunFirstUpdateJob(activeProfile profile.Profile) error {
 	return RunFirstUpdateJobContext(context.Background(), activeProfile)
 }
 func RunFirstUpdateJobContext(ctx context.Context, activeProfile profile.Profile) error {
+	return newFirstUpdateJob().run(ctx, activeProfile)
+}
+
+// All administrative dependencies belong to one invocation. Tests replace
+// these fields instead of global functions or host commands.
+type firstUpdateJob struct {
+	marker      string
+	readCmdline func() ([]byte, error)
+	openBackend func(context.Context) (repositoryPreparer, error)
+	importKeys  func(context.Context) error
+	publish     func(UpdateStatus) error
+	storage     preparationPersistence
+}
+
+func newFirstUpdateJob() firstUpdateJob {
+	keyring := trustedKeyringPath()
+	return firstUpdateJob{
+		marker:      firstUpdateMarkerPath(),
+		readCmdline: func() ([]byte, error) { return os.ReadFile("/proc/cmdline") },
+		openBackend: func(ctx context.Context) (repositoryPreparer, error) {
+			id, err := distro.Detect()
+			if err != nil {
+				return nil, err
+			}
+			return distro.NewPreparationPackageBackend(ctx, id)
+		},
+		importKeys: func(ctx context.Context) error { return distro.ImportTrustedPackageKeysContext(ctx, keyring) },
+		publish:    publishUpdateStatus,
+		storage:    defaultPreparationPersistence(),
+	}
+}
+func (job firstUpdateJob) run(ctx context.Context, activeProfile profile.Profile) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	marker := firstUpdateMarkerPath()
-	if _, err := os.Stat(firstUpdateSkipPath()); err == nil {
+	marker := job.marker
+	if _, err := os.Stat(filepath.Join(filepath.Dir(marker), "first-update.skipped")); err == nil {
 		log.Printf("vegad: preparação dos repositórios dispensada para instalação legada")
 		return nil
 	}
@@ -150,23 +202,26 @@ func RunFirstUpdateJobContext(ctx context.Context, activeProfile profile.Profile
 		log.Printf("vegad: preparação dos repositórios já concluída (%s)", marker)
 		return nil
 	}
-	if cmdline, err := os.ReadFile("/proc/cmdline"); err == nil && isLiveCmdline(string(cmdline)) {
+	if cmdline, err := job.readCmdline(); err == nil && isLiveCmdline(string(cmdline)) {
 		log.Printf("vegad: preparação dos repositórios ignorada na sessão live")
 		return nil
 	}
-
-	id, err := distro.Detect()
+	packages, err := job.openBackend(ctx)
 	if err != nil {
-		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
+		return errors.Join(err, job.storage.status(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
 	}
-	packages, err := distro.NewPreparationPackageBackend(ctx, id)
-	if err != nil {
-		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
-	}
+	return prepareInitialRepositoriesUsing(ctx, activeProfile, marker, packages, func() error { return job.importKeys(ctx) }, job.publish, job.storage)
+}
 
-	return prepareInitialRepositoriesContext(ctx, activeProfile, marker, packages, func() error {
-		return distro.ImportTrustedPackageKeysContext(ctx, trustedKeyringPath())
-	}, publishUpdateStatus)
+type preparationPersistence struct {
+	status   func(string, PreparationStatus) error
+	marker   func(string) error
+	previous func() (UpdateStatus, error)
+}
+
+func defaultPreparationPersistence() preparationPersistence {
+	path := updateStatePath()
+	return preparationPersistence{persistPreparationStatus, writeFirstUpdateMarker, func() (UpdateStatus, error) { return readUpdateStatus(path) }}
 }
 
 // This deliberately small interface excludes package installation operations.
@@ -179,6 +234,9 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	return prepareInitialRepositoriesContext(context.Background(), activeProfile, marker, packages, importKeys, publish)
 }
 func prepareInitialRepositoriesContext(ctx context.Context, activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) (result error) {
+	return prepareInitialRepositoriesUsing(ctx, activeProfile, marker, packages, importKeys, publish, defaultPreparationPersistence())
+}
+func prepareInitialRepositoriesUsing(ctx context.Context, activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error, storage preparationPersistence) (result error) {
 	statePath := preparationStatePath(marker)
 	phase := "importing-keys"
 	markerWritten := false
@@ -187,17 +245,17 @@ func prepareInitialRepositoriesContext(ctx context.Context, activeProfile profil
 			return err
 		}
 		phase = next
-		return persistPreparationStatus(statePath, PreparationStatus{State: "running", Phase: phase, UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
+		return storage.status(statePath, PreparationStatus{State: "running", Phase: phase, UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
 	}
 	defer func() {
 		if ctx.Err() != nil {
-			if markerWritten {
-				result = errors.Join(result, os.Remove(marker))
-			}
 			result = errors.Join(result, ctx.Err())
 		}
 		if result != nil {
-			result = errors.Join(result, persistPreparationStatus(statePath, preparationFailure(phase, result, time.Now())))
+			if markerWritten {
+				result = errors.Join(result, os.Remove(marker))
+			}
+			result = errors.Join(result, storage.status(statePath, preparationFailure(phase, result, time.Now())))
 		}
 	}()
 	if err := stage(phase); err != nil {
@@ -235,18 +293,18 @@ func prepareInitialRepositoriesContext(ctx context.Context, activeProfile profil
 	if err := stage("publishing"); err != nil {
 		return err
 	}
-	previous, _ := readUpdateStatus(updateStatePath())
+	previous, _ := storage.previous()
 	if err := publish(initialRepositoryStatus(activeProfile, updates, previous)); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := writeFirstUpdateMarker(marker); err != nil {
+	if err := storage.marker(marker); err != nil {
 		return fmt.Errorf("registrar preparação dos repositórios: %w", err)
 	}
 	markerWritten = true
-	if err := persistPreparationStatus(statePath, PreparationStatus{State: "completed", Phase: "completed", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+	if err := storage.status(statePath, PreparationStatus{State: "completed", Phase: "completed", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
 		return err
 	}
 	log.Printf("vegad: preparação dos repositórios concluída")

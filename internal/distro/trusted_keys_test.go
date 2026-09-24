@@ -52,6 +52,9 @@ func TestCheckPinnedFingerprints(t *testing.T) {
 // key swap in one from silently diverging from the other.
 func TestShippedKeyringMatchesPinnedFingerprints(t *testing.T) {
 	if _, err := exec.LookPath("gpg"); err != nil {
+		if os.Getenv("VEGA_REQUIRE_KEYRING_TESTS") == "1" {
+			t.Fatal("required keyring test: gpg not installed")
+		}
 		t.Skip("gpg not installed")
 	}
 	found, err := keyringFingerprints("../../packaging/keys/lyra-package-signing-keyring.asc")
@@ -68,13 +71,22 @@ func TestShippedKeyringMatchesPinnedFingerprints(t *testing.T) {
 func TestTrustedPackageKeysPrivateRPMDatabase(t *testing.T) {
 	rpm, err := exec.LookPath("rpm")
 	if err != nil {
+		if os.Getenv("VEGA_REQUIRE_KEYRING_TESTS") == "1" {
+			t.Fatal("required keyring test: rpm not installed")
+		}
 		t.Skip("rpm not installed")
 	}
 	rpmkeys, err := exec.LookPath("rpmkeys")
 	if err != nil {
+		if os.Getenv("VEGA_REQUIRE_KEYRING_TESTS") == "1" {
+			t.Fatal("required keyring test: rpmkeys not installed")
+		}
 		t.Skip("rpmkeys not installed")
 	}
 	if _, err := exec.LookPath("gpg"); err != nil {
+		if os.Getenv("VEGA_REQUIRE_KEYRING_TESTS") == "1" {
+			t.Fatal("required keyring test: gpg not installed")
+		}
 		t.Skip("gpg not installed")
 	}
 	root := t.TempDir()
@@ -139,5 +151,24 @@ func TestTrustedPackageKeysPrivateRPMDatabase(t *testing.T) {
 	}
 	if data, err := os.ReadFile(imports); err != nil || string(data) != "import\nimport\n" {
 		t.Fatalf("rejected keyring reached RPM: %q, %v", data, err)
+	}
+}
+
+// A misconfigured supported-distro CI job must fail, not silently go green
+// because its GPG/RPM integration tests skipped all administrative fixtures.
+func TestRequiredKeyringToolsCannotSilentlySkip(t *testing.T) {
+	for _, name := range []string{"TestShippedKeyringMatchesPinnedFingerprints", "TestTrustedPackageKeysPrivateRPMDatabase"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("VEGA_REQUIRE_KEYRING_TESTS", "1")
+			t.Setenv("PATH", t.TempDir())
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command(executable, "-test.run=^"+name+"$", "-test.v").CombinedOutput()
+			if err == nil || !strings.Contains(string(out), "required keyring test:") || strings.Contains(string(out), "--- SKIP") {
+				t.Fatalf("missing tools did not fail: %v %s", err, out)
+			}
+		})
 	}
 }

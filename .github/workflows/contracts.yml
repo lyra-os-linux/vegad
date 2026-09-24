@@ -63,7 +63,9 @@ jobs:
           install -Dm755 /tmp/vegad-contract-check /usr/lib/vega/vegad
       - name: Validate trusted keys against a private RPM database
         working-directory: vegad
-        run: go test ./internal/distro -run 'TestShippedKeyring|TestTrustedPackageKeys|TestCheckPinned'
+        env:
+          VEGA_REQUIRE_KEYRING_TESTS: "1"
+        run: go test -count=1 -v ./internal/distro -run 'TestShippedKeyring|TestTrustedPackageKeys|TestCheckPinned'
       - name: Validate packaging contracts
         run: ./vegad/scripts/check-packaging-contracts.sh
       - name: Validate the running daemon against canonical D-Bus XML
