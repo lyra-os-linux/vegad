@@ -447,7 +447,24 @@ func (z *zypperBackend) Remove(pkg string, report ProgressFunc, pkgReport Packag
 // rest: remaining repos still run, and every failure is collected into one
 // final error.
 func (z *zypperBackend) UpdateAll(report ProgressFunc, pkgReport PackageProgressFunc) error {
-	groups, err := zypperGroupedUpdates()
+	return updateAllByRepository(zypperGroupedUpdates, runZypperTransactionXML, report, pkgReport)
+}
+
+// repositoryUpdateErrors keeps the original subprocess causes and repository
+// context while preserving the existing human-readable aggregate message.
+type repositoryUpdateErrors []error
+
+func (failures repositoryUpdateErrors) Error() string {
+	messages := make([]string, 0, len(failures))
+	for _, err := range failures {
+		messages = append(messages, err.Error())
+	}
+	return fmt.Sprintf("não foi possível atualizar pacotes de %d repositório(s): %s", len(failures), strings.Join(messages, "; "))
+}
+func (failures repositoryUpdateErrors) Unwrap() []error { return []error(failures) }
+
+func updateAllByRepository(list func() ([]RepoUpdateGroup, error), run func([]string, ProgressFunc, PackageProgressFunc, string, string) error, report ProgressFunc, pkgReport PackageProgressFunc) error {
+	groups, err := list()
 	if err != nil {
 		return err
 	}
@@ -462,25 +479,25 @@ func (z *zypperBackend) UpdateAll(report ProgressFunc, pkgReport PackageProgress
 	}
 
 	var completed int
-	var failures []string
+	var failures repositoryUpdateErrors
 	for _, group := range groups {
 		repoSize := len(group.Packages)
 		wrapped := func(percent uint32, message string) {
 			overall := (completed*100 + int(percent)*repoSize) / total
 			report(uint32(overall), message)
 		}
-		err := runZypperTransactionXML(
+		err := run(
 			[]string{"--non-interactive", "update", "-y", "--repo", group.Alias},
 			wrapped, pkgReport,
 			fmt.Sprintf("Atualizando %s...", group.DisplayName), "Atualização concluída")
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", group.DisplayName, err))
+			failures = append(failures, fmt.Errorf("%s: %w", group.DisplayName, err))
 		}
 		completed += repoSize
 	}
 
 	if len(failures) > 0 {
-		return fmt.Errorf("não foi possível atualizar pacotes de %d repositório(s): %s", len(failures), strings.Join(failures, "; "))
+		return failures
 	}
 	report(100, "Atualização concluída")
 	return nil

@@ -225,3 +225,27 @@ func TestPrepareInitialRepositories(t *testing.T) {
 		})
 	}
 }
+
+func TestExplainFirstUpdateLockFindsLaterJoinedCause(t *testing.T) {
+	first := exitError(t, 4)
+	locked := exitError(t, 7)
+	unrelated := errors.New("network unavailable")
+	aggregate := fmt.Errorf("repositories: %w", errors.Join(fmt.Errorf("first: %w", first), errors.Join(unrelated, fmt.Errorf("second: %w", locked))))
+	for _, running := range []bool{false, true} {
+		t.Run(fmt.Sprint(running), func(t *testing.T) {
+			stubFirstUpdateRunning(t, running)
+			got := explainFirstUpdateLock(aggregate)
+			if running {
+				if !errors.Is(got, errFirstUpdateInProgress) {
+					t.Fatalf("later lock not classified: %v", got)
+				}
+			} else if got != aggregate {
+				t.Fatal("inactive preparation changed original aggregate")
+			}
+			noLock := errors.Join(first, unrelated)
+			if got := explainFirstUpdateLock(noLock); got != noLock {
+				t.Fatal("unrelated failures reclassified")
+			}
+		})
+	}
+}
