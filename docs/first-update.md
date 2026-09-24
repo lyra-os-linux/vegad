@@ -21,8 +21,8 @@ Os nomes `first-update` do comando, da unit e do marcador são preservados por
 compatibilidade com as instalações existentes.
 
 O Zypper nunca recebe `--gpg-auto-import-keys`. Uma chave fora da lista fixada
-faz o refresh falhar. O encaminhamento dessa falha à aprovação no Vega é
-acompanhado na [issue #58](https://github.com/lyra-os-linux/vegad/issues/58).
+faz o refresh falhar. A proposta persistente pode ser revisada e aprovada explicitamente no painel
+do Vega, conforme a seção de revisão de chaves abaixo.
 
 ## Quando roda
 
@@ -277,3 +277,34 @@ python3 scripts/check-preparation-stop-vm.py run
 O log fica em `/tmp/lyra-preparation-stop-vm/serial.log`. Os testes Go de
 cancelamento também cobrem cada limite entre etapas e o comando cancelado
 antes de começar. A VM valida a coordenação, não uma escrita RPM real interrompida.
+
+
+## Política de snapshots
+
+A preparação inicial, a manutenção das chaves fixadas e a aprovação de chaves
+pendentes **não criam snapshots pre/post pelo Vega**. Elas não instalam nem
+atualizam pacotes. O marcador `first-update.done` e o estado `completed`
+afirmam somente que a preparação dos repositórios terminou; não afirmam que
+existe um ponto de recuperação. A preparação também não depende de Snapper
+estar instalado ou disponível.
+
+As transações normais de instalação, remoção, atualização e limpeza de cache
+nativas que usam `withSnapshots` seguem a política de **melhor esforço**:
+
+| Situação | Comportamento |
+| --- | --- |
+| Snapshot pre criado | Executa a operação e tenta criar post vinculado ao ID pre |
+| Snapper indisponível ou criação pre falha | Registra que seguirá sem snapshot pre do Vega, executa a operação e não tenta post |
+| Operação falha após pre criado | Preserva a falha da operação e tenta post para registrar eventuais alterações parciais |
+| Criação post falha | Registra o par incompleto e o ID pre; preserva o resultado da operação |
+
+O resultado da transação e sua mensagem de conclusão descrevem a operação
+solicitada, não a disponibilidade de snapshots. Os logs só anunciam um snapshot
+criado quando sua criação retorna sucesso. Não há rollback automático nem
+promessa de recuperação: cobertura dos subvolumes, retenção e disponibilidade
+dos snapshots precisam ser verificadas separadamente. Snapshots eventualmente
+criados por ferramentas externas não fazem parte dessa garantia do Vega.
+
+Esta política é intencional: falhar ao criar um snapshot não bloqueia a
+transação normal. Uma futura rotina que instale pacotes automaticamente deve
+reavaliar explicitamente essa decisão antes de reutilizar o wrapper.
