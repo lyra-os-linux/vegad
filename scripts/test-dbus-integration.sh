@@ -101,6 +101,16 @@ if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
 fi
 grep -q 'org.lyraos.vega.software.manage-repos' "$tmpdir/preparation-retry.log"
 
+keys="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Preparation GetPendingKeys)"
+[ "$keys" = 'a(ssss) 0' ] || { echo "unexpected pending keys: $keys" >&2; exit 1; }
+if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Preparation ApproveKey sss fixture fingerprint token >"$tmpdir/preparation-approve.log" 2>&1; then
+  echo "preparation key authorized without Polkit" >&2
+  exit 1
+fi
+grep -q 'org.lyraos.vega.software.manage-repos' "$tmpdir/preparation-approve.log"
+
 cd "$dbus_client_dir"
 # This private bus deliberately has no Polkit authority. Backup reads now
 # require authorization; their successful path and denial are covered with

@@ -157,8 +157,59 @@ quando o systemd confirma uma tentativa automática pendente. O horário não
 é uma garantia de sucesso. `CanRetry` informa se a ação pode ser oferecida;
 a autorização ainda é verificada quando ela é chamada.
 
-A aprovação efetiva de chaves continua sendo tratada na issue #58; a nova
-consulta apenas distingue essa necessidade de uma falha transitória de rede.
+### Revisão de chaves desconhecidas
+
+Após uma rejeição de chave no refresh global, a preparação consulta os aliases
+habilitados e identifica a primeira proposta revisável. O caminho sem falhas
+continua fazendo apenas um refresh. A proposta fica em
+`/var/lib/vega/preparation-key.json`, com alias, fingerprint completo, assinante
+e um token vinculado ao fingerprint e ao digest da configuração do repositório.
+URLs e credenciais não são persistidas nesse arquivo público. Não depende de
+um sinal emitido antes de a sessão do usuário existir.
+
+- `GetPendingKeys() → a(ssss)` retorna propostas com `Repo`, `Fingerprint`,
+  `UserID`, `Token`, nessa ordem, enquanto o estado exige aprovação.
+- `ApproveKey(repo, fingerprint, token) → u` exige Polkit
+  `org.lyraos.vega.software.manage-repos`. O retorno é um ID acompanhado pelos
+  sinais normais de transação da interface `Software`.
+
+O painel do Vega oferece **Revisar chave…** e apresenta alias, assinante e
+fingerprint completo. Cancelar não modifica a confiança. Confirmar solicita
+a autorização e confere novamente a identidade do repositório. O respondedor
+estrito já usado por `TrustRepoKey` aceita somente o fingerprint completo
+revisado, com identidade conferida também imediatamente antes da importação;
+outra chave ou origem exige nova revisão. Não há autoimportação geral nem
+remoção/adição do repositório para resolver esse estado.
+
+Uma proposta antiga é recusada mesmo que a nova origem use o mesmo fingerprint.
+Após uma falha dessa verificação o daemon tenta publicar a proposta atualizada,
+para um novo diálogo. Após sucesso, remove a proposta e solicita nova tentativa
+da preparação sem interromper uma execução concorrente. Se houver outras
+chaves desconhecidas, elas serão apresentadas na próxima tentativa.
+
+A consulta é compatível com daemons sem os novos métodos: nesse caso o cliente
+mantém o diagnóstico e a ação de nova tentativa, sem oferecer revisão.
+
+### Qualificação da revisão de chave em VM
+
+`scripts/check-preparation-key-vm.py` usa o mesmo ambiente descartável da
+qualificação abaixo, com um executável Zypper controlado que emite prompts XML.
+Verifica persistência após reinício, consulta por usuário comum, recusa do
+Polkit, token antigo, mudança de URL e aprovação que retoma a preparação.
+O teste não importa uma chave no host nem usa repositórios de rede. A conferência
+criptográfica do Zypper real continua coberta pelo teste opcional
+`TestZypperKeyApprovalWithIsolatedRoot`.
+
+```sh
+mkdir -p /tmp/lyra-preparation-key-vm
+go build -o /tmp/lyra-preparation-key-vm/vegad ./cmd/vegad
+go test -c -o /tmp/lyra-preparation-key-vm/tests ./internal/dbusserver
+python3 scripts/check-preparation-key-vm.py build
+python3 scripts/check-preparation-key-vm.py run
+```
+
+O log fica em `/tmp/lyra-preparation-key-vm/serial.log`. Use `pack` antes de
+`run` para atualizar somente os binários num ambiente já criado.
 
 ### Qualificação da nova tentativa em VM
 

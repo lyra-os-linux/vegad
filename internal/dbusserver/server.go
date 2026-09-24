@@ -161,7 +161,7 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	preparation := &PreparationService{activity: s.activity, profile: s.profile}
+	preparation := &PreparationService{activity: s.activity, profile: s.profile, software: software}
 	if err := s.export(preparation, BusName+".Preparation"); err != nil {
 		return err
 	}

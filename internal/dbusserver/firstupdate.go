@@ -170,6 +170,12 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	}
 	log.Printf("vegad: atualizando metadados dos repositórios")
 	if err := packages.SyncDatabase(); err != nil {
+		var key *distro.UntrustedKeyError
+		if errors.As(err, &key) {
+			if discoverer, ok := packages.(interface{ DiscoverPreparationKey() error }); ok {
+				return discoverer.DiscoverPreparationKey()
+			}
+		}
 		return err
 	}
 	// List from the refreshed metadata; do not refresh again or wait for
