@@ -55,11 +55,33 @@ func firstUpdateBusyError() *dbus.Error {
 // covers reads (search, details, updates) and a transaction that raced the
 // unit's start; any other failure is returned unchanged.
 func explainFirstUpdateLock(err error) error {
-	var exitErr *exec.ExitError
-	if err != nil && errors.As(err, &exitErr) && exitErr.ExitCode() == zypperExitLocked && firstUpdateRunning() {
+	if containsExitCode(err, zypperExitLocked) && firstUpdateRunning() {
 		return errFirstUpdateInProgress
 	}
 	return err
+}
+
+// errors.As alone stops at the first ExitError, which may be unrelated to
+// the lock. Traverse both ordinary wrappers and joined repository failures.
+func containsExitCode(err error, code int) bool {
+	if err == nil {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == code {
+		return true
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, cause := range wrapped.Unwrap() {
+			if containsExitCode(cause, code) {
+				return true
+			}
+		}
+	case interface{ Unwrap() error }:
+		return containsExitCode(wrapped.Unwrap(), code)
+	}
+	return false
 }
 
 // packageQueryError is dbus.MakeFailedError for native package reads, keeping
