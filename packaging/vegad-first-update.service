@@ -4,6 +4,7 @@ Documentation=https://lyraos.com.br/vega
 # Runs once per installed system: the marker is written only after keys,
 # refresh and publication of pending updates succeed. Never in the live ISO session.
 ConditionPathExists=!/var/lib/vega/first-update.done
+ConditionPathExists=!/var/lib/vega/first-update.skipped
 ConditionKernelCommandLine=!rd.live.image
 # Only the Lyra OS Desktop image ships this file. Installing vegad on an
 # existing openSUSE Leap must not trigger repository preparation.

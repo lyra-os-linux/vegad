@@ -152,6 +152,16 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 # (selinuxenabled) e as ferramentas certas instaladas — máquinas sem
 # SELinux ou sem essas ferramentas simplesmente pulam essa parte sem erro.
 # O baseline local e as limitações estão em docs/privilege-boundaries.md docs/nvidia.md.
+# Inspect the old payload before RPM installs the new service file. Only
+# upgrades from versions without first-boot preparation are exempted.
+%pre
+if [ "$1" -gt 1 ] && [ ! -e %{_prefix}/lib/systemd/system/vegad-first-update.service ]; then
+  if [ ! -e %{_localstatedir}/lib/vega/first-update.done ] && [ ! -e %{_localstatedir}/lib/vega/first-update.skipped ]; then
+    mkdir -p %{_localstatedir}/lib/vega
+    printf 'legacy-installation\n' > %{_localstatedir}/lib/vega/first-update.skipped
+  fi
+fi
+
 %post
 systemd-sysusers %{_prefix}/lib/sysusers.d/vegad.conf
 systemd-tmpfiles --create %{_prefix}/lib/tmpfiles.d/vega-log.conf 2>/dev/null || true
@@ -159,15 +169,10 @@ systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true
 systemctl enable --now vegad-update-check.timer 2>/dev/null || true
 systemctl enable --now vegad-log-export.timer 2>/dev/null || true
-# Atualização inicial: habilitada (sem --now) só na primeira instalação, que é
-# o caso da imagem da ISO; roda no primeiro boot do sistema instalado. Num
-# sistema que já existia, a atualização do pacote não dispara um zypper up
-# automático: o marcador registra que o sistema já passou dessa fase.
+# Fresh images enable preparation for the next installed boot. Upgrades
+# preserve pending/completed/exempted state; only the job writes success.
 if [ "$1" = "1" ]; then
   systemctl enable vegad-first-update.service 2>/dev/null || true
-else
-  mkdir -p %{_localstatedir}/lib/vega
-  [ -e %{_localstatedir}/lib/vega/first-update.done ] || echo done > %{_localstatedir}/lib/vega/first-update.done
 fi
 if command -v semodule >/dev/null 2>&1 && command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
   semodule -i %{_datadir}/selinux/packages/vegad_bootloader.pp 2>/dev/null || true
