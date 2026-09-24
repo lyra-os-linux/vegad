@@ -104,7 +104,9 @@ func main() {
 			log.Printf("vegad: preparação dos repositórios ignorada no perfil %s", activeProfile)
 			return
 		}
-		if err := dbusserver.RunFirstUpdateJob(activeProfile); err != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		if err := dbusserver.RunFirstUpdateJobContext(ctx, activeProfile); err != nil {
 			log.Fatalf("vegad first-update failed: %v", err)
 		}
 		return

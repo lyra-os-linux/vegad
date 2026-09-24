@@ -95,11 +95,11 @@ func readRepoKeyIdentity(repo string) (repoKeyIdentity, error) {
 
 // Caller holds keyMu. Rejections are proposals only, never imports.
 func (z *zypperBackend) proposeRepoKey(repo string) error {
-	before, err := readRepoKeyIdentity(repo)
+	before, err := z.readRepoKeyIdentity(repo)
 	if err != nil {
 		return err
 	}
-	out, refreshErr := repoKeyOutput("--non-interactive", "refresh", "--", repo)
+	out, refreshErr := z.repoKeyOutput("--non-interactive", "refresh", "--", repo)
 	if refreshErr == nil {
 		delete(z.pendingKeys, repo)
 		return nil
@@ -108,7 +108,7 @@ func (z *zypperBackend) proposeRepoKey(repo string) error {
 	if !ok {
 		return fmt.Errorf("atualizar repositório: %w — %s", refreshErr, strings.TrimSpace(out))
 	}
-	after, err := readRepoKeyIdentity(repo)
+	after, err := z.readRepoKeyIdentity(repo)
 	if err != nil || before != after {
 		return fmt.Errorf("repositório mudou durante a consulta da chave; repita a operação")
 	}

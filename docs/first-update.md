@@ -231,3 +231,49 @@ python3 scripts/check-preparation-vm.py run
 O script usa as ferramentas locais do openSUSE e o kernel indicado em
 `KERNEL`. O log fica em `/tmp/lyra-preparation-vm/serial.log`. Para repetir
 com novos binários no mesmo ambiente, use `pack` antes de `run`.
+
+## Parada e desligamento
+
+`first-update` trata SIGTERM e SIGINT. Ao receber o pedido, deixa de iniciar
+comandos e etapas, inclusive a publicação do marcador de conclusão. O comando
+já iniciado tem até 30 segundos para terminar sua escrita de metadados ou
+importação das chaves RPM. Se não terminar, o coordenador envia SIGTERM ao grupo
+de processos e, após mais cinco segundos, SIGKILL. Descendentes remanescentes
+do comando interrompido também são encerrados.
+
+A unidade usa `KillMode=mixed`: o SIGTERM inicial chega somente ao coordenador.
+`TimeoutStopSec=45s` fornece o limite externo para o systemd encerrar o cgroup
+inteiro se a coordenação não concluir. Esse prazo não garante que uma escrita
+termine; substitui o antigo limite de quinze minutos, que com o modo padrão
+não adiava o SIGTERM enviado aos subprocessos.
+
+A rotina não instala pacotes nem executa scriptlets de atualização. Ela não
+adquire o inibidor `delay` do logind: esse inibidor é limitado por
+`InhibitDelayMaxSec` e não cobre toda a drenagem nem substitui a coordenação da
+unidade. As transações interativas do daemon mantêm sua política separada.
+
+Uma interrupção tratada persiste `failed/interrupted` e não deixa o marcador
+`first-update.done`. A próxima execução retoma a preparação com os metadados
+existentes. Se houver encerramento forçado antes da persistência, a consulta
+de estado reconcilia o antigo `running` com o serviço parado e informa a
+interrupção. Uma parada explícita não agenda reinício durante o desligamento;
+o serviço habilitado volta a ser elegível no próximo boot.
+
+### Qualificação de parada
+
+O teste usa a unidade empacotada, systemd real e executáveis controlados em VM
+sem rede/discos do host. Verifica drenagem durante importação, encerramento de
+subprocesso e descendente que ignoram SIGTERM, ausência do marcador, estado
+retomável e conclusão numa execução posterior sem limpar manualmente o estado.
+
+```sh
+mkdir -p /tmp/lyra-preparation-stop-vm
+go build -o /tmp/lyra-preparation-stop-vm/vegad ./cmd/vegad
+go test -c -o /tmp/lyra-preparation-stop-vm/tests ./internal/dbusserver
+python3 scripts/check-preparation-stop-vm.py build
+python3 scripts/check-preparation-stop-vm.py run
+```
+
+O log fica em `/tmp/lyra-preparation-stop-vm/serial.log`. Os testes Go de
+cancelamento também cobrem cada limite entre etapas e o comando cancelado
+antes de começar. A VM valida a coordenação, não uma escrita RPM real interrompida.

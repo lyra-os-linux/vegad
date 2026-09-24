@@ -86,7 +86,11 @@ func preparationFailure(phase string, err error, now time.Time) PreparationStatu
 	status := PreparationStatus{State: "failed", Phase: phase, ErrorKind: "operation-failed", LastError: "Não foi possível concluir a preparação dos repositórios. Consulte o registro do serviço.", UpdatedAt: now.UTC().Format(time.RFC3339)}
 	var key *distro.UntrustedKeyError
 	var refresh *distro.RepositoryRefreshError
-	if errors.As(err, &key) {
+	if errors.Is(err, context.Canceled) {
+		status.ErrorKind = "interrupted"
+		status.LastError = "A preparação foi interrompida. Será retomada na próxima tentativa."
+		return status
+	} else if errors.As(err, &key) {
 		status.State = "awaiting-approval"
 		status.ErrorKind = "untrusted-key"
 		status.LastError = "Um repositório exige aprovação de uma chave de assinatura. Aguardar não autoriza essa chave."

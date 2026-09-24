@@ -1,6 +1,7 @@
 package dbusserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -112,6 +113,12 @@ func writeFirstUpdateMarker(path string) error {
 // historical command, service and marker names remain compatible with RPMs
 // already shipped. Package installation belongs to the normal Vega workflow.
 func RunFirstUpdateJob(activeProfile profile.Profile) error {
+	return RunFirstUpdateJobContext(context.Background(), activeProfile)
+}
+func RunFirstUpdateJobContext(ctx context.Context, activeProfile profile.Profile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	marker := firstUpdateMarkerPath()
 	if _, err := os.Stat(firstUpdateSkipPath()); err == nil {
 		log.Printf("vegad: preparação dos repositórios dispensada para instalação legada")
@@ -130,13 +137,13 @@ func RunFirstUpdateJob(activeProfile profile.Profile) error {
 	if err != nil {
 		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
 	}
-	provider, err := distro.NewProvider(id)
+	packages, err := distro.NewPreparationPackageBackend(ctx, id)
 	if err != nil {
 		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
 	}
 
-	return prepareInitialRepositories(activeProfile, marker, provider.Package(), func() error {
-		return distro.ImportTrustedPackageKeys(trustedKeyringPath())
+	return prepareInitialRepositoriesContext(ctx, activeProfile, marker, packages, func() error {
+		return distro.ImportTrustedPackageKeysContext(ctx, trustedKeyringPath())
 	}, publishUpdateStatus)
 }
 
@@ -147,13 +154,26 @@ type repositoryPreparer interface {
 }
 
 func prepareInitialRepositories(activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) (result error) {
+	return prepareInitialRepositoriesContext(context.Background(), activeProfile, marker, packages, importKeys, publish)
+}
+func prepareInitialRepositoriesContext(ctx context.Context, activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) (result error) {
 	statePath := preparationStatePath(marker)
 	phase := "importing-keys"
+	markerWritten := false
 	stage := func(next string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		phase = next
 		return persistPreparationStatus(statePath, PreparationStatus{State: "running", Phase: phase, UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
 	}
 	defer func() {
+		if ctx.Err() != nil {
+			if markerWritten {
+				result = errors.Join(result, os.Remove(marker))
+			}
+			result = errors.Join(result, ctx.Err())
+		}
 		if result != nil {
 			result = errors.Join(result, persistPreparationStatus(statePath, preparationFailure(phase, result, time.Now())))
 		}
@@ -171,6 +191,9 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	log.Printf("vegad: atualizando metadados dos repositórios")
 	if err := packages.SyncDatabase(); err != nil {
 		var key *distro.UntrustedKeyError
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if errors.As(err, &key) {
 			if discoverer, ok := packages.(interface{ DiscoverPreparationKey() error }); ok {
 				return discoverer.DiscoverPreparationKey()
@@ -194,9 +217,13 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	if err := publish(initialRepositoryStatus(activeProfile, updates, previous)); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := writeFirstUpdateMarker(marker); err != nil {
 		return fmt.Errorf("registrar preparação dos repositórios: %w", err)
 	}
+	markerWritten = true
 	if err := persistPreparationStatus(statePath, PreparationStatus{State: "completed", Phase: "completed", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
 		return err
 	}

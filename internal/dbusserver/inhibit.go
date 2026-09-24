@@ -18,11 +18,13 @@ import (
 // a mutating operation — package transaction, backup, restore — to give
 // logind a short, explicit grace window during shutdown/reboot.
 //
-// vegad itself has no SIGTERM handling: without this lock, systemd simply
+// The main D-Bus daemon has no transaction-wide SIGTERM handling: without
+// this lock, systemd simply
 // SIGTERMs the unit's whole cgroup on shutdown, which can kill zypper/rpm or
 // restic mid-write. The lock does not guarantee completion of long jobs:
 // logind caps delay inhibitors at InhibitDelayMaxSec and systemd may still
-// send SIGTERM after that window.
+// send SIGTERM after that window. The standalone first-update coordinator
+// has its own bounded drain policy and does not rely on this inhibitor.
 type ShutdownInhibitor struct {
 	conn *dbus.Conn
 	fd   dbus.UnixFD
