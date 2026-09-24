@@ -21,7 +21,7 @@ func (*unclassifiedService) NewOperation() *dbus.Error { return nil }
 func TestQueryInventoryCoversEveryWireMethod(t *testing.T) {
 	s := &Server{activity: &Activity{}, profile: profile.Desktop}
 	services := map[string]interface{}{"Backup": &BackupService{activity: s.activity}}
-	for _, name := range []string{"Metadata", "System", "Software", "Monitor", "Kernel", "Hardware", "Users", "Services", "Snapshots", "Firewall", "DateTime", "Network", "Storage", "Bluetooth", "Logs"} {
+	for _, name := range []string{"Metadata", "System", "Software", "Preparation", "Monitor", "Kernel", "Hardware", "Users", "Services", "Snapshots", "Firewall", "DateTime", "Network", "Storage", "Bluetooth", "Logs"} {
 		services[name] = s.queryService(name)
 	}
 	seen := make(map[string]bool)

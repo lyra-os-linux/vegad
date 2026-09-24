@@ -163,9 +163,11 @@ func (z *zypperBackend) ListInstalled() ([]PackageRef, error) {
 // configured repos — touches the network and needs root, same restriction
 // as pacmanBackend.SyncDatabase.
 func (z *zypperBackend) SyncDatabase() error {
-	out, err := runCommandOutput("zypper", "--non-interactive", "refresh")
+	cmd := packageCommand("zypper", "--non-interactive", "refresh")
+	cmd.Env = commandEnvC()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("zypper refresh: %w — %s", err, out)
+		return repositoryRefreshError(string(out), err)
 	}
 	return nil
 }

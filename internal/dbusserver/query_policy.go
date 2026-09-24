@@ -18,6 +18,8 @@ type methodPolicy struct {
 }
 
 var methodPolicies = map[string]methodPolicy{
+	"Preparation.GetStatus":       {queryPublic, ""},
+	"Preparation.Retry":           {administrative, ""},
 	"Backup.CreateConfig":         {administrative, ""},
 	"Backup.ListConfigs":          {privilegedRead, "org.lyraos.vega.backup.read-admin"},
 	"Backup.RunBackupNow":         {administrative, ""},

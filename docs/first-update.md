@@ -109,3 +109,53 @@ Diagnóstico e nova tentativa:
 journalctl -u vegad-trusted-keys.service
 sudo systemctl restart vegad-trusted-keys.service
 ```
+
+## Estado persistente e nova tentativa
+
+A interface D-Bus `org.lyraos.Vega1.Preparation`, no objeto
+`/org/lyraos/Vega1`, oferece:
+
+- `GetStatus() → (ssssssb)`: `State`, `Phase`, `ErrorKind`, `LastError`,
+  `UpdatedAt`, `NextRetryAt`, `CanRetry`, nessa ordem.
+- `Retry()`: exige a ação Polkit `org.lyraos.vega.software.manage-repos`.
+  Solicita o início do serviço sem bloquear a chamada nem interromper uma
+  execução que tenha começado em paralelo. Não remove marcadores de
+  conclusão ou dispensa. O retorno indica que o pedido foi aceito; acompanhe
+  `GetStatus` para saber o resultado.
+
+O cliente pode consultar `GetStatus` a cada cinco segundos enquanto a página
+estiver visível, inclusive antes de qualquer operação recusada. Essa interface
+é aditiva e não altera o contrato de contagem `GetUpdateStatus`. A integração
+visual e os tipos do cliente são acompanhados na [issue Vega #153](https://github.com/lyra-os-linux/vega/issues/153). Clientes
+antigos continuam funcionando; a apresentação visual exige integração no
+cliente e deve tolerar `UnknownInterface` ao conectar a um daemon antigo.
+
+| Estado | Significado |
+| --- | --- |
+| `pending` | Preparação ainda não iniciada |
+| `running` | Serviço em execução; a fase identifica a etapa |
+| `waiting-retry` | O systemd tem uma nova tentativa agendada |
+| `awaiting-approval` | Foi detectada uma chave não confiada; esperar não a autoriza |
+| `failed` | Falha ou interrupção sem nova tentativa confirmada |
+| `completed` | Marcador de conclusão presente |
+| `skipped` | Instalação antiga dispensada |
+| `unavailable` | Perfil, ambiente ou serviço não permite essa rotina |
+
+Fases: `detecting-system`, `importing-keys`, `refreshing`, `listing-updates`,
+`publishing`, `completed` ou `skipped`. `ErrorKind` distingue `network`,
+`untrusted-key`, `operation-failed`, `interrupted` e `service-failed`.
+A classificação de rede reconhece mensagens conhecidas do Zypper em locale
+C; erros não reconhecidos permanecem genéricos. O diagnóstico público é um
+resumo sem URLs ou credenciais; a saída detalhada fica no journal.
+
+O arquivo de resumo público `/var/lib/vega/first-update-status.json` preserva fase,
+diagnóstico e horário entre processos e reinicializações. O serviço D-Bus
+combina esses dados com os marcadores e o estado atual do systemd para não
+mostrar uma execução interrompida como ainda ativa. `NextRetryAt` é uma
+estimativa UTC baseada nos quinze minutos de `RestartSec`, exibida somente
+quando o systemd confirma uma tentativa automática pendente. O horário não
+é uma garantia de sucesso. `CanRetry` informa se a ação pode ser oferecida;
+a autorização ainda é verificada quando ela é chamada.
+
+A aprovação efetiva de chaves continua sendo tratada na issue #58; a nova
+consulta apenas distingue essa necessidade de uma falha transitória de rede.

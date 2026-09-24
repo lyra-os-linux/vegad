@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/lyraos/vegad/internal/distro"
@@ -127,11 +128,11 @@ func RunFirstUpdateJob(activeProfile profile.Profile) error {
 
 	id, err := distro.Detect()
 	if err != nil {
-		return err
+		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
 	}
 	provider, err := distro.NewProvider(id)
 	if err != nil {
-		return err
+		return errors.Join(err, persistPreparationStatus(preparationStatePath(marker), preparationFailure("detecting-system", err, time.Now())))
 	}
 
 	return prepareInitialRepositories(activeProfile, marker, provider.Package(), func() error {
@@ -145,9 +146,26 @@ type repositoryPreparer interface {
 	ListUpdates() ([]distro.PackageRef, error)
 }
 
-func prepareInitialRepositories(activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) error {
+func prepareInitialRepositories(activeProfile profile.Profile, marker string, packages repositoryPreparer, importKeys func() error, publish func(UpdateStatus) error) (result error) {
+	statePath := preparationStatePath(marker)
+	phase := "importing-keys"
+	stage := func(next string) error {
+		phase = next
+		return persistPreparationStatus(statePath, PreparationStatus{State: "running", Phase: phase, UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
+	}
+	defer func() {
+		if result != nil {
+			result = errors.Join(result, persistPreparationStatus(statePath, preparationFailure(phase, result, time.Now())))
+		}
+	}()
+	if err := stage(phase); err != nil {
+		return err
+	}
 	log.Printf("vegad: importando chaves de assinatura confiáveis")
 	if err := importKeys(); err != nil {
+		return err
+	}
+	if err := stage("refreshing"); err != nil {
 		return err
 	}
 	log.Printf("vegad: atualizando metadados dos repositórios")
@@ -156,8 +174,14 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	}
 	// List from the refreshed metadata; do not refresh again or wait for
 	// Flatpak while this service is blocking native transactions.
+	if err := stage("listing-updates"); err != nil {
+		return err
+	}
 	updates, err := packages.ListUpdates()
 	if err != nil {
+		return err
+	}
+	if err := stage("publishing"); err != nil {
 		return err
 	}
 	previous, _ := readUpdateStatus(updateStatePath())
@@ -166,6 +190,9 @@ func prepareInitialRepositories(activeProfile profile.Profile, marker string, pa
 	}
 	if err := writeFirstUpdateMarker(marker); err != nil {
 		return fmt.Errorf("registrar preparação dos repositórios: %w", err)
+	}
+	if err := persistPreparationStatus(statePath, PreparationStatus{State: "completed", Phase: "completed", UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		return err
 	}
 	log.Printf("vegad: preparação dos repositórios concluída")
 	return nil

@@ -86,6 +86,21 @@ if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect org.lyraos.Vega1 \
   exit 1
 fi
 
+# The preparation interface is additive: its server-profile response must
+# remain readable, while retry requires explicit administrative authorization.
+preparation="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Preparation GetStatus)"
+case "$preparation" in
+  '(ssssssb) "unavailable"'*' false') ;;
+  *) echo "unexpected preparation status: $preparation" >&2; exit 1 ;;
+esac
+if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Preparation Retry >"$tmpdir/preparation-retry.log" 2>&1; then
+  echo "preparation retry authorized without Polkit" >&2
+  exit 1
+fi
+grep -q 'org.lyraos.vega.software.manage-repos' "$tmpdir/preparation-retry.log"
+
 cd "$dbus_client_dir"
 # This private bus deliberately has no Polkit authority. Backup reads now
 # require authorization; their successful path and denial are covered with
