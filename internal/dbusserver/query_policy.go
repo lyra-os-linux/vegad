@@ -18,6 +18,8 @@ type methodPolicy struct {
 }
 
 var methodPolicies = map[string]methodPolicy{
+	"Preparation.GetPendingKeys":  {queryPublic, ""},
+	"Preparation.ApproveKey":      {administrative, ""},
 	"Preparation.GetStatus":       {queryPublic, ""},
 	"Preparation.Retry":           {administrative, ""},
 	"Backup.CreateConfig":         {administrative, ""},

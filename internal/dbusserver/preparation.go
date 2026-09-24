@@ -176,6 +176,7 @@ func preparationEligible(activeProfile profile.Profile) bool {
 }
 
 type PreparationService struct {
+	software *SoftwareService
 	activity *Activity
 	profile  profile.Profile
 }
@@ -259,4 +260,64 @@ func retryPreparation(resetFailed bool, run func(...string) error) error {
 	// Starting is idempotent if an automatic retry won the race after GetStatus.
 	// Never use restart here: it could terminate that newly running process.
 	return run("--no-block", "start", firstUpdateUnit)
+}
+
+// GetPendingKeys is persistent and read-only; no transient signal is needed.
+func (s *PreparationService) GetPendingKeys() ([]distro.PreparationKey, *dbus.Error) {
+	status, err := s.GetStatus()
+	if err != nil {
+		return nil, err
+	}
+	if status.State != "awaiting-approval" {
+		return []distro.PreparationKey{}, nil
+	}
+	keys, readErr := distro.ReadPreparationKey()
+	if readErr != nil {
+		return nil, dbus.MakeFailedError(readErr)
+	}
+	return keys, nil
+}
+
+// ApproveKey uses the normal software transaction stream and the same strict
+// key prompt responder as AddRepo. The review token prevents stale UI approval.
+func (s *PreparationService) ApproveKey(sender dbus.Sender, repo, fingerprint, token string) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return 0, err
+	}
+	status, err := s.GetStatus()
+	if err != nil {
+		return 0, err
+	}
+	if status.State != "awaiting-approval" || !status.CanRetry {
+		return 0, dbus.MakeFailedError(fmt.Errorf("nenhuma chave aguardando aprovação"))
+	}
+	if s.software == nil {
+		return 0, dbus.MakeFailedError(fmt.Errorf("serviço de software indisponível"))
+	}
+	backend, ok := s.software.provider.Package().(interface {
+		TrustPreparationKey(string, string, string, distro.ProgressFunc) error
+	})
+	if !ok {
+		return 0, dbus.MakeFailedError(fmt.Errorf("aprovação indisponível neste backend"))
+	}
+	return s.software.startTransaction("Aprovar chave da preparação: "+repo, func(report progressFunc, _ packageProgressFunc) error {
+		if err := backend.TrustPreparationKey(repo, fingerprint, token, report); err != nil {
+			return err
+		}
+		unit, err := preparationUnitState()
+		if err != nil {
+			return err
+		}
+		return retryPreparation(unit.Active == "failed", func(args ...string) error {
+			out, err := exec.Command("systemctl", args...).CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("retomar preparação: %w: %s", err, out)
+			}
+			return nil
+		})
+	}), nil
 }

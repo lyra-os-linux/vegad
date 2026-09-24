@@ -102,6 +102,15 @@ func TestPreparationServiceAuthorizationAndContract(t *testing.T) {
 	if err := service.Retry(""); err == nil || err.Name != BusName+".Error.AuthorizationFailed" {
 		t.Fatalf("retry accepted without sender: %v", err)
 	}
+	if _, err := service.ApproveKey("", "repo", "fingerprint", "token"); err == nil || err.Name != BusName+".Error.AuthorizationFailed" {
+		t.Fatalf("key approval accepted without sender: %v", err)
+	}
+	if keys, err := service.GetPendingKeys(); err != nil || len(keys) != 0 {
+		t.Fatalf("server keys: %v %v", keys, err)
+	}
+	if got := dbus.SignatureOf([]distro.PreparationKey{}).String(); got != "a(ssss)" {
+		t.Fatalf("keys signature: %s", got)
+	}
 	status, err := service.GetStatus()
 	if err != nil || status.State != "unavailable" || status.CanRetry {
 		t.Fatalf("server status: %+v, %v", status, err)
@@ -137,5 +146,34 @@ func TestPreparationPublishesPhaseAndFailure(t *testing.T) {
 	state, err = readPreparationStatus(preparationStatePath(marker))
 	if err != nil || state.State != "completed" || state.LastError != "" {
 		t.Fatalf("completion: %+v, %v", state, err)
+	}
+}
+
+type discoveringPreparationBackend struct{ discovered bool }
+
+func (*discoveringPreparationBackend) SyncDatabase() error {
+	return &distro.UntrustedKeyError{Fingerprint: strings.Repeat("A", 40)}
+}
+func (p *discoveringPreparationBackend) DiscoverPreparationKey() error {
+	p.discovered = true
+	return &distro.UntrustedKeyError{Repo: "fixture", Fingerprint: strings.Repeat("A", 40)}
+}
+func (*discoveringPreparationBackend) ListUpdates() ([]distro.PackageRef, error) {
+	panic("must not list before key approval")
+}
+func TestPreparationDiscoversReviewBeforeExiting(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "done")
+	backend := &discoveringPreparationBackend{}
+	err := prepareInitialRepositories(profile.Desktop, marker, backend, func() error { return nil }, func(UpdateStatus) error { t.Fatal("must not publish before approval"); return nil })
+	var key *distro.UntrustedKeyError
+	if !errors.As(err, &key) || !backend.discovered || key.Repo != "fixture" {
+		t.Fatalf("discovery: %v", err)
+	}
+	status, readErr := readPreparationStatus(preparationStatePath(marker))
+	if readErr != nil || status.State != "awaiting-approval" {
+		t.Fatalf("status: %+v %v", status, readErr)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("completed before approval")
 	}
 }
