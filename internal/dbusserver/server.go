@@ -161,6 +161,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	preparation := &PreparationService{activity: s.activity, profile: s.profile}
+	if err := s.export(preparation, BusName+".Preparation"); err != nil {
+		return err
+	}
+
 	snapshots := &SnapshotsService{activity: s.activity, conn: s.conn}
 	if err := s.export(snapshots, BusName+".Snapshots"); err != nil {
 		return err
@@ -237,6 +242,7 @@ func (s *Server) Export() error {
 	node := &introspect.Node{
 		Name: string(ObjectPath),
 		Interfaces: []introspect.Interface{
+			{Name: BusName + ".Preparation", Methods: introspect.Methods(preparation)},
 			{Name: BusName + ".Metadata", Methods: introspect.Methods(metadata)},
 			{Name: BusName + ".System", Methods: introspect.Methods(system)},
 			{Name: BusName + ".Software", Methods: introspect.Methods(software), Signals: []introspect.Signal{

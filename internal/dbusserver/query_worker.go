@@ -13,6 +13,8 @@ import (
 
 func (s *Server) queryService(iface string) interface{} {
 	switch iface {
+	case "Preparation":
+		return &PreparationService{activity: s.activity, profile: s.profile}
 	case "Metadata":
 		return &MetadataService{activity: s.activity, profile: s.profile}
 	case "System":
