@@ -10,7 +10,7 @@ import (
 )
 
 // DefaultTrustedKeyringPath is the package-signing keyring shipped by the
-// vegad RPM (packaging/keys). It is imported only by `vegad first-update`.
+// vegad RPM (packaging/keys), used by preparation and ongoing maintenance.
 const DefaultTrustedKeyringPath = "/usr/share/vega/keys/lyra-package-signing-keyring.asc"
 
 // trustedPackageSigningFingerprints pins the primary keys of every repository

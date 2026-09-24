@@ -74,6 +74,8 @@ install -Dm644 packaging/vegad-update-check-retry.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
 install -Dm644 packaging/vegad-first-update.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-first-update.service
+install -Dm644 packaging/vegad-trusted-keys.service \
+  %{buildroot}%{_prefix}/lib/systemd/system/vegad-trusted-keys.service
 install -Dm644 packaging/keys/lyra-package-signing-keyring.asc \
   %{buildroot}%{_datadir}/vega/keys/lyra-package-signing-keyring.asc
 install -Dm644 packaging/vegad.conf \
@@ -122,6 +124,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
 %{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
 %{_prefix}/lib/systemd/system/vegad-first-update.service
+%{_prefix}/lib/systemd/system/vegad-trusted-keys.service
 %dir %{_sysconfdir}/vega
 %config(noreplace) %{_sysconfdir}/vega/vegad.conf
 %dir %{_datadir}/vega
@@ -169,6 +172,10 @@ systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true
 systemctl enable --now vegad-update-check.timer 2>/dev/null || true
 systemctl enable --now vegad-log-export.timer 2>/dev/null || true
+# Queue key maintenance without waiting while this RPM transaction holds
+# the database lock. No refresh or package installation is performed.
+systemctl enable vegad-trusted-keys.service 2>/dev/null || true
+systemctl --no-block start vegad-trusted-keys.service 2>/dev/null || true
 # Fresh images enable preparation for the next installed boot. Upgrades
 # preserve pending/completed/exempted state; only the job writes success.
 if [ "$1" = "1" ]; then
@@ -184,6 +191,7 @@ if [ "$1" = "0" ]; then
   systemctl stop vegad-update-check-retry.timer 2>/dev/null || true
   systemctl disable --now vegad-log-export.timer 2>/dev/null || true
   systemctl disable --now vegad-first-update.service 2>/dev/null || true
+  systemctl disable --now vegad-trusted-keys.service 2>/dev/null || true
 fi
 
 %postun

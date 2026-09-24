@@ -19,6 +19,7 @@ systemd-analyze verify \
   packaging/vegad-log-export.service \
   packaging/vegad-update-check.service \
   packaging/vegad-first-update.service \
+  packaging/vegad-trusted-keys.service \
   packaging/*.timer
 rpmspec -P packaging/vegad.spec >/dev/null
 rpmspec -P packaging/vegad.obs.spec >/dev/null

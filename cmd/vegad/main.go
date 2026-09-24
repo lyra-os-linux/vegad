@@ -92,6 +92,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) == 2 && os.Args[1] == "sync-trusted-keys" {
+		if err := dbusserver.RunTrustedKeysJob(activeProfile); err != nil {
+			log.Fatalf("vegad sync-trusted-keys failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) >= 2 && os.Args[1] == "first-update" {
 		if activeProfile != profile.Desktop {
 			log.Printf("vegad: preparação dos repositórios ignorada no perfil %s", activeProfile)
