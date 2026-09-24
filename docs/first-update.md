@@ -159,3 +159,24 @@ a autorização ainda é verificada quando ela é chamada.
 
 A aprovação efetiva de chaves continua sendo tratada na issue #58; a nova
 consulta apenas distingue essa necessidade de uma falha transitória de rede.
+
+### Qualificação da nova tentativa em VM
+
+`scripts/check-preparation-vm.py` monta um initramfs descartável com systemd,
+D-Bus e Polkit reais, sem rede nem discos do host. O serviço de preparação
+é uma tarefa controlada, sem acesso a repositórios. O teste verifica recusa
+sem autorização, autorização para um usuário comum, retomada de unidade
+inativa e falha, proteção de execução ativa e leitura do diagnóstico após
+reinício do daemon.
+
+```sh
+mkdir -p /tmp/lyra-preparation-vm
+go build -o /tmp/lyra-preparation-vm/vegad ./cmd/vegad
+go test -c -o /tmp/lyra-preparation-vm/tests ./internal/dbusserver
+python3 scripts/check-preparation-vm.py build
+python3 scripts/check-preparation-vm.py run
+```
+
+O script usa as ferramentas locais do openSUSE e o kernel indicado em
+`KERNEL`. O log fica em `/tmp/lyra-preparation-vm/serial.log`. Para repetir
+com novos binários no mesmo ambiente, use `pack` antes de `run`.

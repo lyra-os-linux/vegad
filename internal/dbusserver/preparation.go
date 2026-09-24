@@ -230,19 +230,31 @@ func (s *PreparationService) Retry(sender dbus.Sender) *dbus.Error {
 	if !status.CanRetry {
 		return dbus.NewError(BusName+".Error.NotAvailable", []interface{}{"A preparação não pode ser reiniciada neste estado."})
 	}
-	if err := retryPreparation(func(args ...string) error {
+	unit, unitErr := preparationUnitState()
+	if unitErr != nil {
+		return dbus.MakeFailedError(unitErr)
+	}
+	if err := retryPreparation(unit.Active == "failed", func(args ...string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return exec.CommandContext(ctx, "systemctl", args...).Run()
+		out, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("systemctl %s: %w — %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+		return nil
 	}); err != nil {
 		return dbus.MakeFailedError(err)
 	}
 	return nil
 }
 
-func retryPreparation(run func(...string) error) error {
-	if err := run("reset-failed", firstUpdateUnit); err != nil {
-		return err
+func retryPreparation(resetFailed bool, run func(...string) error) error {
+	// Inactive units may be garbage-collected after a status query. Resetting
+	// such a unit fails with "not loaded"; only failed units need this step.
+	if resetFailed {
+		if err := run("reset-failed", firstUpdateUnit); err != nil {
+			return err
+		}
 	}
 	// Starting is idempotent if an automatic retry won the race after GetStatus.
 	// Never use restart here: it could terminate that newly running process.

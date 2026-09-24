@@ -80,14 +80,18 @@ func TestPreparationStatusReconcilesSystemd(t *testing.T) {
 
 func TestPreparationRetryUsesSafeFixedCommands(t *testing.T) {
 	var calls [][]string
-	err := retryPreparation(func(args ...string) error { calls = append(calls, args); return nil })
+	err := retryPreparation(true, func(args ...string) error { calls = append(calls, args); return nil })
 	want := [][]string{{"reset-failed", firstUpdateUnit}, {"--no-block", "start", firstUpdateUnit}}
 	if err != nil || !reflect.DeepEqual(calls, want) {
 		t.Fatalf("commands: %v, %v", calls, err)
 	}
+	calls = nil
+	if err := retryPreparation(false, func(args ...string) error { calls = append(calls, args); return nil }); err != nil || !reflect.DeepEqual(calls, want[1:]) {
+		t.Fatalf("inactive unit retry: %v, %v", calls, err)
+	}
 	failure := errors.New("systemd unavailable")
 	count := 0
-	err = retryPreparation(func(...string) error { count++; return failure })
+	err = retryPreparation(true, func(...string) error { count++; return failure })
 	if !errors.Is(err, failure) || count != 1 {
 		t.Fatalf("failure handling: %v, %d", err, count)
 	}
