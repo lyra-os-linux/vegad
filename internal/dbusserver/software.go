@@ -720,26 +720,30 @@ func (s *SoftwareService) ClearNativeCache(sender dbus.Sender) (uint32, *dbus.Er
 	}), nil
 }
 
+// withSnapshots is best effort for normal package transactions, not a recovery
+// prerequisite. Transaction success describes work(), never snapshot availability.
+// First-boot repository preparation deliberately does not use this wrapper.
 func withSnapshots(action string, work func() error) error {
-	preID, preErr := createSnapperSnapshot("pre", action)
-	if preErr != nil && !errors.Is(preErr, errSnapperUnavailable) {
-		log.Printf("vegad: snapshot pre falhou (%s): %v", action, preErr)
-	} else if preErr == nil {
-		log.Printf("vegad: snapshot pre criado (%s): %d", action, preID)
+	return withSnapshotPolicy(action, work, createSnapperSnapshot, log.Printf)
+}
+
+func withSnapshotPolicy(action string, work func() error, create func(string, string, ...uint32) (uint32, error), logf func(string, ...interface{})) error {
+	preID, preErr := create("pre", action)
+	if preErr != nil {
+		logf("vegad: snapshot pre indisponível ou falhou (%s); operação continuará sem snapshot pre do Vega: %v", action, preErr)
+	} else {
+		logf("vegad: snapshot pre criado (%s): %d", action, preID)
 	}
-
 	err := work()
-
+	// A post snapshot can describe partial changes even if the operation failed.
+	// Never create an unpaired post or report a successful pair after pre failure.
 	if preErr == nil {
-		if postID, postErr := createSnapperSnapshot("post", action, preID); postErr != nil {
-			if !errors.Is(postErr, errSnapperUnavailable) {
-				log.Printf("vegad: snapshot post falhou (%s): %v", action, postErr)
-			}
+		if postID, postErr := create("post", action, preID); postErr != nil {
+			logf("vegad: snapshot post indisponível ou falhou (%s); par pre/post incompleto (pre %d): %v", action, preID, postErr)
 		} else {
-			log.Printf("vegad: snapshot post criado (%s): %d", action, postID)
+			logf("vegad: snapshot post criado (%s): %d", action, postID)
 		}
 	}
-
 	return err
 }
 
