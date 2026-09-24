@@ -31,7 +31,14 @@ acompanhado na [issue #58](https://github.com/lyra-os-linux/vegad/issues/58).
 - Nunca na sessão live (`rd.live.image`/`root=live:` na linha de comando do
   kernel).
 - A unit é habilitada no `%post` apenas na primeira instalação do pacote (caso
-  da imagem da ISO). Numa atualização do pacote, o `%post` grava o marcador.
+  da imagem da ISO). Upgrades preservam a preparação pendente ou concluída.
+- Ao atualizar uma versão antiga que ainda não incluía essa unit, o `%pre`
+  registra a dispensa em `/var/lib/vega/first-update.skipped`. A presença da
+  unit anterior é verificada antes da instalação dos novos arquivos. Essa
+  dispensa vale também para a execução manual de `vegad first-update`.
+- `first-update.done` é gravado pela rotina após o sucesso; o RPM não cria
+  esse marcador. Marcadores de versões anteriores são preservados, pois não
+  é possível distinguir com segurança sucesso real de dispensa antiga.
 - É `Type=exec`: o boot e o login não esperam a preparação terminar.
 
 ## Vega durante a preparação
@@ -54,8 +61,8 @@ e depois no próximo boot. O Zypper espera até 10 minutos por um lock
 
 ```sh
 journalctl -u vegad-first-update.service
-# repetir manualmente
-sudo rm /var/lib/vega/first-update.done
+# repetir manualmente (ou optar pela preparação em uma instalação dispensada)
+sudo rm -f /var/lib/vega/first-update.done /var/lib/vega/first-update.skipped
 sudo systemctl start vegad-first-update.service
 ```
 

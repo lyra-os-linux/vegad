@@ -76,6 +76,11 @@ func firstUpdateMarkerPath() string {
 	return defaultFirstUpdateMarkerPath
 }
 
+// Keep the exemption beside the completion marker, including in test roots.
+func firstUpdateSkipPath() string {
+	return filepath.Join(filepath.Dir(firstUpdateMarkerPath()), "first-update.skipped")
+}
+
 func trustedKeyringPath() string {
 	if path := os.Getenv("VEGAD_TRUSTED_KEYRING"); path != "" {
 		return path
@@ -107,6 +112,10 @@ func writeFirstUpdateMarker(path string) error {
 // already shipped. Package installation belongs to the normal Vega workflow.
 func RunFirstUpdateJob(activeProfile profile.Profile) error {
 	marker := firstUpdateMarkerPath()
+	if _, err := os.Stat(firstUpdateSkipPath()); err == nil {
+		log.Printf("vegad: preparação dos repositórios dispensada para instalação legada")
+		return nil
+	}
 	if _, err := os.Stat(marker); err == nil {
 		log.Printf("vegad: preparação dos repositórios já concluída (%s)", marker)
 		return nil
