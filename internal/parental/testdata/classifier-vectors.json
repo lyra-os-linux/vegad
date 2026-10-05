@@ -1,0 +1,86 @@
+[
+  {
+    "name": "ordinary",
+    "catalog": {
+      "schema": 1,
+      "revision": 1,
+      "accounts": [
+        {
+          "association": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identity": {
+            "user": "ordinaryuser",
+            "uid": 1002,
+            "gid": 100,
+            "group": "users"
+          },
+          "revision": 1,
+          "kind": "ordinary",
+          "state": "active",
+          "operation": "",
+          "barrier": false,
+          "policy": "",
+          "adapters": {}
+        }
+      ]
+    },
+    "digest": "35113bcc927587e35d5ac2f372004d8a26466f24bd90040fc2fc195d921814a8"
+  },
+  {
+    "name": "supervised",
+    "catalog": {
+      "schema": 1,
+      "revision": 1,
+      "accounts": [
+        {
+          "association": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identity": {
+            "user": "ordinaryuser",
+            "uid": 1002,
+            "gid": 100,
+            "group": "users"
+          },
+          "revision": 1,
+          "kind": "supervised",
+          "state": "active",
+          "operation": "",
+          "barrier": false,
+          "policy": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "adapters": {
+            "pam": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "flatpak": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        }
+      ]
+    },
+    "digest": "8ac0957361f30dcb19d22ea90c7b6dac99a8dba93af3c82622c75ef8627cedfd"
+  },
+  {
+    "name": "barrier",
+    "catalog": {
+      "schema": 1,
+      "revision": 1,
+      "accounts": [
+        {
+          "association": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "identity": {
+            "user": "ordinaryuser",
+            "uid": 1002,
+            "gid": 100,
+            "group": "users"
+          },
+          "revision": 1,
+          "kind": "ordinary",
+          "state": "active",
+          "operation": "cccccccccccccccccccccccccccccccc",
+          "barrier": true,
+          "policy": "",
+          "adapters": {}
+        }
+      ]
+    },
+    "digest": "35296d56b3c3e69801ee8dd6f0cdc302c6cc5a819c5cfe0f40f2a9b10bb86e3f"
+  }
+]
