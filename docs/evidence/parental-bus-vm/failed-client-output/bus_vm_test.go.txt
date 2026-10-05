@@ -1,0 +1,208 @@
+package parental
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
+)
+
+// Opt-in integration: controller installs narrow temporary bus/polkit policy,
+// restores accounts/configuration and checks backing/off outside this process.
+func TestAdministrativeBusDisposableVM(t *testing.T) {
+	if os.Getenv("LYRA_PARENTAL_BUS_VM") != "1" {
+		t.Skip("requires guarded disposable VM/controller")
+	}
+	kernel, e := os.ReadFile("/proc/cmdline")
+	serial, e2 := os.ReadFile("/sys/block/vda/serial")
+	if e != nil || e2 != nil || os.Geteuid() != 0 || !strings.Contains(string(kernel), "lyra.parental-identity-test=1") || strings.TrimSpace(string(serial)) != "lyra-admission-test" {
+		t.Fatal("wrong guest/disk/identity")
+	}
+	before, e := vmAccount(1002)
+	peer, e2 := vmAccount(1000)
+	if e != nil || e2 != nil || before.Identity.User != "ordinaryuser" || peer.Identity.User != "installeduser" {
+		t.Fatal("wrong accounts")
+	}
+	cases := []map[string]interface{}{}
+	for _, mode := range []string{"profile", "consumed", "noop-grant", "remove", "noop-remove", "deny", "cancel", "revoke", "catalog-change", "barrier", "replay", "unauthorized", "invalid"} {
+		t.Run(mode, func(t *testing.T) {
+			x := newFileFixture(t)
+			row := fixtureRow()
+			first(row)["identity"] = before.Identity
+			writePrivate(t, x.backend.catalog+"/catalog.json", encodeRow(t, row))
+			writePrivate(t, x.backend.inventory+"/1002.json", encodeRow(t, inventoryRow(before.Identity)))
+			proof, _ := json.Marshal(before.Identity)
+			writePrivate(t, x.backend.ledger+"/1002", proof)
+			conn, err := dbus.ConnectSystemBus()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			action := "org.lyraos.parental.gofixture.allow"
+			if mode == "deny" {
+				action = "org.lyraos.parental.gofixture.deny"
+			}
+			if mode == "cancel" {
+				action = "org.lyraos.parental.gofixture.challenge"
+			}
+			authority := NewBusAuthority(conn, action, action)
+			var mu sync.Mutex
+			capable := true
+			events := []map[string]interface{}{}
+			record := func(v map[string]interface{}) { mu.Lock(); defer mu.Unlock(); events = append(events, v) }
+			realCall := authority.call
+			authority.call = func(ctx context.Context, name string, path dbus.ObjectPath, member string, args ...interface{}) *dbus.Call {
+				if member != "org.freedesktop.PolicyKit1.Authority.CheckAuthorization" {
+					return realCall(ctx, name, path, member, args...)
+				}
+				assertReleased(t, x)
+				call := realCall(ctx, name, path, member, args...)
+				var result busAuthorization
+				err := call.Store(&result)
+				record(map[string]interface{}{"event": "polkit", "subject": args[0], "action": args[1], "details": args[2], "locks_free": true, "authorized": err == nil && result.Authorized, "error": err != nil})
+				if err == nil && result.Authorized {
+					switch mode {
+					case "revoke":
+						mu.Lock()
+						capable = false
+						mu.Unlock()
+					case "catalog-change":
+						row["revision"] = 2
+						writePrivate(t, x.backend.catalog+"/catalog.json", encodeRow(t, row))
+					case "barrier":
+						writePrivate(t, x.backend.ledger+"/.deny-1002", []byte("fixture intent"))
+					}
+				}
+				return call
+			}
+			planner := NewPlanner(NewReader(x.backend.catalog), authority.ResolveSender, func(uid uint32, assoc string) (bool, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				return capable && uid == 1000 && assoc == strings.Repeat("a", 32), nil
+			}, func(uid uint32) (Identity, error) { a, e := vmAccount(uid); return a.Identity, e })
+			guard := NewGuard(planner, x.backend, vmGroup)
+			adapter := NewUnixAdapter(vmAccount, vmGroup)
+			realRun := adapter.run
+			adapter.run = func(ctx context.Context, path string, args []string) error {
+				for _, lock := range x.locks {
+					probe(t, lock, unix.LOCK_EX, true)
+				}
+				probe(t, x.locks[2], unix.LOCK_SH, true)
+				err := realRun(ctx, path, args)
+				record(map[string]interface{}{"event": "unix", "path": path, "argv": args, "success": err == nil, "locks_held": true, "operation_exclusive": true})
+				return err
+			}
+			effect := func(method Method, a Account, p Parameters) error {
+				for _, lock := range x.locks {
+					probe(t, lock, unix.LOCK_EX, true)
+				}
+				record(map[string]interface{}{"event": "dispatch", "method": method, "locks_held": true})
+				return adapter.Apply(method, a, p)
+			}
+			service := NewAdministrativeService(guard, authority, effect)
+			name := "org.lyraos.ParentalGoFixture1"
+			path := dbus.ObjectPath("/org/lyraos/ParentalGoFixture1")
+			if err = conn.Export(service, path, name); err != nil {
+				t.Fatal(err)
+			}
+			reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
+			if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+				t.Fatal(reply, err)
+			}
+			who := "installeduser"
+			if mode == "unauthorized" {
+				who = "ordinaryuser"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 55*1000000000)
+			defer cancel()
+			output, err := exec.CommandContext(ctx, "/usr/sbin/runuser", "-u", who, "--", "/usr/bin/python3", "/run/lyra-parental-go-bus/client.py", mode).CombinedOutput()
+			if err != nil {
+				t.Fatal(err, string(output))
+			}
+			var response map[string]interface{}
+			if err = json.Unmarshal(output, &response); err != nil {
+				t.Fatal(err, string(output))
+			}
+			mu.Lock()
+			audit := append([]map[string]interface{}{}, events...)
+			mu.Unlock()
+			polkits, commands, dispatches := 0, 0, 0
+			for _, event := range audit {
+				switch event["event"] {
+				case "polkit":
+					polkits++
+				case "unix":
+					commands++
+				case "dispatch":
+					dispatches++
+				}
+			}
+			positive := mode == "profile" || mode == "consumed" || mode == "noop-grant" || mode == "remove" || mode == "noop-remove"
+			if positive {
+				if response["result"] != "OrdinaryMutationDispatched" || polkits != 1 || dispatches != 1 {
+					t.Fatal(response, audit)
+				}
+				expected := 1
+				if strings.HasPrefix(mode, "noop-") {
+					expected = 0
+				}
+				if commands != expected {
+					t.Fatal("commands", commands, audit)
+				}
+				if mode == "consumed" && response["repeat_error"] != administrativeErrorPrefix+string(Denied) {
+					t.Fatal(response)
+				}
+			} else {
+				code := Denied
+				if mode == "catalog-change" {
+					code = Conflict
+				}
+				if mode == "barrier" {
+					code = Blocked
+				}
+				if mode == "invalid" {
+					code = InvalidParameters
+				}
+				if mode == "cancel" {
+					code = AuthorizationFailure
+				}
+				if response["error"] != administrativeErrorPrefix+string(code) || commands != 0 || dispatches != 0 {
+					t.Fatal(response, audit)
+				}
+				expected := 1
+				if mode == "replay" || mode == "unauthorized" || mode == "invalid" {
+					expected = 0
+				}
+				if polkits != expected {
+					t.Fatal(polkits, audit)
+				}
+				if mode == "cancel" && len(response["agent_calls"].([]interface{})) != 1 {
+					t.Fatal(response)
+				}
+			}
+			now, err := vmAccount(1002)
+			other, err2 := vmAccount(1000)
+			if err != nil || err2 != nil || now.Identity != before.Identity || other.Identity != peer.Identity || other.FullName != peer.FullName || !equalVMGroups(other.Supplementary, peer.Supplementary) {
+				t.Fatal("identity/peer changed")
+			}
+			assertReleased(t, x)
+			cases = append(cases, map[string]interface{}{"case": mode, "response": response, "events": audit, "commands": commands, "dispatches": dispatches, "polkit_checks": polkits, "identity_preserved": true, "peer_preserved": true})
+		})
+	}
+	if t.Failed() {
+		return
+	}
+	data, err := json.Marshal(map[string]interface{}{"passed": true, "cases": cases, "real_dbus": true, "real_polkit": true, "real_unix_effects": true, "root_owned_backend": true, "authoritative_pam_proof": false, "guardian_binding": false, "password_authentication": false, "production_integrated": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile("/root/lyra-go-bus-test/go-result.json", data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}

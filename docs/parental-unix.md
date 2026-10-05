@@ -46,3 +46,7 @@ Next: real system D-Bus/Polkit composition in Go. Bootstrap/writer/recovery,
 authoritative proof/generation format, guardian roles, lifecycle, enforcement,
 rollback and existing ordinary-account preservation still gate activation and
 local installation. No RPM or host install occurred here.
+
+The [Go D-Bus/Polkit composition](parental-bus.md) now qualifies the experimental
+transport with actual authorization in a separate disposable VM. Bootstrap,
+proof/lifecycle and other product gates remain open.
