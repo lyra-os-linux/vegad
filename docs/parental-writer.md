@@ -47,14 +47,13 @@ canonical/lock replacement, and actual subprocess exits after file fsync, rename
 and directory fsync. A crash before rename can leave a random temporary file;
 readers and writers ignore it instead of adopting or automatically deleting it.
 These are process-interruption tests, not reboot or physical power-loss tests.
-The default root factory rejects an unprivileged fixture; a positive root-owned
-VM qualification of this new writer remains pending. Normal/race/vet/repository
+The default root factory rejects an unprivileged fixture. A separate
+[root-owned VM qualification](evidence/parental-writer-vm/README.md) now passes
+actual process contention, reader Busy, three process cuts and peer preservation. Normal/race/vet/repository
 and Go1.22 checks passed. Earlier Unix/Polkit VM receipts remain historical gates,
 not qualification of this new writer.
 
-Next: qualify this negative publication with root ownership and cross-process
-contention, then define trusted first-install/bootstrap and explicit recovery
-inputs. Directory absence, UID identity or an old local backup alone must never
+Next: define trusted first-install/bootstrap and explicit recovery inputs. Directory absence, UID identity or an old local backup alone must never
 create positive ordinary authority. Authoritative proof/generation, independent
 rollback reference, producer coverage and lifecycle integration remain required
 before any product activation or host installation.
