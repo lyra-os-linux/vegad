@@ -81,10 +81,11 @@ lease release without writes. Normal repository tests, vet and the new package's
 race checks passed locally. VM-only and optional integration gates remain
 separate; this change does not claim their completion.
 
-Next: server-owned plans bound to the actual sender, capability, catalog digest,
-identity, generation and revision, with bounded expiry and fresh revalidation.
-Then add durable writer/bootstrap/recovery and operation overlays before wiring
-administrative mutations. Gates #2/#5 and #6/#102 remain open. No RPM publication
+The [server-owned planner](parental-planner.md) now binds plans to live caller,
+capability, identity, revision and catalog digest, with expiry and fresh
+revalidation. Next: execution guard with durable operation overlays and plan
+consumption; qualify writer/bootstrap/recovery before wiring Unix mutations.
+Gates #2/#5 and #6/#102 remain open. No RPM publication
 or local product installation belongs to this read-only step. The maintainer has
 already authorized local installation after parental controls are complete and
 will create a new child/adolescent account for testing.
