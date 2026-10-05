@@ -90,3 +90,7 @@ Gates #2/#5 and #6/#102 remain open. No RPM publication
 or local product installation belongs to this read-only step. The maintainer has
 already authorized local installation after parental controls are complete and
 will create a new child/adolescent account for testing.
+
+A [negative-only catalog writer](parental-writer.md) now publishes a blocked
+recovering state for a known ordinary association. First-install/bootstrap,
+positive authority recovery and activation remain unimplemented.
