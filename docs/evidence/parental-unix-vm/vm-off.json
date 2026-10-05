@@ -1,0 +1,17 @@
+{
+  "vm_off": true,
+  "qemu_returncode": 0,
+  "backing_before": {
+    "sha256": "e1ed2ce143aa00331c1f5c15036516eb2fe313d1844dd1ceeee8b5cddf6e5c1d",
+    "size": 6442450944,
+    "inode": 2931975,
+    "mtime_ns": 1791197617390941997
+  },
+  "backing_after": {
+    "sha256": "e1ed2ce143aa00331c1f5c15036516eb2fe313d1844dd1ceeee8b5cddf6e5c1d",
+    "size": 6442450944,
+    "inode": 2931975,
+    "mtime_ns": 1791197617390941997
+  },
+  "same_disk": "/tmp/lyra-parental-go-unix-retry-20261005/system.qcow2"
+}

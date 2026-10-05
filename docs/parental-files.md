@@ -94,3 +94,8 @@ account preservation remain prerequisites to activating UsersService. Gates
 #2/#5/#6/#102, guardian roles, lifecycle, rollback, enforcement, GNOME, MAC and ISO
 remain open. Local installation after completing parental controls is already
 authorized for testing with the maintainer's new child/adolescent account.
+
+
+The [fixed Unix adapter and Go VM qualification](parental-unix.md) now cover
+three real commands and two no-ops with root-owned leases. Real Go D-Bus/Polkit
+and authoritative proof/bootstrap/recovery remain prerequisites to activation.

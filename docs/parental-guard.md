@@ -86,3 +86,8 @@ Targeted tests, race checks, normal repository tests, vet and Go 1.22 compatibil
 passed. Optional VM and system integration checks remain separate. Next: implement
 the fixed Unix adapter, qualify the Go flow in a guarded VM, and integrate real
 D-Bus/Polkit composition before enabling UsersService.
+
+
+The [fixed Unix adapter and Go VM qualification](parental-unix.md) now cover
+three real commands and two no-ops with root-owned leases. Real Go D-Bus/Polkit
+and authoritative proof/bootstrap/recovery remain prerequisites to activation.

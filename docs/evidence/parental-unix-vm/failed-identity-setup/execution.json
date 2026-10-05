@@ -1,0 +1,6 @@
+{
+  "id": "407256a4514147be9df451ad4af47129",
+  "rc": 1,
+  "stdout": "{\"passed\": false, \"restored\": true, \"cleanup\": true, \"error\": \"AssertionError((1, '=== RUN   TestUnixGuardDisposableVM\\\\n    unix_vm_test.go:102: fixture/local identity mismatch\\\\n--- FAIL: TestUnixGuardDisposableVM (0.00s)\\\\nFAIL\\\\n', ''))\"}\n",
+  "stderr": ""
+}

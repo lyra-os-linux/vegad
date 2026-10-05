@@ -1,0 +1,5 @@
+{
+  "returncode": 1,
+  "stdout": "=== RUN   TestUnixGuardDisposableVM\n    unix_vm_test.go:102: fixture/local identity mismatch\n--- FAIL: TestUnixGuardDisposableVM (0.00s)\nFAIL\n",
+  "stderr": ""
+}
