@@ -61,12 +61,14 @@ a catalog, inventory or operation lease; concurrent durable state may change
 immediately afterward. It cannot be used directly as permission to invoke
 `usermod`, `gpasswd`, `userdel` or a parental admission action.
 
-The next guard must bind method/parameters/inventory/negative operation state,
-release leases for fresh Polkit interaction, revalidate under the final leases,
-and consume the plan before any effect. Durable writer/bootstrap/recovery must
-also preserve existing ordinary accounts before that guard is enabled in the
-production service. Create/Remove/password/photo, guardian roles, enforcement
-and rollback qualification remain separate open gates (#2/#5/#6/#102).
+The [administrative guard](parental-guard.md) now binds method, parameters,
+inventory and negative operation state through a trusted lease backend interface.
+The concrete filesystem backend and Unix adapter still need qualification.
+It releases leases for fresh authorization, revalidates under final leases,
+and consumes both plans before dispatch. Durable writer/bootstrap/recovery must
+preserve existing ordinary accounts before production activation. Create/Remove/
+password/photo, guardian roles, enforcement and rollback qualification remain
+separate open gates (#2/#5/#6/#102).
 
 Tests cover denied-before-lookup behavior, sender replacement, caller UID and
 identity changes, catalog revisions/generation/barrier changes, expiry during

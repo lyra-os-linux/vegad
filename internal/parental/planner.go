@@ -54,6 +54,7 @@ type Planner struct {
 	observeIdentity func(uint32) (Identity, error)
 	mu              sync.Mutex
 	plans           map[string]Plan
+	running         map[string]bool
 	clock           func() time.Duration
 	last            time.Duration
 	identifier      func() (string, error)
@@ -244,4 +245,23 @@ func (p *Planner) Validate(sender, identifier string) (Plan, error) {
 		return Plan{}, err
 	}
 	return plan, nil
+}
+
+// Association reservation spans interaction and dispatch, shared by all guards.
+func (p *Planner) beginMutation(plan Plan) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running == nil {
+		p.running = map[string]bool{}
+	}
+	if p.running[plan.association] {
+		return Busy
+	}
+	p.running[plan.association] = true
+	return nil
+}
+func (p *Planner) endMutation(plan Plan) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.running, plan.association)
 }
