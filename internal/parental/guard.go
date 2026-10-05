@@ -20,7 +20,7 @@ type MutationState struct {
 
 // MutationLeases must synchronously call visit once with all leases held,
 // release on every return, and return the visitor's error unchanged. Final calls
-// need an exclusive operation lease. No concrete filesystem backend exists yet.
+// need an exclusive operation lease. FileLeases supplies the Linux backend.
 type MutationLeases interface {
 	WithLease(Plan, bool, func(MutationState) error) error
 }
@@ -116,7 +116,7 @@ func (g *Guard) withState(plan Plan, exclusive bool, visit func(MutationState) e
 }
 func safeLeaseError(err error) error {
 	switch err {
-	case Denied, Conflict, Busy, Blocked, RecoveryRequired, InvalidIdentity, InvalidCatalog, UnsafeCatalog, UnsupportedProducer, InvalidClock, StorageFailure:
+	case Denied, Conflict, Busy, Blocked, RecoveryRequired, InvalidIdentity, InvalidCatalog, UnsafeCatalog, UnsupportedProducer, InvalidClock, StorageFailure, UnsafeState, InvalidInventory:
 		return err
 	}
 	return StorageFailure

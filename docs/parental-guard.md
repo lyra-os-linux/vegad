@@ -2,9 +2,9 @@
 
 `internal/parental.Guard` adds the method/parameter envelope and execution
 sequence to the [server-owned planner](parental-planner.md). This is internal Go
-code without a D-Bus API, Polkit action, filesystem lease implementation or Unix
-effect adapter installed in the product. Tests use synchronous lease fixtures
-and effects that record dispatch; no host user account is modified.
+code without a D-Bus API, Polkit action, Unix effect adapter installed in the product. The [filesystem backend](parental-files.md)
+now implements leases, including guard tests with real files and flocks. Effects
+still record dispatch; no host user account is modified.
 
 ## Closed methods and parameters
 
@@ -69,12 +69,12 @@ The guard refuses missing/duplicate visits, swallowed visitor failures and
 unexpected backend errors; this does not turn an untrusted backend into proof
 that real locks are held.
 
-The current backend fixtures qualify sequencing, copies, retries, final state
-changes, failure handling and concurrency only. A concrete root-file backend,
-proof/inventory parsing, stable lock inodes and release behavior still require
-implementation and tests. NSS group recreation with the same tuple, external
-noncooperating writers, guardian-role synchronization and concurrent system
-changes are not solved by a parameter digest or these memory reservations.
+The memory fixtures qualify sequencing and concurrency. The concrete
+[filesystem backend](parental-files.md) additionally validates kernel locks,
+negative precedence, metadata, canonical inventory and explicit proof decoding.
+The authoritative PAM proof/generation format, root-VM effects and producer
+coverage still need qualification. NSS group recreation with the same tuple,
+external noncooperating writers and guardian-role synchronization remain open.
 
 The production service remains unchanged until writer/bootstrap/recovery and
 ordinary-account preservation are qualified. Gates #2/#5/#6/#102, supervised
@@ -84,5 +84,5 @@ parental controls are complete, using a new local child/adolescent test account.
 
 Targeted tests, race checks, normal repository tests, vet and Go 1.22 compatibility
 passed. Optional VM and system integration checks remain separate. Next: implement
-the concrete filesystem lease backend, then the fixed Unix adapter and real
+the fixed Unix adapter, qualify the Go flow in a guarded VM, and integrate real
 D-Bus/Polkit composition before enabling UsersService.

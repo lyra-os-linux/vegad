@@ -63,7 +63,8 @@ immediately afterward. It cannot be used directly as permission to invoke
 
 The [administrative guard](parental-guard.md) now binds method, parameters,
 inventory and negative operation state through a trusted lease backend interface.
-The concrete filesystem backend and Unix adapter still need qualification.
+The [filesystem backend](parental-files.md) now has real file/lock tests.
+Unix effects and the complete Go flow in a guarded VM still need qualification.
 It releases leases for fresh authorization, revalidates under final leases,
 and consumes both plans before dispatch. Durable writer/bootstrap/recovery must
 preserve existing ordinary accounts before production activation. Create/Remove/

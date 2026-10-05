@@ -84,8 +84,8 @@ separate; this change does not claim their completion.
 The [server-owned planner](parental-planner.md) now binds plans to live caller,
 capability, identity, revision and catalog digest, with expiry and fresh
 revalidation. The [execution guard](parental-guard.md) now seals parameters and consumes plans
-before effects through a trusted backend interface. Next: concrete filesystem
-leases and Unix adapter; qualify writer/bootstrap/recovery before activation.
+before effects with a [concrete filesystem backend](parental-files.md). Next: Unix adapter and
+Go VM qualification; qualify writer/bootstrap/recovery before activation.
 Gates #2/#5 and #6/#102 remain open. No RPM publication
 or local product installation belongs to this read-only step. The maintainer has
 already authorized local installation after parental controls are complete and
