@@ -5,6 +5,11 @@ subvolume, diretório, lock, pin ou primeira referência; não adota temporário
 não reconstrói ownership de NSS, não escreve catálogo nem concede admissão.
 O próximo gate de provisionamento continua aberto.
 
+A biblioteca de primeira emissão está implementada em
+[parental-reference-provisioning.md](parental-reference-provisioning.md), com
+testes de interrupção de processo em armazenamento de fixture. Sua qualificação
+em VM/Btrfs real e integração com a prova do instalador continuam pendentes.
+
 Advance exige snapshot esperado completo, próximo RecoveryReference validado,
 operation ID e callback de revalidação. A sequência aumenta exatamente uma unidade;
 revisão do catálogo aumenta, instalação permanece igual, próximo modo é

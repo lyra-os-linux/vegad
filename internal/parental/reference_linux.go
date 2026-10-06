@@ -121,6 +121,9 @@ func (s *FileReferenceSource) Snapshot(installation string) (reference RecoveryR
 	if reference.installation != installation || reference.sequence != pin.sequence || reference.digest != pin.digest {
 		return RecoveryReference{}, Conflict
 	}
+	if err = enrollmentMatches(lease, reference, pin); err != nil {
+		return RecoveryReference{}, err
+	}
 	// Read the pin again while holding the same shared lease. Noncooperating root
 	// writers are not made trustworthy by this check; mismatches still refuse.
 	afterData, err := lease.read("current.json", referencePinLimit)

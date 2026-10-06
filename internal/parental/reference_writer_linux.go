@@ -98,7 +98,8 @@ func noReferenceTransaction(l *directoryLease) error {
 	var s unix.Stat_t
 	e := unix.Fstatat(l.dir, referenceTransactionName, &s, unix.AT_SYMLINK_NOFOLLOW)
 	if errors.Is(e, unix.ENOENT) {
-		return nil
+		_, e = enrollmentState(l)
+		return e
 	}
 	return RecoveryRequired
 }
@@ -258,6 +259,9 @@ func (w *ReferenceWriter) pair(l *directoryLease) ([]byte, []byte, RecoveryRefer
 		return nil, nil, ref, referencePin{}, e
 	}
 	pin, e := decodeReferencePin(pinData)
+	if e == nil {
+		e = enrollmentMatches(l, ref, pin)
+	}
 	return data, pinData, ref, pin, e
 }
 func pinMatches(pin referencePin, ref RecoveryReference, issuer string) bool {
