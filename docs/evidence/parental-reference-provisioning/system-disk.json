@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "qemu-img",
+    "create",
+    "-f",
+    "qcow2",
+    "-F",
+    "qcow2",
+    "-b",
+    "/tmp/lyra-parental-snapper-20261006/system.qcow2",
+    "/tmp/lyra-parental-provision-20261006/system.qcow2"
+  ],
+  "returncode": 0,
+  "stdout": "Formatting '/tmp/lyra-parental-provision-20261006/system.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=6442450944 backing_file=/tmp/lyra-parental-snapper-20261006/system.qcow2 backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16\n",
+  "stderr": ""
+}

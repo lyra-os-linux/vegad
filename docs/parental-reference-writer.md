@@ -7,8 +7,8 @@ O próximo gate de provisionamento continua aberto.
 
 A biblioteca de primeira emissão está implementada em
 [parental-reference-provisioning.md](parental-reference-provisioning.md), com
-testes de interrupção de processo em armazenamento de fixture. Sua qualificação
-em VM/Btrfs real e integração com a prova do instalador continuam pendentes.
+testes de interrupção de processo e qualificação própria em VM/Btrfs real. A
+integração com a prova confiável do instalador continua pendente.
 
 Advance exige snapshot esperado completo, próximo RecoveryReference validado,
 operation ID e callback de revalidação. A sequência aumenta exatamente uma unidade;

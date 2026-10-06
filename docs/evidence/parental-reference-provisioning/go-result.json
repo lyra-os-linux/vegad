@@ -1,0 +1,27 @@
+{
+  "actual_btrfs_qualifier": true,
+  "actual_process_cuts": true,
+  "cases": [
+    "enrollment.json:durable",
+    "reference.json:durable",
+    "current.json:durable",
+    "enrollment-committed.json:durable"
+  ],
+  "catalog_unchanged": true,
+  "completed_loss_not_reseeded": true,
+  "default_root_factory": true,
+  "exact_resume_completed": true,
+  "installer_proof_fixture": true,
+  "issuer_fixture": true,
+  "maintenance_fixture": true,
+  "only_canonical_entries": true,
+  "passed": true,
+  "pending_reader_refused": true,
+  "permanent_markers_retained": true,
+  "production_integrated": false,
+  "provisioning_implemented": true,
+  "revoked_installer_proof_refused": true,
+  "same_lock_retained": true,
+  "unauthorized_resume_refused": true,
+  "wrong_operation_refused": true
+}

@@ -80,8 +80,16 @@ four real child exits without defers (seal, reference, pin and commit durability
 exact resume, eight injected fsync failures, missing/unsafe markers, refusal of
 completed loss, unchanged lock and markers across advancement, denial before
 topology access, revocation and incompatible prefixes. Process tests use private
-owner overrides and fixture topology/installer checks. **Qualification of this
-new provisioner with default root ownership and real Btrfs in a disposable VM
-is still pending.** Earlier VM receipts qualify the existing writer at their
-recorded commit, not this new source. Local installation and OBS publication
+owner overrides and fixture topology/installer checks. A separate disposable Leap 16.1 VM qualification now covers this provisioner
+with default root ownership and the real Btrfs domain qualifier: four child
+process exits, pending-reader refusal, exact authorized resume, refusal of a
+revoked installer proof, advancement retaining the markers and lock, and loss
+of reference/pin/both/lock without reseeding. Installer/issuer/maintenance checks
+remain fixtures. No production attestation integration or physical power-loss,
+reboot, Snapper rollback or SELinux enforcement is claimed. The guest was
+unmounted and shut down; accounts/policy state and all three backing images
+were unchanged. Exact sources, drivers and receipts are pinned in
+[evidence/parental-reference-provisioning/README.md](evidence/parental-reference-provisioning/README.md).
+Earlier VM receipts qualify the existing writer at their recorded commit,
+not this new source. Local installation and OBS publication
 remain gated on the complete parental product and its integration checks.
