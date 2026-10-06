@@ -75,3 +75,7 @@ then implement publication under leases with explicit authorization and durable
 negative recovery. First-install issuance, root storage provisioning, journal/
 anchor transaction, independent rollback reference, authoritative PAM generation,
 producer coverage and full lifecycle remain prerequisites before activation.
+
+A [filesystem reference source](parental-reference-files.md) now reads a root-only
+reference and its current pin with actual leases. Issuance and production storage-
+boundary qualification remain pending; no automatic bootstrap has been enabled.
