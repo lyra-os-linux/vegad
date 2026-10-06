@@ -57,3 +57,7 @@ Next: define trusted first-install/bootstrap and explicit recovery inputs. Direc
 create positive ordinary authority. Authoritative proof/generation, independent
 rollback reference, producer coverage and lifecycle integration remain required
 before any product activation or host installation.
+
+The [reference inspector](parental-reference.md) now validates distinct first-install
+and blocked-recovery statements without publishing or reopening accounts. The
+actual trusted issuer/storage and authorized publication remain pending.
