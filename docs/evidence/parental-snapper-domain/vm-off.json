@@ -1,0 +1,34 @@
+{
+  "vm_off": true,
+  "pid": 27176,
+  "backing_before": {
+    "/tmp/lyra-parental-go-domain-20261006-retry2/system.qcow2": {
+      "sha256": "428273d6cbbd67f3ab6e00c62ced710810a7f557a5dd8d31b042c06a570f9292",
+      "size": 84934656,
+      "inode": 3556251,
+      "mtime_ns": 1791289688340993931
+    },
+    "/tmp/lyra-parental-identity-20260928/system.raw": {
+      "sha256": "e1ed2ce143aa00331c1f5c15036516eb2fe313d1844dd1ceeee8b5cddf6e5c1d",
+      "size": 6442450944,
+      "inode": 2931975,
+      "mtime_ns": 1791197617390941997
+    }
+  },
+  "backing_after": {
+    "/tmp/lyra-parental-go-domain-20261006-retry2/system.qcow2": {
+      "sha256": "428273d6cbbd67f3ab6e00c62ced710810a7f557a5dd8d31b042c06a570f9292",
+      "size": 84934656,
+      "inode": 3556251,
+      "mtime_ns": 1791289688340993931
+    },
+    "/tmp/lyra-parental-identity-20260928/system.raw": {
+      "sha256": "e1ed2ce143aa00331c1f5c15036516eb2fe313d1844dd1ceeee8b5cddf6e5c1d",
+      "size": 6442450944,
+      "inode": 2931975,
+      "mtime_ns": 1791197617390941997
+    }
+  },
+  "qemu_returncode": 0,
+  "qemu_exit_observed_by_exec": true
+}

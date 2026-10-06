@@ -1,0 +1,6 @@
+{
+  "id": "de3df92e5ea04dd1a2e2df6007517966",
+  "rc": 0,
+  "stdout": "snapper 0.12.1\nlibsnapper 7.4.3\nflags btrfs,no-bcachefs,lvm,no-ext4,xattrs,rollback,btrfs-quota,selinux\n",
+  "stderr": ""
+}

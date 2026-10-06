@@ -1,0 +1,22 @@
+{
+  "actual_btrfs_snapshot": true,
+  "after_witness": "24c88470c9bb397c29f968161b5e4dbd972e3554bc5e405d11aa2c8630fd94e5",
+  "authority_current_preserved": true,
+  "before_witness": "4664b09a20e0aaf353194968af9a4415e40cb534d0daaf4190a4b3cb6d16cd98",
+  "boot_rollback_qualified": false,
+  "catalog_rolled_back": true,
+  "default_root_source": true,
+  "issuer_fixture": true,
+  "missing_pin_refused": true,
+  "negative_recovery_diagnosis": true,
+  "nested_catalog_refused": true,
+  "old_reference_refused": true,
+  "passed": true,
+  "production_integrated": false,
+  "readonly_authority_refused": true,
+  "readonly_scope_refused": true,
+  "same_subvolume_refused": true,
+  "scope": "single-subvolume-only",
+  "snapper_config_bound": true,
+  "snapper_create": true
+}
