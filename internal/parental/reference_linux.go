@@ -96,6 +96,9 @@ func (s *FileReferenceSource) Snapshot(installation string) (reference RecoveryR
 			err = e
 		}
 	}()
+	if err = noReferenceTransaction(lease); err != nil {
+		return RecoveryReference{}, err
+	}
 	currentData, err := lease.read("current.json", referencePinLimit)
 	if err != nil {
 		return RecoveryReference{}, err
@@ -130,6 +133,9 @@ func (s *FileReferenceSource) Snapshot(installation string) (reference RecoveryR
 	after, e := s.qualify(s.directory, s.catalogDirectory)
 	if e != nil || after != boundary {
 		return RecoveryReference{}, Conflict
+	}
+	if err = noReferenceTransaction(lease); err != nil {
+		return RecoveryReference{}, err
 	}
 	if err = lease.stable(); err != nil {
 		return RecoveryReference{}, err

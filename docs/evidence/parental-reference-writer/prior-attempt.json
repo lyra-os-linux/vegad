@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "go_test_passed": true,
+  "reason": "guest receipt assertion inherited actual_btrfs_snapshot field from Snapper; expected actual_process_cuts",
+  "vm_off": true,
+  "qemu_returncode": 0,
+  "cleanup": true,
+  "backing_chain_unchanged": true
+}

@@ -1,0 +1,22 @@
+{
+  "actual_btrfs_qualifier": true,
+  "actual_process_cuts": true,
+  "cases": [
+    ".reference-transaction.json:durable",
+    "reference.json:durable",
+    "current.json:durable"
+  ],
+  "catalog_unchanged": true,
+  "default_root_factory": true,
+  "exact_resume_completed": true,
+  "issuer_fixture": true,
+  "journal_and_temps_cleared": true,
+  "maintenance_fixture": true,
+  "passed": true,
+  "pending_reader_refused": true,
+  "production_integrated": false,
+  "provisioning_implemented": false,
+  "same_lock_retained": true,
+  "unauthorized_resume_refused": true,
+  "wrong_operation_refused": true
+}

@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "=== RUN   TestReferenceWriterRootDisposableVM\n--- PASS: TestReferenceWriterRootDisposableVM (0.23s)\nPASS\n",
+  "stderr": ""
+}
