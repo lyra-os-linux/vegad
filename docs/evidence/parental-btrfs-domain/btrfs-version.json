@@ -1,0 +1,6 @@
+{
+  "id": "1f9dfba77c194a988264eb3c9d180c3b",
+  "rc": 0,
+  "stdout": "btrfs-progs v6.14\n-EXPERIMENTAL -INJECT -STATIC +LZO +ZSTD +UDEV +FSVERITY +ZONED CRYPTO=builtin\n",
+  "stderr": ""
+}

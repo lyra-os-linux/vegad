@@ -1,0 +1,19 @@
+{
+  "actual_btrfs_snapshot": true,
+  "after_witness": "f02d721180d5eaf766fa4c2c4f9a5c76c1e33cf81cc88964ae8bd8af795136bf",
+  "authority_current_preserved": true,
+  "before_witness": "73649d84657b930aa9e86203cdb2ac12a86be1b826968e5d29d3e28c02bf559e",
+  "catalog_rolled_back": true,
+  "default_root_source": true,
+  "issuer_fixture": true,
+  "missing_pin_refused": true,
+  "negative_recovery_diagnosis": true,
+  "nested_catalog_refused": true,
+  "old_reference_refused": true,
+  "passed": true,
+  "production_integrated": false,
+  "readonly_authority_refused": true,
+  "readonly_scope_refused": true,
+  "same_subvolume_refused": true,
+  "scope": "single-subvolume-only"
+}

@@ -1,0 +1,14 @@
+{
+  "btrfsprogs.rpm": {
+    "url": "https://cdn.opensuse.org/distribution/leap/16.1/repo/oss/x86_64/btrfsprogs-6.14-160100.2.2.x86_64.rpm",
+    "sha256": "8adac9409bcbb310beb46c0f2b1d38915109537c00d2b19e10e48efef9eb837d"
+  },
+  "btrfsprogs-udev-rules.rpm": {
+    "url": "https://cdn.opensuse.org/distribution/leap/16.1/repo/oss/noarch/btrfsprogs-udev-rules-6.14-160100.2.2.noarch.rpm",
+    "sha256": "3cd091e48baa550378f90c91d1a44527175584036b816e140c57055308997b16"
+  },
+  "libext2fs2.rpm": {
+    "url": "https://cdn.opensuse.org/distribution/leap/16.1/repo/oss/x86_64/libext2fs2-1.47.0-160100.2.1.x86_64.rpm",
+    "sha256": "27ae5293a013f09130e5fac79e4f4e531e300345afc9e7a2f61ff8e29e98cb55"
+  }
+}

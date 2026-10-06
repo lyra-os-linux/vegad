@@ -1,0 +1,6 @@
+{
+  "id": "062f4243bb734fb0b5180da1b07ff742",
+  "rc": 0,
+  "stdout": "'/root/lyra-go-domain-test/btrfsprogs-udev-rules.rpm' looks like an RPM file. Will try to use it.\n'/root/lyra-go-domain-test/btrfsprogs.rpm' looks like an RPM file. Will try to use it.\n'/root/lyra-go-domain-test/libext2fs2.rpm' looks like an RPM file. Will try to use it.\nLoading repository data...\nReading installed packages...\n'btrfsprogs-udev-rules = 0:6.14-160100.2.2' is already installed.\nNo update candidate for 'btrfsprogs-udev-rules-6.14-160100.2.2.noarch'. The highest available version is already installed.\n'btrfsprogs = 0:6.14-160100.2.2' is already installed.\nNo update candidate for 'btrfsprogs-6.14-160100.2.2.x86_64'. The highest available version is already installed.\n'libext2fs2 = 0:1.47.0-160100.2.1' is already installed.\nNo update candidate for 'libext2fs2-1.47.0-160100.2.1.x86_64'. The highest available version is already installed.\nResolving package dependencies...\nNothing to do.\n",
+  "stderr": ""
+}

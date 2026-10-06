@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "=== RUN   TestBtrfsDomainRootDisposableVM\n--- PASS: TestBtrfsDomainRootDisposableVM (0.12s)\nPASS\n",
+  "stderr": ""
+}

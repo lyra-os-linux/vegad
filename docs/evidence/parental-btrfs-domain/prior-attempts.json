@@ -1,0 +1,23 @@
+[
+  {
+    "passed": false,
+    "reason": "virtio serial longer than 20 bytes was truncated; safety guard refused before disk formatting",
+    "vm_off": true,
+    "qemu_pid": 13153,
+    "storage_formatting_attempted": false
+  },
+  {
+    "passed": false,
+    "reason": "guest lacks btrfs-progs; refused before formatting; fixture mount absent and account/policy state unchanged",
+    "first_qemu_off": true,
+    "storage_formatting_attempted": false
+  },
+  {
+    "passed": false,
+    "reason": "actual qualifier refused: filesystem show requires mounted root and property argv order needed correction",
+    "cleanup": true,
+    "system_state_unchanged": true,
+    "vm_off": true,
+    "qemu_returncode": 0
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "id": "10013519f16441e3a3f35cc3f4cb7f5e",
+  "rc": 0,
+  "stdout": "/root/lyra-go-domain-test/btrfsprogs-udev-rules.rpm: digests signatures OK\n/root/lyra-go-domain-test/btrfsprogs.rpm: digests signatures OK\n/root/lyra-go-domain-test/libext2fs2.rpm: digests signatures OK\n{\"btrfsprogs-udev-rules.rpm\": \"3cd091e48baa550378f90c91d1a44527175584036b816e140c57055308997b16\", \"btrfsprogs.rpm\": \"8adac9409bcbb310beb46c0f2b1d38915109537c00d2b19e10e48efef9eb837d\", \"libext2fs2.rpm\": \"27ae5293a013f09130e5fac79e4f4e531e300345afc9e7a2f61ff8e29e98cb55\"}\n",
+  "stderr": ""
+}

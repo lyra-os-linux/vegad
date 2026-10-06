@@ -74,3 +74,7 @@ rollback scope and qualify snapshot restoration in a disposable VM. Refuse an
 unsupported/same-domain layout. Then qualify authority provisioning and issuance
 journal/current-reference publication before connecting authorized bootstrap or
 blocked recovery. No client scan or NSS list may invent ordinary declarations.
+
+A qualificação conservadora de um único subvolume Btrfs está descrita em
+[parental-btrfs-domain.md](parental-btrfs-domain.md). Ela não qualifica automaticamente
+o Snapper/configuração de produção nem permite restaurar a autoridade junto ao catálogo.
