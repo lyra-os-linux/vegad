@@ -15,7 +15,8 @@ de autorizar lançamento. O servidor futuro deve fechar a conexão após uma
 requisição e não inferir permissão de um peer observado sem validação do
 registro parental e da geração da política.
 
-Testes host com Go 1.22.12 e prova de socket real em VM SELinux Enforcing:
+Testes host com Go 1.22.12 e provas de socket real em VM SELinux Enforcing:
 [evidência e verificador](evidence/parental-flatpak-admission/CURRENT.md).
-O positivo da VM usou contexto comum de fixture; a prova de domínio
-supervisionado e o enforcement de app ainda são gates abertos da issue #102.
+A segunda prova observou duas contas em domínios supervisionados distintos e
+recusou UID forjado em ambas. Ainda usa fixture `runcon`; vínculo com o catálogo,
+transferência de socket e enforcement de app continuam gates abertos da issue #102.

@@ -23,3 +23,24 @@ O runner restaurou SELinux Permissive, QEMU saiu com código 0 e a VM está OFF.
 `35a72ca497992d6cc46ddfd0b59396cbeb11bb9d3efafbd9d84b31e9d5f00435`.
 `result.json`, os logs da VM e `verify.py` neste diretório preservam o teste. Sem instalação no
 host, OBS, ISO ou integração de produto. Issue #102 segue aberta/NO-GO.
+
+## Continuação: dois domínios supervisionados em Enforcing
+
+Novo overlay descartável `/tmp/lyra-flatpak-supervised-peer-20261007/system.qcow2`
+usou a base com duas contas e domínios SELinux separados. Os clientes de teste
+foram executados como `parentaltest` (UID 1003, `lyra_test_child_a_t`) e
+`parentaltest2` (UID 1011, `lyra_test_child_b_t`). Em quatro casos, o serviço
+leu UID/GID/PID e contexto do kernel. O pedido válido de cada conta passou;
+o payload que declarava `uid:0` foi recusado em ambas. O teste Go correu com
+SELinux Enforcing, retornou PASS e registrou `product_integrated=false`.
+
+Esta prova usa `runcon` e clientes C em uma fixture. Não autentica o GDM,
+não vincula o peer ao catálogo parental, não resolve nem inicia Flatpak e não
+testa transferência de socket. Portanto, ainda não qualifica #102. Os arquivos
+`supervised-result.json`, `lyra-flatpak-supervised-peer-20261007-commands.jsonl`,
+`supervised-peer.cil`, `supervised-peer-client.c`, os runners e o verificador
+permitem revisar o ensaio. O runner restaurou Permissive, a VM desligou com
+QEMU exit 0, `qemu-img check` passou e a base permaneceu com o mesmo SHA256
+acima. Próximo: validar vínculo exato entre UID/GID/domínio e a geração ativa
+do catálogo, incluindo socket passado entre processos; depois qualificar
+ref/deployment e execução permitida/negada.

@@ -1,0 +1,11 @@
+; VM-only socket admission fixture. NOT a product policy.
+(type lyra_test_peer_sock_t)
+(typeattributeset file_type (lyra_test_peer_sock_t))
+(allow lyra_test_child_a_t self
+       (unix_stream_socket (create connect read write getattr getopt setopt shutdown)))
+(allow lyra_test_child_b_t self
+       (unix_stream_socket (create connect read write getattr getopt setopt shutdown)))
+(allow lyra_test_child_a_t lyra_test_peer_sock_t (sock_file (write getattr)))
+(allow lyra_test_child_b_t lyra_test_peer_sock_t (sock_file (write getattr)))
+(allow lyra_test_child_a_t unconfined_service_t (unix_stream_socket (connectto)))
+(allow lyra_test_child_b_t unconfined_service_t (unix_stream_socket (connectto)))
