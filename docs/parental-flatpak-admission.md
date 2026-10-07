@@ -35,3 +35,9 @@ a aprovação fica presa ao commit exato. O nome do remote não autentica o
 publicador. Ainda falta produzir esse inventário com identidade verificada e
 fixar app/runtime durante o lançamento; chamadas independentes a `flatpak
 info` não formam um snapshot atômico.
+
+O [ensaio com dois apps instalados](../../../analysis/2026-10-07/parental-flatpak-inventory/CURRENT.md)
+confirmou refs/commits completos e links `active` distintos, mas os remotes
+de fixture estão sem verificação GPG. Por isso, o caso sem publicador
+verificável continua limitado ao commit exato. O ensaio é diagnóstico e não
+fornece a fonte confiável exigida pelo seletor.
