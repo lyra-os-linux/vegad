@@ -1,0 +1,7 @@
+{
+  "rc": 0,
+  "stdout": "=== RUN   TestFlatpakRunArgsInDisposableVM\n=== RUN   TestFlatpakRunArgsInDisposableVM/a-valid\n    flatpak_run_args_vm_test.go:84: app=org.lyra.TestApp expected=true rc-success=true\n=== RUN   TestFlatpakRunArgsInDisposableVM/b-valid\n    flatpak_run_args_vm_test.go:84: app=org.lyra.TestAppB expected=true rc-success=true\n=== RUN   TestFlatpakRunArgsInDisposableVM/a-with-b-commit\n    flatpak_run_args_vm_test.go:84: app=org.lyra.TestApp expected=false rc-success=false\n=== RUN   TestFlatpakRunArgsInDisposableVM/a-with-wrong-runtime\n    flatpak_run_args_vm_test.go:84: app=org.lyra.TestApp expected=false rc-success=false\n--- PASS: TestFlatpakRunArgsInDisposableVM (0.15s)\n    --- PASS: TestFlatpakRunArgsInDisposableVM/a-valid (0.06s)\n    --- PASS: TestFlatpakRunArgsInDisposableVM/b-valid (0.04s)\n    --- PASS: TestFlatpakRunArgsInDisposableVM/a-with-b-commit (0.01s)\n    --- PASS: TestFlatpakRunArgsInDisposableVM/a-with-wrong-runtime (0.01s)\nPASS\n",
+  "stderr": "",
+  "enforcing": false,
+  "product_integrated": false
+}

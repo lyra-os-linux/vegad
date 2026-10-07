@@ -48,3 +48,8 @@ commits trocados ou inexistentes. Também mostrou que `--app-fd` pode fornecer
 o conteúdo de B ao pedir A. Logo, um futuro broker deve construir esses
 argumentos e FDs exclusivamente a partir da regra/inventário confiáveis, e o
 domínio da criança não pode executar `flatpak run` diretamente.
+
+`BuildFlatpakRunArgs` agora produz uma lista fechada de parâmetros a partir do
+deployment selecionado. O [teste no Flatpak 1.16.6](evidence/parental-flatpak-run-args/CURRENT.md)
+executou A e B com commits corretos e recusou app/runtime trocados. Rodou em
+Permissive com dados de fixture, sem broker, fonte autenticada ou política MAC.
