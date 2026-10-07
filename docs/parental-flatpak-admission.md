@@ -25,3 +25,13 @@ Enforcing recusou escrita por processo filho que herdou o socket, usando
 `SO_PASSCRED` para verificar o remetente de cada trecho. Ainda usa fixture
 `runcon`; login real, mudança de contexto no mesmo PID, lease de revogação e
 enforcement de app continuam gates abertos da issue #102.
+
+`ResolveFlatpakDeployment` é um seletor puro para um inventário **fornecido
+por fonte confiável**: recusa duas instalações do mesmo app, escopo/UID de
+usuário incompatível, mudança de origem ou publicador, ref incompleto, commit
+abreviado e runtime de arquitetura diferente. Uma assinatura/publicador
+verificado pode manter aprovação após atualização; sem identidade verificável,
+a aprovação fica presa ao commit exato. O nome do remote não autentica o
+publicador. Ainda falta produzir esse inventário com identidade verificada e
+fixar app/runtime durante o lançamento; chamadas independentes a `flatpak
+info` não formam um snapshot atômico.

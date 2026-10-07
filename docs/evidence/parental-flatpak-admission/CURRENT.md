@@ -66,3 +66,19 @@ restaurado; QEMU saiu 0, `qemu-img check` passou e backing manteve SHA256
 Ainda falta uma fonte de domínio vinculada ao login real, transição de contexto
 com o mesmo PID, controle de revogação atômico, resolução de deployment e
 lançamento confinado. #102 permanece OPEN/NO-GO; nenhuma instalação/publicação.
+
+## Continuação: seleção de ref/deployment
+
+`flatpak_resolve_linux.go` acrescenta uma função pura que recebe regra e
+inventário confiáveis do servidor. Ela exige ref completo, escopo/instalação,
+origem, identidade verificável de publicador (ou commit exato sem ela), commit
+completo, runtime completo e arquitetura compatível. Duas instalações do
+mesmo app, mesmo entre sistema e usuário, são ambíguas e recusadas. Testes Go
+passaram para atualização assinada, pin sem publicador, instalação por usuário
+e alterações de ref, branch, origem, assinatura, commit e runtime.
+
+No Flatpak 1.16.6 local, `flatpak list --columns=active:f` mostrou o commit
+abreviado; `flatpak info --show-commit` mostrou 64 caracteres. A função não
+usa essa saída como autoridade: ainda não há leitor atômico que ateste
+publicador e mantenha app/runtime fixos até o processo nascer. A implementação
+continua sem execução, instalação ou publicação; #102 OPEN/NO-GO.
