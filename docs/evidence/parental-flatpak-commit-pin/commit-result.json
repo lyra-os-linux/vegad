@@ -1,0 +1,45 @@
+{
+  "app_a_commit": "eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+  "app_b_commit": "cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+  "runtime_commit": "6ca13c4d0442c4dd401d8ff6d290892bf7b69e7c52d6dd91919dcd14dafc725a",
+  "cases": [
+    {
+      "name": "a-correct",
+      "app": "org.lyra.TestApp",
+      "commit": "eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+      "runtime_commit": "6ca13c4d0442c4dd401d8ff6d290892bf7b69e7c52d6dd91919dcd14dafc725a",
+      "rc": 0,
+      "stdout": "",
+      "stderr_tail": "el=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[594]: [session uid=1003 pid=594] Successfully activated service 'org.freedesktop.Flatpak'\ndbus-daemon[594]: [session uid=1003 pid=594] Activating service name='org.freedesktop.portal.Documents' requested by ':1.0' (uid=1003 pid=595 comm=\"/usr/bin/flatpak run --system --commit=eff611a7434\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[594]: [session uid=1003 pid=594] Activating service name='org.freedesktop.impl.portal.PermissionStore' requested by ':1.2' (uid=1003 pid=608 comm=\"/usr/libexec/xdg-document-portal\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[594]: [session uid=1003 pid=594] Successfully activated service 'org.freedesktop.impl.portal.PermissionStore'\ndbus-daemon[594]: [session uid=1003 pid=594] Successfully activated service 'org.freedesktop.portal.Documents'\ndbus-daemon[594]: [session uid=1003 pid=594] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=1003 pid=595 comm=\"/usr/bin/flatpak run --system --commit=eff611a7434\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[594]: [session uid=1003 pid=594] Successfully activated service 'org.a11y.Bus'\n"
+    },
+    {
+      "name": "b-correct",
+      "app": "org.lyra.TestAppB",
+      "commit": "cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+      "runtime_commit": "6ca13c4d0442c4dd401d8ff6d290892bf7b69e7c52d6dd91919dcd14dafc725a",
+      "rc": 0,
+      "stdout": "",
+      "stderr_tail": "el=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[644]: [session uid=1003 pid=644] Successfully activated service 'org.freedesktop.Flatpak'\ndbus-daemon[644]: [session uid=1003 pid=644] Activating service name='org.freedesktop.portal.Documents' requested by ':1.0' (uid=1003 pid=645 comm=\"/usr/bin/flatpak run --system --commit=cfcf4079a7e\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[644]: [session uid=1003 pid=644] Activating service name='org.freedesktop.impl.portal.PermissionStore' requested by ':1.2' (uid=1003 pid=658 comm=\"/usr/libexec/xdg-document-portal\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[644]: [session uid=1003 pid=644] Successfully activated service 'org.freedesktop.impl.portal.PermissionStore'\ndbus-daemon[644]: [session uid=1003 pid=644] Successfully activated service 'org.freedesktop.portal.Documents'\ndbus-daemon[644]: [session uid=1003 pid=644] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=1003 pid=645 comm=\"/usr/bin/flatpak run --system --commit=cfcf4079a7e\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[644]: [session uid=1003 pid=644] Successfully activated service 'org.a11y.Bus'\n"
+    },
+    {
+      "name": "a-with-b-commit",
+      "app": "org.lyra.TestApp",
+      "commit": "cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+      "runtime_commit": "6ca13c4d0442c4dd401d8ff6d290892bf7b69e7c52d6dd91919dcd14dafc725a",
+      "rc": 1,
+      "stdout": "",
+      "stderr_tail": "error: app/org.lyra.TestApp/x86_64/stable (commit cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a) not installed\n"
+    },
+    {
+      "name": "a-with-wrong-runtime",
+      "app": "org.lyra.TestApp",
+      "commit": "eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+      "runtime_commit": "0000000000000000000000000000000000000000000000000000000000000000",
+      "rc": 1,
+      "stdout": "",
+      "stderr_tail": "error: runtime/org.lyra.TestRuntime/x86_64/stable (commit 0000000000000000000000000000000000000000000000000000000000000000) not installed\n"
+    }
+  ],
+  "enforcing": false,
+  "product_integrated": false
+}

@@ -41,3 +41,10 @@ confirmou refs/commits completos e links `active` distintos, mas os remotes
 de fixture estão sem verificação GPG. Por isso, o caso sem publicador
 verificável continua limitado ao commit exato. O ensaio é diagnóstico e não
 fornece a fonte confiável exigida pelo seletor.
+
+O [ensaio de commit e FD](evidence/parental-flatpak-commit-pin/CURRENT.md)
+mostrou que `--commit` e `--runtime-commit` aceitam o par correto e recusam
+commits trocados ou inexistentes. Também mostrou que `--app-fd` pode fornecer
+o conteúdo de B ao pedir A. Logo, um futuro broker deve construir esses
+argumentos e FDs exclusivamente a partir da regra/inventário confiáveis, e o
+domínio da criança não pode executar `flatpak run` diretamente.

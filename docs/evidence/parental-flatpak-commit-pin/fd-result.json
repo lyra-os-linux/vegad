@@ -1,0 +1,21 @@
+{
+  "cases": [
+    {
+      "name": "a-files",
+      "rc": 1,
+      "stdout_tail": "",
+      "stderr_tail": "uested by ':1.0' (uid=1003 pid=712 comm=\"/usr/bin/flatpak run --system --app-fd=3 --command\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[711]: [session uid=1003 pid=711] Activating service name='org.freedesktop.impl.portal.PermissionStore' requested by ':1.2' (uid=1003 pid=725 comm=\"/usr/libexec/xdg-document-portal\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[711]: [session uid=1003 pid=711] Successfully activated service 'org.freedesktop.impl.portal.PermissionStore'\ndbus-daemon[711]: [session uid=1003 pid=711] Successfully activated service 'org.freedesktop.portal.Documents'\ndbus-daemon[711]: [session uid=1003 pid=711] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=1003 pid=712 comm=\"/usr/bin/flatpak run --system --app-fd=3 --command\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[711]: [session uid=1003 pid=711] Successfully activated service 'org.a11y.Bus'\nbwrap: execvp /app/bin/b-only: No such file or directory\n"
+    },
+    {
+      "name": "b-files",
+      "rc": 0,
+      "stdout_tail": "",
+      "stderr_tail": "ating service name='org.freedesktop.portal.Documents' requested by ':1.0' (uid=1003 pid=760 comm=\"/usr/bin/flatpak run --system --app-fd=3 --command\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[759]: [session uid=1003 pid=759] Activating service name='org.freedesktop.impl.portal.PermissionStore' requested by ':1.2' (uid=1003 pid=773 comm=\"/usr/libexec/xdg-document-portal\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[759]: [session uid=1003 pid=759] Successfully activated service 'org.freedesktop.impl.portal.PermissionStore'\ndbus-daemon[759]: [session uid=1003 pid=759] Successfully activated service 'org.freedesktop.portal.Documents'\ndbus-daemon[759]: [session uid=1003 pid=759] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=1003 pid=760 comm=\"/usr/bin/flatpak run --system --app-fd=3 --command\" label=\"system_u:system_r:unconfined_service_t:s0\")\ndbus-daemon[759]: [session uid=1003 pid=759] Successfully activated service 'org.a11y.Bus'\n"
+    }
+  ],
+  "requested_app": "org.lyra.TestApp",
+  "a_files": "/var/lib/flatpak/app/org.lyra.TestApp/x86_64/stable/eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353/files",
+  "b_files": "/var/lib/flatpak/app/org.lyra.TestAppB/x86_64/stable/cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a/files",
+  "enforcing": false,
+  "product_integrated": false
+}
