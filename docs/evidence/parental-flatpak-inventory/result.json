@@ -1,0 +1,113 @@
+{
+  "apps": {
+    "org.lyra.TestApp": {
+      "ref": {
+        "rc": 0,
+        "value": "app/org.lyra.TestApp/x86_64/stable",
+        "stderr": ""
+      },
+      "commit": {
+        "rc": 0,
+        "value": "eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+        "stderr": ""
+      },
+      "origin": {
+        "rc": 0,
+        "value": "lyra-parental-fixture",
+        "stderr": ""
+      },
+      "runtime": {
+        "rc": 0,
+        "value": "org.lyra.TestRuntime/x86_64/stable",
+        "stderr": ""
+      },
+      "location": {
+        "rc": 0,
+        "value": "/var/lib/flatpak/app/org.lyra.TestApp/x86_64/stable/eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+        "stderr": ""
+      },
+      "deployment_dir_exists": true,
+      "deployment_files": [
+        "deploy",
+        "export",
+        "files",
+        "metadata"
+      ],
+      "active_symlink": true,
+      "active_target": "eff611a743401bd6609dfb54b3292e3ed014d54b4b66e1791c250b7f601f4353",
+      "deploy_size": 201,
+      "deploy_first_bytes_hex": "6c7972612d706172"
+    },
+    "org.lyra.TestAppB": {
+      "ref": {
+        "rc": 0,
+        "value": "app/org.lyra.TestAppB/x86_64/stable",
+        "stderr": ""
+      },
+      "commit": {
+        "rc": 0,
+        "value": "cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+        "stderr": ""
+      },
+      "origin": {
+        "rc": 0,
+        "value": "lyra-two-app-fixture",
+        "stderr": ""
+      },
+      "runtime": {
+        "rc": 0,
+        "value": "org.lyra.TestRuntime/x86_64/stable",
+        "stderr": ""
+      },
+      "location": {
+        "rc": 0,
+        "value": "/var/lib/flatpak/app/org.lyra.TestAppB/x86_64/stable/cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+        "stderr": ""
+      },
+      "deployment_dir_exists": true,
+      "deployment_files": [
+        "deploy",
+        "export",
+        "files",
+        "metadata"
+      ],
+      "active_symlink": true,
+      "active_target": "cfcf4079a7e104e5a4e2883a7f7b95eb70aec347ff6ab0a124848a4f1e60fa5a",
+      "deploy_size": 201,
+      "deploy_first_bytes_hex": "6c7972612d74776f"
+    }
+  },
+  "repository": {
+    "section_names": [
+      "[core]",
+      "[remote \"lyra-parental-fixture\"]",
+      "[remote \"lyra-two-app-fixture\"]"
+    ],
+    "field_names": [
+      "repo_version",
+      "mode",
+      "min-free-space-size",
+      "xa.pinned",
+      "gpg-verify",
+      "gpg-verify-summary",
+      "url",
+      "gpg-verify",
+      "gpg-verify-summary",
+      "url"
+    ],
+    "remotes": {
+      "remote \"lyra-parental-fixture\"": {
+        "gpg-verify": "false",
+        "gpg-verify-summary": "false"
+      },
+      "remote \"lyra-two-app-fixture\"": {
+        "gpg-verify": "false",
+        "gpg-verify-summary": "false"
+      }
+    }
+  },
+  "runtime_commit": {
+    "rc": 0,
+    "value": "6ca13c4d0442c4dd401d8ff6d290892bf7b69e7c52d6dd91919dcd14dafc725a"
+  }
+}
