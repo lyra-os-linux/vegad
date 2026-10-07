@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static int write_all(int fd, const unsigned char *data, size_t length) {
@@ -19,7 +20,7 @@ static int write_all(int fd, const unsigned char *data, size_t length) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3 || (strcmp(argv[2], "valid") != 0 && strcmp(argv[2], "spoof") != 0))
+    if (argc != 3 || (strcmp(argv[2], "valid") != 0 && strcmp(argv[2], "spoof") != 0 && strcmp(argv[2], "fork") != 0))
         return 64;
     static const char valid[] = "{\"app_id\":\"org.lyra.TestApp\"}";
     static const char spoof[] = "{\"app_id\":\"org.lyra.TestApp\",\"uid\":0}";
@@ -33,6 +34,19 @@ int main(int argc, char **argv) {
     strcpy(address.sun_path, argv[1]);
     if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
         perror("connect"); close(fd); return 2;
+    }
+    if (strcmp(argv[2], "fork") == 0) {
+        pid_t sender = fork();
+        if (sender < 0) { perror("fork"); close(fd); return 4; }
+        if (sender > 0) {
+            int status;
+            printf("connected-pid=%ld sender-pid=%ld\n", (long)getpid(), (long)sender);
+            fflush(stdout);
+            close(fd);
+            if (waitpid(sender, &status, 0) != sender || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+                return 5;
+            return 0;
+        }
     }
     unsigned char header[2] = {(unsigned char)(length >> 8), (unsigned char)length};
     int result = write_all(fd, header, sizeof(header)) ||

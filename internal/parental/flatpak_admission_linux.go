@@ -101,9 +101,9 @@ func ObserveFlatpakLaunchPeer(conn *net.UnixConn) (FlatpakLaunchPeer, error) {
 	return peer, nil
 }
 
-// ReadFlatpakLaunchRequest has one bounded read per connection. The caller
-// must authenticate the observed peer against the live parental registry and
-// resolve the app to a pinned deployment before any process can be started.
+// ReadFlatpakLaunchRequest accepts one bounded frame per connection. The
+// caller must bind the observed peer to the live parental registry and resolve
+// the app to a pinned deployment before any process can be started.
 func ReadFlatpakLaunchRequest(conn *net.UnixConn) (FlatpakLaunchPeer, FlatpakLaunchRequest, error) {
 	peer, err := ObserveFlatpakLaunchPeer(conn)
 	if err != nil {
@@ -113,17 +113,8 @@ func ReadFlatpakLaunchRequest(conn *net.UnixConn) (FlatpakLaunchPeer, FlatpakLau
 		return FlatpakLaunchPeer{}, FlatpakLaunchRequest{}, InvalidFlatpakLaunchRequest
 	}
 	defer conn.SetReadDeadline(time.Time{})
-	var header [2]byte
-	if _, err = io.ReadFull(conn, header[:]); err != nil {
-		return FlatpakLaunchPeer{}, FlatpakLaunchRequest{}, InvalidFlatpakLaunchRequest
-	}
-	length := int(binary.BigEndian.Uint16(header[:]))
-	if length == 0 || length > maxFlatpakLaunchFrame {
-		return FlatpakLaunchPeer{}, FlatpakLaunchRequest{}, InvalidFlatpakLaunchRequest
-	}
-	frame := make([]byte, length+2)
-	copy(frame, header[:])
-	if _, err = io.ReadFull(conn, frame[2:]); err != nil {
+	frame, err := readFlatpakFrameFromPeer(conn, peer)
+	if err != nil {
 		return FlatpakLaunchPeer{}, FlatpakLaunchRequest{}, InvalidFlatpakLaunchRequest
 	}
 	request, err := ParseFlatpakLaunchFrame(frame)
@@ -131,4 +122,48 @@ func ReadFlatpakLaunchRequest(conn *net.UnixConn) (FlatpakLaunchPeer, FlatpakLau
 		return FlatpakLaunchPeer{}, FlatpakLaunchRequest{}, err
 	}
 	return peer, request, nil
+}
+
+// SO_PEERCRED identifies the process that connected. SO_PASSCRED additionally
+// identifies the sender of each received chunk, so a socket inherited or
+// transferred after connect cannot carry a request from a different PID.
+func readFlatpakFrameFromPeer(conn *net.UnixConn, peer FlatpakLaunchPeer) ([]byte, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return nil, InvalidFlatpakLaunchRequest
+	}
+	var socketErr error
+	if err := raw.Control(func(fd uintptr) {
+		socketErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_PASSCRED, 1)
+	}); err != nil || socketErr != nil {
+		return nil, InvalidFlatpakLaunchRequest
+	}
+	frame := make([]byte, maxFlatpakLaunchFrame+2)
+	used := 0
+	want := 2
+	for used < want {
+		control := make([]byte, unix.CmsgSpace(unix.SizeofUcred))
+		n, oobn, flags, _, err := conn.ReadMsgUnix(frame[used:want], control)
+		if err != nil || n == 0 || flags&(unix.MSG_CTRUNC|unix.MSG_TRUNC) != 0 {
+			return nil, InvalidFlatpakLaunchRequest
+		}
+		messages, err := unix.ParseSocketControlMessage(control[:oobn])
+		if err != nil || len(messages) != 1 || messages[0].Header.Level != unix.SOL_SOCKET ||
+			messages[0].Header.Type != unix.SCM_CREDENTIALS {
+			return nil, InvalidFlatpakLaunchRequest
+		}
+		sender, err := unix.ParseUnixCredentials(&messages[0])
+		if err != nil || sender.Pid != peer.PID || sender.Uid != peer.UID || sender.Gid != peer.GID {
+			return nil, InvalidFlatpakLaunchRequest
+		}
+		used += n
+		if used == 2 {
+			length := int(binary.BigEndian.Uint16(frame[:2]))
+			if length == 0 || length > maxFlatpakLaunchFrame {
+				return nil, InvalidFlatpakLaunchRequest
+			}
+			want = length + 2
+		}
+	}
+	return frame[:want], nil
 }

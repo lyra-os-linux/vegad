@@ -41,7 +41,7 @@ func TestSupervisedFlatpakLaunchPeerInDisposableVM(t *testing.T) {
 		{"parentaltest", "a", "1003"},
 		{"parentaltest2", "b", "1011"},
 	} {
-		for _, mode := range []string{"valid", "spoof"} {
+		for _, mode := range []string{"valid", "spoof", "fork"} {
 			t.Run(account.suffix+"-"+mode, func(t *testing.T) {
 				identity, err := user.Lookup(account.name)
 				if err != nil || identity.Uid != account.uid {
@@ -98,6 +98,11 @@ func TestSupervisedFlatpakLaunchPeerInDisposableVM(t *testing.T) {
 				if mode == "spoof" {
 					if !errors.Is(readErr, InvalidFlatpakLaunchRequest) {
 						t.Fatalf("spoof accepted: %+v %+v %v", peer, request, readErr)
+					}
+				} else if mode == "fork" {
+					if !errors.Is(readErr, InvalidFlatpakLaunchRequest) ||
+						!strings.Contains(output.String(), fmt.Sprintf("connected-pid=%d sender-pid=", observed.PID)) {
+						t.Fatalf("transferred socket accepted or fixture invalid: %+v %+v %v output=%s", peer, request, readErr, output.String())
 					}
 				} else if readErr != nil || peer != observed || request.AppID != "org.lyra.TestApp" {
 					t.Fatalf("valid request failed: %+v %+v %v", peer, request, readErr)

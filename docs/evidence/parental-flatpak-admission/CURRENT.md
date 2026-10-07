@@ -44,3 +44,25 @@ QEMU exit 0, `qemu-img check` passou e a base permaneceu com o mesmo SHA256
 acima. Próximo: validar vínculo exato entre UID/GID/domínio e a geração ativa
 do catálogo, incluindo socket passado entre processos; depois qualificar
 ref/deployment e execução permitida/negada.
+
+## Continuação: catálogo e remetente dos bytes
+
+`BindFlatpakLaunchPeer` reutiliza `Classify` para exigir conta supervisionada
+ativa, identidade local exata e geração/política dos adaptadores aplicada. Exige
+também GID e domínio SELinux exatos de uma observação confiável do servidor;
+devolve associação, geração, revisão e digest do snapshot. Testes locais cobrem
+duas contas, domínio/GID incorreto, geração defasada, barreira e conta comum.
+Isto é somente um vínculo de snapshot, não uma capacidade para executar app.
+
+`ReadFlatpakLaunchRequest` passou a ativar `SO_PASSCRED` e comparar PID/UID/GID
+do remetente de **cada trecho recebido** com `SO_PEERCRED` da conexão. Novo
+overlay `/tmp/lyra-flatpak-sender-20261007/system.qcow2` executou seis casos
+em Enforcing: pedidos válidos das contas A/B passaram; UID forjado e escrita
+por processo filho que herdou o socket foram recusados nas duas contas.
+`sender-result.json`, logs e `verify.py` registram o ensaio. Permissive foi
+restaurado; QEMU saiu 0, `qemu-img check` passou e backing manteve SHA256
+`35a72ca497992d6cc46ddfd0b59396cbeb11bb9d3efafbd9d84b31e9d5f00435`.
+
+Ainda falta uma fonte de domínio vinculada ao login real, transição de contexto
+com o mesmo PID, controle de revogação atômico, resolução de deployment e
+lançamento confinado. #102 permanece OPEN/NO-GO; nenhuma instalação/publicação.

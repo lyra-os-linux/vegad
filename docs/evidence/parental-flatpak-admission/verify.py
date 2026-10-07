@@ -42,4 +42,21 @@ assert any(item['argv'] == ['getenforce']
            and item['result']['stdout'].strip() == 'Permissive' for item in supervised_commands)
 assert any(item['argv'] == ['systemctl', 'poweroff']
            and item['result']['rc'] == 0 for item in supervised_commands)
-print('PASS: kernel peers in two SELinux domains; forged UIDs rejected; VMs restored and powered off')
+
+sender = json.loads((here / 'sender-result.json').read_text())
+assert sender['rc'] == 0 and sender['enforcing'] is True
+assert sender['product_integrated'] is False and not sender['stderr']
+for suffix, uid in (('a', 1003), ('b', 1011)):
+    context = f'system_u:system_r:lyra_test_child_{suffix}_t:s0'
+    for mode in ('valid', 'spoof', 'fork'):
+        assert f'UID={uid} SELinux={context} mode={mode}' in sender['stdout']
+        assert f'--- PASS: TestSupervisedFlatpakLaunchPeerInDisposableVM/{suffix}-{mode}' in sender['stdout']
+sender_commands = [json.loads(line) for line in
+    (here / 'lyra-flatpak-sender-20261007-commands.jsonl').read_text().splitlines()]
+assert any(item['argv'] == ['python3', '/mnt/lyra-hostshare/run-supervised-vm.py']
+           and item['result']['rc'] == 0 for item in sender_commands)
+assert any(item['argv'] == ['getenforce']
+           and item['result']['stdout'].strip() == 'Permissive' for item in sender_commands)
+assert any(item['argv'] == ['systemctl', 'poweroff']
+           and item['result']['rc'] == 0 for item in sender_commands)
+print('PASS: two child domains, forged UIDs and forked socket sender denied; VMs powered off')
