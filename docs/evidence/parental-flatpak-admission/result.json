@@ -1,0 +1,7 @@
+{
+  "rc": 0,
+  "stdout": "=== RUN   TestFlatpakLaunchPeerInDisposableVM\n=== RUN   TestFlatpakLaunchPeerInDisposableVM/valid\n    flatpak_admission_vm_test.go:91: kernel UID=1003 SELinux=system_u:system_r:unconfined_service_t:s0\n=== RUN   TestFlatpakLaunchPeerInDisposableVM/spoof\n--- PASS: TestFlatpakLaunchPeerInDisposableVM (0.04s)\n    --- PASS: TestFlatpakLaunchPeerInDisposableVM/valid (0.02s)\n    --- PASS: TestFlatpakLaunchPeerInDisposableVM/spoof (0.02s)\nPASS\n",
+  "stderr": "",
+  "enforcing": true,
+  "product_integrated": false
+}
