@@ -59,5 +59,15 @@ inventário, gate da conta) e revalida peer, geração, prova local, adaptadores
 e marcadores de bloqueio antes de entregar um callback síncrono. Testes com
 arquivos reais confirmam que os locks ficam retidos e que mudanças entre o
 vínculo inicial e esse callback falham fechadas. O código ainda não chama o
-Flatpak, não verifica uma aprovação de app e não cobre escritores que ignorem
-esses locks nem uma mudança de contexto SELinux no mesmo PID.
+Flatpak e não cobre escritores que ignorem esses locks nem uma mudança de
+contexto SELinux no mesmo PID.
+
+O lease agora lê `UID.flatpak.json` sob o lock do inventário e aceita apenas
+um app explicitamente listado. O documento deve apontar para a associação,
+geração e UID atuais, e seu digest canônico deve coincidir com o digest do
+adaptador `flatpak` no catálogo. Aprovações sem identidade de publicador ficam
+presas ao commit exato. Testes locais recusam app não listado, arquivo ausente,
+arquivo alterado e estado parental defasado. Ainda faltam um escritor e uma
+fonte de inventário produtivos, coordenação de todos os escritores com os
+locks, lançamento confinado, revogação e prova de ponta a ponta em VM. Isto
+permanece um contrato experimental, não uma autorização para habilitar #102.

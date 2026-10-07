@@ -5,11 +5,13 @@ import "strconv"
 // WithFlatpakLease revalidates a prior socket binding under the same catalog,
 // inventory and per-UID gate locks used by parental mutations. The visitor is
 // synchronous and must not return until the launch admission point has been
-// crossed. This is not a launcher or an app-policy check.
+// crossed. The approval is tied to the current Flatpak adapter digest, but
+// this is not a launcher or a production authorization source.
 func (b *FileLeases) WithFlatpakLease(binding FlatpakPeerBinding, peer FlatpakLaunchPeer,
+	request FlatpakLaunchRequest,
 	observeIdentity func(uint32) (Identity, error), required []string,
 	observeAdapters func(Account) (Applied, error), observeDomain func(Account) (string, error),
-	visit func(FlatpakPeerBinding) error) (err error) {
+	visit func(FlatpakPeerBinding, FlatpakApproval) error) (err error) {
 	if b == nil || b.decodeProof == nil || visit == nil ||
 		!token.MatchString(binding.Association) || !token.MatchString(binding.Generation) ||
 		!hash.MatchString(binding.CatalogDigest) || binding.CatalogRevision == 0 ||
@@ -99,7 +101,29 @@ func (b *FileLeases) WithFlatpakLease(binding FlatpakPeerBinding, peer FlatpakLa
 	if fresh != binding {
 		return Conflict
 	}
-	if e = visit(fresh); e != nil {
+	var adapterDigest string
+	for _, adapter := range account.Adapters {
+		if adapter.Name == "flatpak" {
+			adapterDigest = adapter.Digest
+			break
+		}
+	}
+	if adapterDigest == "" {
+		return UnsupportedProducer
+	}
+	data, e = inventory.read(uid+".flatpak.json", flatpakApprovalLimit)
+	if e != nil {
+		return e
+	}
+	policy, e := DecodeFlatpakApprovalPolicy(data, fresh, adapterDigest)
+	if e != nil {
+		return e
+	}
+	approval, e := policy.Approved(request, fresh)
+	if e != nil {
+		return e
+	}
+	if e = visit(fresh, approval); e != nil {
 		return e
 	}
 	if e = negativeEntry(ledger, uid); e != nil {
