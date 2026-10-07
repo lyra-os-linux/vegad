@@ -53,3 +53,11 @@ domínio da criança não pode executar `flatpak run` diretamente.
 deployment selecionado. O [teste no Flatpak 1.16.6](evidence/parental-flatpak-run-args/CURRENT.md)
 executou A e B com commits corretos e recusou app/runtime trocados. Rodou em
 Permissive com dados de fixture, sem broker, fonte autenticada ou política MAC.
+
+`WithFlatpakLease` reutiliza a ordem de locks do registro parental (catálogo,
+inventário, gate da conta) e revalida peer, geração, prova local, adaptadores
+e marcadores de bloqueio antes de entregar um callback síncrono. Testes com
+arquivos reais confirmam que os locks ficam retidos e que mudanças entre o
+vínculo inicial e esse callback falham fechadas. O código ainda não chama o
+Flatpak, não verifica uma aprovação de app e não cobre escritores que ignorem
+esses locks nem uma mudança de contexto SELinux no mesmo PID.
