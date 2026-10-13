@@ -3,6 +3,7 @@ package dbusserver
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,9 @@ import (
 )
 
 var nvidiaInstallMu sync.Mutex
+
+// Replaceable in tests; the real refresh needs root and the network.
+var refreshNvidiaRepositories = distro.RefreshNvidiaRepositories
 
 func (s *SoftwareService) InstallNvidia(sender dbus.Sender, confirmed bool) (uint32, *dbus.Error) {
 	// A cancelled dialog must never authorize, create snapshots or touch repos.
@@ -114,8 +118,16 @@ func (m nvidiaManager) install(p profile.Profile, report progressFunc) error {
 			installErr = statusErr
 		} else if !after.Installed || (after.State != "active" && after.State != "reboot-required") {
 			installErr = fmt.Errorf("NVIDIA post-install verification: %s (%s)", after.State, after.Detail)
-		} else {
-			installErr = distro.EnableNvidiaOBS("/etc/zypp/repos.d")
+		} else if installErr = distro.EnableNvidiaOBS("/etc/zypp/repos.d"); installErr == nil {
+			// The driver is installed and verified; a metadata failure here must
+			// not mark the installation failed or leave a "failed" recovery
+			// record. Until the cache exists, unprivileged queries log the two
+			// repositories as skipped and the next privileged refresh repairs it.
+			report(92, "NVIDIA: refreshing repository metadata")
+			if err := refreshNvidiaRepositories(); err != nil {
+				log.Printf("vegad: NVIDIA repositories installed but not refreshed: %v", err)
+				report(94, "NVIDIA: repository metadata refresh deferred to the next update check")
+			}
 		}
 	}
 	if installErr != nil && newUpstreamRepo && m.packageVersion("lyra-nvidia") == "" {

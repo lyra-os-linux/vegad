@@ -323,3 +323,29 @@ func TestNvidiaOBSRepoReadableDespiteDaemonUmask(t *testing.T) {
 		t.Fatalf("%s: %v", out, err)
 	}
 }
+
+// After the private transaction commits, the enabled system repositories must
+// get their metadata cache from the privileged side: lyra-nvidia (OBS) and the
+// package-owned upstream channel, never the installer-only OSS mirror whose
+// system counterpart already exists.
+func TestNvidiaPostInstallRefreshCoversEnabledSystemRepositories(t *testing.T) {
+	var got []string
+	err := refreshNvidiaRepositoriesWith(func(name string, args ...string) (string, error) {
+		got = append([]string{name}, args...)
+		return "Repository 'lyra-nvidia' is up to date.", nil
+	})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	want := []string{"zypper", "--non-interactive", "refresh", "--", "lyra-nvidia", "lyra-nvidia-upstream"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("refresh command = %q, want %q", got, want)
+	}
+	err = refreshNvidiaRepositoriesWith(func(string, ...string) (string, error) {
+		return "Download (curl) error for 'https://developer.download.nvidia.com/...':\nError code: Connection failed\nError message: Could not resolve host: developer.download.nvidia.com", exec.Command("/bin/sh", "-c", "exit 4").Run()
+	})
+	var refresh *RepositoryRefreshError
+	if !errors.As(err, &refresh) || refresh.Kind != "network" {
+		t.Fatalf("network failure = %v, want a network RepositoryRefreshError", err)
+	}
+}

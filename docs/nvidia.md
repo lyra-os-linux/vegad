@@ -93,6 +93,12 @@ administrator deletion or retention cleanup. It lives in its own root-owned
    channel. The metapackage supplies its upstream repo. If a failed first commit
    leaves that new repo without its guard, disable the managed definition; never
    alter a pre-existing administrator file. Preserve errors and snapshot ID.
+   Then refresh exactly `lyra-nvidia` and `lyra-nvidia-upstream` against the
+   system cache, non-interactively: the private transaction cache is discarded,
+   and without this step the enabled repositories have no metadata until the
+   next privileged refresh, so every unprivileged query reports them as skipped
+   (Zypper 106). A refresh failure here is logged and reported as progress, not
+   treated as an installation failure; the driver is already verified.
 8. Finalize the recovery record (and post-snapshot on Btrfs) and refresh
    diagnostics. A driver change needs boot
    validation; adopting the guard on a working driver does not imply a reboot.
