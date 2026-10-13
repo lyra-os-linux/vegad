@@ -23,20 +23,25 @@ brokered worker, not only the standalone `vegad query` executable.
 Suspend quarantine reconciliation remains a separate startup task, preserving
 administrator drop-ins and retaining a guard if RPM state cannot be identified.
 
-The qualified integration is currently NVIDIA **610.57.04**, a SUSE-signed
+The qualified integration is currently NVIDIA **615.71.09**, a SUSE-signed
 `nvidia-open-driver-G07-signed-cuda-kmp-default` and `lyra-nvidia` of the same
-version. Detect all NVIDIA display devices against the version-specific official
-PCI table, not a numeric ID range. Unknown devices and mixed unsupported GPUs
+version (`distro.NvidiaVersion`). Detect all NVIDIA display devices against the
+version-specific official PCI table, not a numeric ID range. Unknown devices and mixed unsupported GPUs
 cannot be installed automatically. Match required RPM leaves, all G07 driver
 leaves, loaded module, NVML GPU addresses/versions, module on disk, SUSE signer
 and RPM ownership. Independent EGL bridge libraries have independent versions.
 
 `/boot/vmlinuz` is checked as well as the running kernel. This does **not** prove
 that a custom GRUB entry will boot that image or validate every installed
-fallback kernel. A future kernel without a corresponding module blocks this
-flow; the integration does not lock kernel updates. BIOS is not rejected merely
-for lacking EFI variables. An unknown Secure Boot state on an EFI machine fails
-closed.
+fallback kernel. A first installation is not pinned to one kernel release: the
+running kernel must be the `-default` flavor and the default boot kernel, and
+the reviewed solver plan must install the signed KMP whose edition is
+`NvidiaVersion_k<kernel release>` (see `distro.NvidiaKMPEdition`). Leap publishes
+that KMP only for the kernel it currently ships, so a kernel update without a
+corresponding published module makes Zypper raise a dependency prompt, which
+the installer refuses before any recovery point or RPM commit. The integration
+does not lock kernel updates. BIOS is not rejected merely for lacking EFI
+variables. An unknown Secure Boot state on an EFI machine fails closed.
 
 | State | Meaning |
 | --- | --- |
@@ -44,7 +49,7 @@ closed.
 | `unknown-secure-boot`, `unknown-boot-kernel` | Required diagnostic is unavailable |
 | `conflict` | Legacy/alternative provider or unowned module needs migration review |
 | `inconsistent` | Missing or mismatched driver packages |
-| `kernel-missing`, `unsigned-module` | Module/kernel/signing ownership gate failed |
+| `kernel-missing`, `unsigned-module` | Module/kernel/signing ownership gate failed; before installation, also a pending kernel switch (running kernel differs from `/boot/vmlinuz`) |
 | `available` | Compatible clean system; optional first installation |
 | `unmanaged` | Coherent official stack; optional installation of the Lyra contract |
 | `reboot-required` | Coherent installed stack, corresponding module not loaded |
@@ -89,11 +94,24 @@ administrator deletion or retention cleanup. It lives in its own root-owned
    diagnostics. A driver change needs boot
    validation; adopting the guard on a working driver does not imply a reboot.
 
-The initial native KMP kernel is `6.12.0-160100.4-default`. Installing a clean
-stack on a different kernel waits for qualification; existing official stacks
-can be adopted only when `modinfo` resolves corresponding signed modules.
+Qualification reference: kernel `6.12.0-160100.7-default` with KMP
+`615.71.09_k6.12.0_160100.7` from Leap 16.1 OSS. Earlier, 610.57.04 was pinned
+to `6.12.0-160100.4-default`; Leap replaced that KMP when it moved to the
+160100.7 kernel, which left every up-to-date system in `kernel-missing`.
+Existing official stacks can be adopted only when `modinfo` resolves
+corresponding signed modules.
 
-Trust identities reviewed 2026-09-16:
+The `lyra-nvidia` metapackage source lives in `packaging/lyra-nvidia/` and is
+published to OBS `home:rodrigosbrito:nvidia` (see `README.obs.md` there); its
+`Version:` must equal `distro.NvidiaVersion`, which
+`scripts/check-packaging-contracts.sh` enforces.
+
+`nvidia-common-G07` 615.71.09 requires `nvidia-driver-selinux` when
+`selinux-policy-targeted` is installed. Lyra OS does not ship that policy; on a
+system that does, the solver adds a package outside the qualified list and the
+plan is refused as an unqualified dependency until reviewed.
+
+Trust identities reviewed 2026-09-16 (unchanged on 2026-10-13):
 
 - OBS: `399218A6E088C4053F4533BE58097F767EDCA82E`
 - NVIDIA: `CF65941A859D4B4E6870F188736A284B3A8B5622`
@@ -160,12 +178,14 @@ startup, refresh, mandatory review, cancel/close, denial, success, partial failu
 and daemon owner loss. A real Zypper dry-run in a disposable RPM database tests
 adoption, clean-driver resolution and cancellation without host changes.
 
-The physical GTX 1650 reference passes read-only status. These tests do not
-complete legacy migration, real full-driver installation/recovery on additional
-hardware, new-kernel boot, PackageKit, rendering/suspend/CUDA qualification or
-local ISO testing. Keep #82 open for those gates. Do not roll back the running
+The physical GTX 1650 reference passes read-only status. Unit tests also cover
+the KMP edition derived from the running kernel and refusal of a module built
+for another kernel or driver version. These tests do not complete legacy
+migration, real full-driver installation/recovery on additional hardware,
+new-kernel boot, PackageKit, rendering/suspend/CUDA qualification or local ISO
+testing. Keep #82 open for those gates. Do not roll back the running
 filesystem automatically on failure; review the snapshot and coherent previous
 kernel through the existing recovery tooling.
 
-Sources: [NVIDIA supported GPUs](https://download.nvidia.com/XFree86/Linux-x86_64/610.57.04/README/supportedchips.html),
+Sources: [NVIDIA supported GPUs](https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/README/supportedchips.html),
 [NVIDIA SUSE packaging](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/suse.html).

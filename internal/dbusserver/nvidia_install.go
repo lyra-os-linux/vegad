@@ -47,7 +47,7 @@ func nvidiaInstallable(status NvidiaStatus) bool {
 }
 
 func (m nvidiaManager) install(p profile.Profile, report progressFunc) error {
-	status, err := m.status()
+	status, kernel, err := m.inspect()
 	if err != nil {
 		return err
 	}
@@ -72,11 +72,11 @@ func (m nvidiaManager) install(p profile.Profile, report progressFunc) error {
 	beforeCommit := func() error {
 		// The lock was acquired after metadata refresh. Recheck prerequisites so
 		// concurrent package changes cannot silently invalidate the reviewed flow.
-		latest, err := m.status()
+		latest, latestKernel, err := m.inspect()
 		if err != nil {
 			return err
 		}
-		if !nvidiaInstallable(latest) {
+		if !nvidiaInstallable(latest) || latestKernel != kernel {
 			return fmt.Errorf("NVIDIA state changed: %s", latest.State)
 		}
 		if err := distro.ValidateNvidiaRepositories("/etc/zypp/repos.d"); err != nil {
@@ -107,7 +107,7 @@ func (m nvidiaManager) install(p profile.Profile, report progressFunc) error {
 		}
 		return nvidiarecovery.WriteRecord(filepath.Dir(m.recoveryFile()), record)
 	}
-	installErr := distro.InstallNvidiaBundle(distro.ProgressFunc(report), beforeCommit)
+	installErr := distro.InstallNvidiaBundle(kernel, distro.ProgressFunc(report), beforeCommit)
 	if installErr == nil {
 		after, statusErr := m.status()
 		if statusErr != nil {

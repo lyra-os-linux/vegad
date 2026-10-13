@@ -1,10 +1,10 @@
 package dbusserver
 
-// PCI device IDs from the Current NVIDIA GPUs table for 610.57.04.
-// https://download.nvidia.com/XFree86/Linux-x86_64/610.57.04/README/supportedchips.html
-// Retrieved 2026-09-16. This is driver support, not Lyra hardware qualification.
-// Keep this list and nvidiaIntegrationVersion in sync during qualification.
-var nvidiaDevices610 = map[uint64]bool{
+// PCI device IDs from the Current NVIDIA GPUs table for 615.71.09.
+// https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/README/supportedchips.html
+// Retrieved 2026-10-13. This is driver support, not Lyra hardware qualification.
+// Keep this list and distro.NvidiaVersion in sync during qualification.
+var nvidiaDevices = map[uint64]bool{
 	0x1e02: true,
 	0x1e04: true,
 	0x1e07: true,
@@ -262,6 +262,7 @@ var nvidiaDevices610 = map[uint64]bool{
 	0x2bb9: true,
 	0x2c02: true,
 	0x2c05: true,
+	0x2c09: true,
 	0x2c18: true,
 	0x2c19: true,
 	0x2c31: true,
@@ -289,8 +290,6 @@ var nvidiaDevices610 = map[uint64]bool{
 	0x2db9: true,
 	0x2dd8: true,
 	0x2df9: true,
-	0x2e03: true,
-	0x2e06: true,
 	0x2e12: true,
 	0x2f04: true,
 	0x2f06: true,
@@ -302,4 +301,4 @@ var nvidiaDevices610 = map[uint64]bool{
 	0x31c3: true,
 }
 
-func supportedNvidiaDevice(id uint64) bool { return nvidiaDevices610[id] }
+func supportedNvidiaDevice(id uint64) bool { return nvidiaDevices[id] }

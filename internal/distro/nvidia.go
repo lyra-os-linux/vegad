@@ -17,7 +17,11 @@ import (
 	"time"
 )
 
-const NvidiaVersion = "610.57.04"
+// Qualified upstream driver version. The SUSE-signed KMP for it is published in
+// Leap 16.1 OSS only for the kernel it was built against; NvidiaKMPEdition
+// derives that edition from the running kernel so a kernel update does not
+// require editing a second constant here.
+const NvidiaVersion = "615.71.09"
 const NvidiaKMP = "nvidia-open-driver-G07-signed-cuda-kmp-default"
 const NvidiaOBSURL = "https://download.opensuse.org/repositories/home:/rodrigosbrito:/nvidia/openSUSE_Leap_16.1/"
 const NvidiaUpstreamURL = "https://developer.download.nvidia.com/compute/cuda/repos/suse16/x86_64/"
@@ -28,6 +32,17 @@ var nvidiaSources = []struct{ alias, url, key string }{
 	// Leap's key must already be trusted by the base OS; never import an
 	// additional key for the OS implicitly through the NVIDIA installer.
 	{"lyra-nvidia-oss", "https://download.opensuse.org/distribution/leap/16.1/repo/oss/", ""},
+}
+
+// NvidiaKMPEdition returns the RPM edition prefix the signed KMP must carry for
+// the given running kernel release, e.g. "615.71.09_k6.12.0_160100.7-" for
+// 6.12.0-160100.7-default. Only the stock -default flavor is qualified.
+func NvidiaKMPEdition(kernel string) (string, error) {
+	release, ok := strings.CutSuffix(kernel, "-default")
+	if !ok || release == "" || strings.ContainsAny(release, "_ \t\n") {
+		return "", fmt.Errorf("NVIDIA KMP is qualified only for the -default kernel flavor: %q", kernel)
+	}
+	return NvidiaVersion + "_k" + strings.ReplaceAll(release, "-", "_") + "-", nil
 }
 
 func nvidiaRepoDefinition(alias, url string) string {
@@ -102,7 +117,13 @@ func nvidiaRepoSections(data string) (map[string]map[string]string, error) {
 
 // Sources/cache are private to this transaction, so failure before RPM commit
 // cannot leave an enabled, unguarded NVIDIA repository on the running system.
-func InstallNvidiaBundle(report ProgressFunc, beforeCommit func() error) error {
+// kernel is the running (and default boot) kernel release; the solver plan is
+// accepted only if it installs the signed KMP built for exactly that kernel.
+func InstallNvidiaBundle(kernel string, report ProgressFunc, beforeCommit func() error) error {
+	kmpEdition, err := NvidiaKMPEdition(kernel)
+	if err != nil {
+		return err
+	}
 	root, err := os.MkdirTemp("", "vegad-nvidia-")
 	if err != nil {
 		return err
@@ -147,7 +168,7 @@ func InstallNvidiaBundle(report ProgressFunc, beforeCommit func() error) error {
 	if err = cmd.Start(); err != nil {
 		return err
 	}
-	parseErr := answerNvidiaInstall(output, input, beforeCommit, report)
+	parseErr := answerNvidiaInstall(output, input, kmpEdition, beforeCommit, report)
 	input.Close()
 	if parseErr != nil {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
@@ -186,7 +207,7 @@ type nvidiaPlan struct {
 	} `xml:",any"`
 }
 
-func validateNvidiaPlan(plan nvidiaPlan) error {
+func validateNvidiaPlan(plan nvidiaPlan, kmpEdition string) error {
 	if plan.Count < 1 {
 		return errors.New("NVIDIA plan has no integration package")
 	}
@@ -209,7 +230,7 @@ func validateNvidiaPlan(plan nvidiaPlan) error {
 				arch = "noarch"
 			case NvidiaKMP:
 				expectedRepo = "lyra-nvidia-oss"
-				version = NvidiaVersion + "_k6.12.0_160100.4-"
+				version = kmpEdition
 			case "nvidia-open", "nvidia-common-G07":
 			case "nvidia-compute-G07", "nvidia-compute-utils-G07", "nvidia-gl-G07", "nvidia-video-G07", "nvidia-modprobe", "nvidia-persistenced":
 			default:
@@ -229,7 +250,7 @@ func validateNvidiaPlan(plan nvidiaPlan) error {
 // Approve the validated plan in the SAME zypper process while it owns the
 // system lock. A dry-run followed by a separate install would have a race.
 // Reject key/signature/EULA/file-conflict/solver questions at this stage.
-func answerNvidiaInstall(reader io.Reader, writer io.Writer, beforeCommit func() error, report ProgressFunc) error {
+func answerNvidiaInstall(reader io.Reader, writer io.Writer, kmpEdition string, beforeCommit func() error, report ProgressFunc) error {
 	decoder := xml.NewDecoder(io.LimitReader(reader, 32<<20))
 	validated, accepted, closed := false, false, false
 	for {
@@ -259,7 +280,7 @@ func answerNvidiaInstall(reader io.Reader, writer io.Writer, beforeCommit func()
 			if err := decoder.DecodeElement(&plan, &start); err != nil {
 				return err
 			}
-			if err := validateNvidiaPlan(plan); err != nil {
+			if err := validateNvidiaPlan(plan, kmpEdition); err != nil {
 				return err
 			}
 			validated = true
@@ -279,6 +300,12 @@ func answerNvidiaInstall(reader io.Reader, writer io.Writer, beforeCommit func()
 			}
 			// Zypper PromptId::COMMIT = 0; never answer another prompt, even if it
 			// happens to offer the same yes/no options.
+			if prompt.ID == "1" && !validated {
+				// PromptId::DEP_RESOLVE before any plan: the fixed versions could not be
+				// resolved, typically because Leap has not published the signed KMP for
+				// this kernel yet (or has already replaced it).
+				return fmt.Errorf("NVIDIA dependencies unresolved; no signed KMP %s* may be published for this kernel", kmpEdition)
+			}
 			if prompt.ID != "0" || !validated || accepted || !offered {
 				return fmt.Errorf("NVIDIA additional confirmation refused (prompt %s)", prompt.ID)
 			}

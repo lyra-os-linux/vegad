@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-const guardPlan = `<install-summary packages-to-change="1"><to-install><solvable type="package" name="lyra-nvidia" edition="610.57.04-lp161.1.1" arch="noarch" repository="lyra-nvidia"/></to-install></install-summary>`
+const guardPlan = `<install-summary packages-to-change="1"><to-install><solvable type="package" name="lyra-nvidia" edition="615.71.09-lp161.1.1" arch="noarch" repository="lyra-nvidia"/></to-install></install-summary>`
+const testKMPEdition = NvidiaVersion + "_k6.12.0_160100.7-"
 const commitPrompt = `<prompt id="0"><option value="y"/><option value="n"/></prompt>`
 
 func TestNvidiaInstallProtocol(t *testing.T) {
@@ -29,7 +30,7 @@ func TestNvidiaInstallProtocol(t *testing.T) {
 		{"remove", strings.ReplaceAll(guardPlan, "to-install", "to-remove") + commitPrompt, false, true},
 		{"upgrade", strings.ReplaceAll(guardPlan, "to-install", "to-upgrade") + commitPrompt, false, true},
 		{"downgrade", strings.ReplaceAll(guardPlan, "to-install", "to-downgrade") + commitPrompt, false, true},
-		{"new-version", strings.ReplaceAll(guardPlan, "610.57.04", "615.71.09") + commitPrompt, false, true},
+		{"new-version", strings.ReplaceAll(guardPlan, NvidiaVersion, "620.10.01") + commitPrompt, false, true},
 		{"wrong-repository", strings.ReplaceAll(guardPlan, `repository="lyra-nvidia"`, `repository="evil"`) + commitPrompt, false, true},
 		{"wrong-arch", strings.ReplaceAll(guardPlan, "noarch", "x86_64") + commitPrompt, false, true},
 		{"kernel-change", strings.ReplaceAll(guardPlan, `name="lyra-nvidia"`, `name="kernel-default"`) + commitPrompt, false, true},
@@ -42,7 +43,7 @@ func TestNvidiaInstallProtocol(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			called := false
-			err := answerNvidiaInstall(strings.NewReader("<stream>"+tc.body+"</stream>"), &out, func() error {
+			err := answerNvidiaInstall(strings.NewReader("<stream>"+tc.body+"</stream>"), &out, testKMPEdition, func() error {
 				called = true
 				if tc.callbackErr {
 					return errors.New("cancel")
@@ -62,19 +63,70 @@ func TestNvidiaInstallProtocol(t *testing.T) {
 	}
 }
 
-func TestNvidiaFreshBundlePlan(t *testing.T) {
-	rows := `<solvable type="package" name="lyra-nvidia" edition="610.57.04-lp161.1.1" arch="noarch" repository="lyra-nvidia"/>`
+func freshBundlePlan(kmpEdition string) string {
+	rows := `<solvable type="package" name="lyra-nvidia" edition="` + NvidiaVersion + `-lp161.1.1" arch="noarch" repository="lyra-nvidia"/>`
 	for _, name := range []string{"nvidia-open", "nvidia-common-G07", "nvidia-compute-G07", "nvidia-compute-utils-G07", "nvidia-gl-G07", "nvidia-video-G07", "nvidia-modprobe", "nvidia-persistenced"} {
-		rows += `<solvable type="package" name="` + name + `" edition="610.57.04-1" arch="x86_64" repository="lyra-nvidia-upstream"/>`
+		rows += `<solvable type="package" name="` + name + `" edition="` + NvidiaVersion + `-1" arch="x86_64" repository="lyra-nvidia-upstream"/>`
 	}
-	rows += `<solvable type="package" name="` + NvidiaKMP + `" edition="610.57.04_k6.12.0_160100.4-160100.1.3" arch="x86_64" repository="lyra-nvidia-oss"/>`
-	body := `<stream><install-summary packages-to-change="10"><to-install>` + rows + `</to-install></install-summary>` + commitPrompt + `</stream>`
+	rows += `<solvable type="package" name="` + NvidiaKMP + `" edition="` + kmpEdition + `160100.2.4" arch="x86_64" repository="lyra-nvidia-oss"/>`
+	return `<stream><install-summary packages-to-change="10"><to-install>` + rows + `</to-install></install-summary>` + commitPrompt + `</stream>`
+}
+
+func TestNvidiaFreshBundlePlan(t *testing.T) {
 	var out bytes.Buffer
-	if err := answerNvidiaInstall(strings.NewReader(body), &out, func() error { return nil }, func(uint32, string) {}); err != nil {
+	if err := answerNvidiaInstall(strings.NewReader(freshBundlePlan(testKMPEdition)), &out, testKMPEdition, func() error { return nil }, func(uint32, string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "y\n" {
 		t.Fatal(out.String())
+	}
+}
+
+// The KMP must be the one built for the kernel that will boot; a module for
+// another release, another driver version or an unqualified flavor is refused
+// before the commit prompt is answered.
+func TestNvidiaBundlePlanBindsKMPToRunningKernel(t *testing.T) {
+	for _, tc := range []struct{ name, planKMP string }{
+		{"other-kernel", NvidiaVersion + "_k6.12.0_160100.4-"},
+		{"other-driver", "620.10.01_k6.12.0_160100.7-"},
+		{"unversioned", NvidiaVersion + "-"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := answerNvidiaInstall(strings.NewReader(freshBundlePlan(tc.planKMP)), &out, testKMPEdition, func() error {
+				t.Fatal("recovery prepared for a refused plan")
+				return nil
+			}, func(uint32, string) {})
+			if err == nil || !strings.Contains(err.Error(), NvidiaKMP) || out.Len() != 0 {
+				t.Fatalf("err=%v reply=%q", err, out.String())
+			}
+		})
+	}
+}
+
+func TestNvidiaKMPEditionFollowsKernelRelease(t *testing.T) {
+	for kernel, want := range map[string]string{
+		"6.12.0-160100.7-default":  NvidiaVersion + "_k6.12.0_160100.7-",
+		"6.12.0-160100.12-default": NvidiaVersion + "_k6.12.0_160100.12-",
+	} {
+		got, err := NvidiaKMPEdition(kernel)
+		if err != nil || got != want {
+			t.Fatalf("NvidiaKMPEdition(%q)=%q, %v; want %q", kernel, got, err, want)
+		}
+	}
+	for _, kernel := range []string{"6.12.0-160100.7-rt", "6.12.0-160100.7", "-default", "", "6.12.0_160100.7-default"} {
+		if got, err := NvidiaKMPEdition(kernel); err == nil {
+			t.Fatalf("NvidiaKMPEdition(%q)=%q accepted an unqualified flavor", kernel, got)
+		}
+	}
+}
+
+func TestNvidiaUnresolvedPlanNamesMissingKMP(t *testing.T) {
+	var out bytes.Buffer
+	body := `<stream><prompt id="1"><option value="1"/><option value="2"/></prompt></stream>`
+	err := answerNvidiaInstall(strings.NewReader(body), &out, testKMPEdition, func() error { return nil }, func(uint32, string) {})
+	if err == nil || !strings.Contains(err.Error(), testKMPEdition) || out.Len() != 0 {
+		t.Fatalf("err=%v reply=%q", err, out.String())
 	}
 }
 
@@ -152,7 +204,15 @@ func TestNvidiaNativeZypperReview(t *testing.T) {
 	}
 	approved := false
 	cancelled := os.Getenv("VEGA_NVIDIA_NATIVE_CANCEL") == "1"
-	err = answerNvidiaInstall(io.TeeReader(output, log), input, func() error {
+	kernel, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kmpEdition, err := NvidiaKMPEdition(strings.TrimSpace(string(kernel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = answerNvidiaInstall(io.TeeReader(output, log), input, kmpEdition, func() error {
 		approved = true
 		if cancelled {
 			return errors.New("fixture cancellation")

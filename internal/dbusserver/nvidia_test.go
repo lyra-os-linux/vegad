@@ -47,8 +47,8 @@ func compatibleRunner() *fakeNvidiaRunner {
 		"lspci -s 0000:01:00.0":             "01:00.0 VGA compatible controller: NVIDIA Corporation TU117M",
 		"mokutil --sb-state":                "SecureBoot enabled",
 		"uname -m":                          "x86_64",
-		"uname -r":                          "6.12.0-160100.4-default",
-		"readlink -f /boot/vmlinuz":         "/usr/lib/modules/6.12.0-160100.4-default/vmlinuz",
+		"uname -r":                          "6.12.0-160100.7-default",
+		"readlink -f /boot/vmlinuz":         "/usr/lib/modules/6.12.0-160100.7-default/vmlinuz",
 		"rpm -qa --qf %{NAME}|%{VERSION}\n": "bash|5.2\nLeap-release|16.1",
 	}, errors: map[string]error{}, sequences: map[string][]fakeNvidiaResponse{}}
 }
@@ -81,6 +81,7 @@ func TestUpstreamVersionNormalizesRPMReleaseAndKMPKernelSuffix(t *testing.T) {
 		"580.159.03-lp160.53.1":        "580.159.03",
 		"580.159.03_k6.12.0_160000.29": "580.159.03",
 		"580.173.02":                   "580.173.02",
+		"615.71.09_k6.12.0_160100.7":   "615.71.09",
 	} {
 		if got := upstreamVersion(input); got != want {
 			t.Fatalf("upstreamVersion(%q)=%q, want %q", input, got, want)
@@ -183,7 +184,7 @@ func officialManager(t *testing.T) (nvidiaManager, *fakeNvidiaRunner) {
 		inventory += "\n" + pkg + "|" + nvidiaIntegrationVersion
 	}
 	r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = inventory
-	kernel := "6.12.0-160100.4-default"
+	kernel := "6.12.0-160100.7-default"
 	module := "/usr/lib/modules/" + kernel + "/updates/nvidia.ko.zst"
 	r.outputs["modinfo -k "+kernel+" -F version nvidia"] = nvidiaIntegrationVersion
 	r.outputs["modinfo -k "+kernel+" -F signer nvidia"] = "SUSE Linux Enterprise Secure Boot CA"
@@ -218,21 +219,21 @@ func TestOfficialNvidiaStatus(t *testing.T) {
 	}{
 		{"healthy", "active", func(m nvidiaManager, r *fakeNvidiaRunner) {}},
 		{"missing-guard", "unmanaged", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = strings.ReplaceAll(r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"], "lyra-nvidia|610.57.04", "")
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] = strings.ReplaceAll(r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"], "lyra-nvidia|615.71.09", "")
 		}},
 		{"legacy", "conflict", func(m nvidiaManager, r *fakeNvidiaRunner) {
 			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nnvidia-gl-G06|580.159.03"
 		}},
 		{"dkms", "conflict", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nnvidia-open-driver-G07|610.57.04"
+			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nnvidia-open-driver-G07|615.71.09"
 		}},
-		{"615-library", "inconsistent", func(m nvidiaManager, r *fakeNvidiaRunner) {
+		{"newer-library", "inconsistent", func(m nvidiaManager, r *fakeNvidiaRunner) {
 			key := "rpm -qa --qf %{NAME}|%{VERSION}\n"
-			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|610.57.04", "nvidia-gl-G07|615.71.09")
+			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|615.71.09", "nvidia-gl-G07|620.10.01")
 		}},
 		{"missing-library", "inconsistent", func(m nvidiaManager, r *fakeNvidiaRunner) {
 			key := "rpm -qa --qf %{NAME}|%{VERSION}\n"
-			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|610.57.04", "")
+			r.outputs[key] = strings.ReplaceAll(r.outputs[key], "nvidia-gl-G07|615.71.09", "")
 		}},
 		{"independent-egl", "active", func(m nvidiaManager, r *fakeNvidiaRunner) {
 			r.outputs["rpm -qa --qf %{NAME}|%{VERSION}\n"] += "\nlibnvidia-egl-gbm1|1.1.3"
@@ -246,16 +247,16 @@ func TestOfficialNvidiaStatus(t *testing.T) {
 			}
 		}},
 		{"kernel-module-missing", "kernel-missing", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["modinfo -k 6.12.0-160100.4-default -F version nvidia"] = ""
+			r.outputs["modinfo -k 6.12.0-160100.7-default -F version nvidia"] = ""
 		}},
 		{"next-kernel-missing", "kernel-missing", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["readlink -f /boot/vmlinuz"] = "/boot/vmlinuz-6.12.0-160100.5-default"
+			r.outputs["readlink -f /boot/vmlinuz"] = "/boot/vmlinuz-6.12.0-160100.8-default"
 		}},
 		{"unsigned", "unsigned-module", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["modinfo -k 6.12.0-160100.4-default -F signer nvidia"] = "Administrator key"
+			r.outputs["modinfo -k 6.12.0-160100.7-default -F signer nvidia"] = "Administrator key"
 		}},
 		{"wrong-owner", "unsigned-module", func(m nvidiaManager, r *fakeNvidiaRunner) {
-			r.outputs["rpm -qf --qf %{NAME} /usr/lib/modules/6.12.0-160100.4-default/updates/nvidia.ko.zst"] = "nvidia-open-driver-G07"
+			r.outputs["rpm -qf --qf %{NAME} /usr/lib/modules/6.12.0-160100.7-default/updates/nvidia.ko.zst"] = "nvidia-open-driver-G07"
 		}},
 		{"unknown-secure-boot", "unknown-secure-boot", func(m nvidiaManager, r *fakeNvidiaRunner) { r.errors["mokutil --sb-state"] = errors.New("unknown") }},
 		{"leap16", "unsupported-system", func(m nvidiaManager, r *fakeNvidiaRunner) {
@@ -280,14 +281,47 @@ func TestOfficialNvidiaStatus(t *testing.T) {
 func TestNvidiaFreshInstallEligibility(t *testing.T) {
 	r := compatibleRunner()
 	m := nvidiaManager{run: r, recoveryPath: filepath.Join(t.TempDir(), "none")}
-	status, err := m.status()
-	if err != nil || !nvidiaInstallable(status) {
-		t.Fatalf("%+v %v", status, err)
+	status, kernel, err := m.inspect()
+	if err != nil || !nvidiaInstallable(status) || kernel != "6.12.0-160100.7-default" {
+		t.Fatalf("%+v %q %v", status, kernel, err)
 	}
-	r.outputs["modinfo -k 6.12.0-160100.4-default -F version nvidia"] = "610.57.04"
+	if !strings.Contains(status.Detail, "NVIDIA "+nvidiaIntegrationVersion+" · Kernel 6.12.0-160100.7-default") {
+		t.Fatalf("detail: %q", status.Detail)
+	}
+	r.outputs["modinfo -k 6.12.0-160100.7-default -F version nvidia"] = nvidiaIntegrationVersion
 	status, err = m.status()
 	if err != nil || status.State != "conflict" || nvidiaInstallable(status) {
 		t.Fatalf("unowned .run module: %+v %v", status, err)
+	}
+}
+
+// A first installation is not pinned to one kernel release: any stock -default
+// kernel that is also the default boot kernel is eligible, and the reviewed
+// solver plan later proves the signed KMP exists for it. Other flavors and a
+// pending kernel switch are refused before any installation.
+func TestNvidiaFreshInstallFollowsDefaultBootKernel(t *testing.T) {
+	for _, tc := range []struct {
+		name, kernel, vmlinuz, state string
+	}{
+		{"shipped", "6.12.0-160100.7-default", "/usr/lib/modules/6.12.0-160100.7-default/vmlinuz", "available"},
+		{"next-update", "6.12.0-160100.12-default", "/boot/vmlinuz-6.12.0-160100.12-default", "available"},
+		{"pending-reboot", "6.12.0-160100.7-default", "/boot/vmlinuz-6.12.0-160100.12-default", "kernel-missing"},
+		{"non-default-flavor", "6.12.0-160100.7-rt", "/boot/vmlinuz-6.12.0-160100.7-rt", "unknown-boot-kernel"},
+		{"custom-kernel", "6.17.1-lyra-default", "/boot/vmlinuz-6.17.1-lyra-default", "available"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := compatibleRunner()
+			r.outputs["uname -r"] = tc.kernel
+			r.outputs["readlink -f /boot/vmlinuz"] = tc.vmlinuz
+			m := nvidiaManager{run: r, recoveryPath: filepath.Join(t.TempDir(), "none")}
+			status, err := m.status()
+			if err != nil || status.State != tc.state {
+				t.Fatalf("%+v %v", status, err)
+			}
+			if nvidiaInstallable(status) != (tc.state == "available") {
+				t.Fatalf("installable=%v for %s", nvidiaInstallable(status), tc.state)
+			}
+		})
 	}
 }
 

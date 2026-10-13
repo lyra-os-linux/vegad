@@ -23,6 +23,8 @@ systemd-analyze verify \
   packaging/*.timer
 rpmspec -P packaging/vegad.spec >/dev/null
 rpmspec -P packaging/vegad.obs.spec >/dev/null
+rpmspec -P packaging/lyra-nvidia/lyra-nvidia.spec >/dev/null
+test "$(sed -n 's/^Version: *//p' packaging/lyra-nvidia/lyra-nvidia.spec)" = "$(sed -n 's/^const NvidiaVersion = "\(.*\)"$/\1/p' internal/distro/nvidia.go)"
 
 grep -Eq '^type vegad_t;' packaging/selinux/vegad_bootloader.te
 grep -Eq '^type vegad_exec_t;' packaging/selinux/vegad_bootloader.te

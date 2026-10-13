@@ -3,6 +3,7 @@ package distro
 import (
 	"context"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,15 @@ func TestGuestExt4NvidiaRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	var point *nvidiarecovery.Point
-	err = answerNvidiaInstall(out, in, func() error {
+	kernel, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kmpEdition, err := NvidiaKMPEdition(strings.TrimSpace(string(kernel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = answerNvidiaInstall(out, in, kmpEdition, func() error {
 		point, err = nvidiarecovery.Prepare(func() { t.Log("verifying recovery") })
 		if err != nil {
 			return err

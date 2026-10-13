@@ -274,9 +274,18 @@ func (m nvidiaManager) reconcileSuspendPolicy(version string) (bool, error) {
 }
 
 func (m nvidiaManager) status() (NvidiaStatus, error) {
+	status, _, err := m.inspect()
+	return status, err
+}
+
+// inspect also returns the running kernel release so the installer can bind
+// the reviewed solver plan to the signed KMP built for exactly that kernel.
+// The wire struct NvidiaStatus is unchanged. The release is empty when the
+// inspection stopped before reading it.
+func (m nvidiaManager) inspect() (NvidiaStatus, string, error) {
 	gpu, supported, err := m.hardware()
 	if err != nil {
-		return NvidiaStatus{}, err
+		return NvidiaStatus{}, "", err
 	}
 	status := NvidiaStatus{Supported: supported, GPU: gpu, SecureBoot: m.secureBoot(), State: "no-gpu"}
 	if data, err := os.ReadFile(m.recoveryFile()); err == nil {
@@ -284,21 +293,21 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 		status.RecoverySnapshot = uint32(id)
 	}
 	if gpu == "" {
-		return status, nil
+		return status, "", nil
 	}
 	if !supported {
 		status.State = "unsupported-gpu"
-		return status, nil
+		return status, "", nil
 	}
 	packages, err := m.packages()
 	if err != nil {
-		return status, err
+		return status, "", err
 	}
 	arch, archErr := m.run.Output("uname", "-m")
 	if archErr != nil || arch != "x86_64" || !containsVersion(packages["Leap-release"], "16.1") {
 		status.Supported = false
 		status.State = "unsupported-system"
-		return status, nil
+		return status, "", nil
 	}
 	for name := range packages {
 		if (strings.HasPrefix(name, "nvidia-") || strings.HasPrefix(name, "libnvidia-")) && strings.Contains(name, "G07") {
@@ -306,14 +315,14 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 				if upstreamVersion(v) != nvidiaIntegrationVersion {
 					status.State = "inconsistent"
 					status.Detail = name + " " + v
-					return status, nil
+					return status, "", nil
 				}
 			}
 		}
 		if conflictingNvidiaPackage(name) {
 			status.State = "conflict"
 			status.Detail = name
-			return status, nil
+			return status, "", nil
 		}
 	}
 	count := 0
@@ -325,7 +334,7 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 			if upstreamVersion(version) != nvidiaIntegrationVersion {
 				status.State = "inconsistent"
 				status.Detail = name + " " + version
-				return status, nil
+				return status, "", nil
 			}
 		}
 	}
@@ -333,20 +342,20 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 	if managed && !containsVersion(packages["lyra-nvidia"], nvidiaIntegrationVersion) {
 		status.State = "inconsistent"
 		status.Detail = "lyra-nvidia"
-		return status, nil
+		return status, "", nil
 	}
 	if (count > 0 || managed) && count != len(nvidiaRequiredPackages) {
 		status.State = "inconsistent"
-		return status, nil
+		return status, "", nil
 	}
 	status.Installed = count == len(nvidiaRequiredPackages)
 	if status.SecureBoot == "unknown" {
 		status.State = "unknown-secure-boot"
-		return status, nil
+		return status, "", nil
 	}
 	kernel, err := m.run.Output("uname", "-r")
 	if err != nil {
-		return status, err
+		return status, "", err
 	}
 	target, targetErr := m.run.Output("readlink", "-f", "/boot/vmlinuz")
 	if filepath.Base(target) == "vmlinuz" {
@@ -356,54 +365,57 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 	}
 	if targetErr != nil || !strings.HasSuffix(target, "-default") {
 		status.State = "unknown-boot-kernel"
-		return status, nil
+		return status, kernel, nil
 	}
 	status.Detail = "NVIDIA " + nvidiaIntegrationVersion + " · Kernel " + kernel
 	if target != kernel {
 		status.Detail += " · /boot/vmlinuz: " + target
 	}
 	if !status.Installed {
-		// First installation is qualified only against the native kernel of the
-		// published signed KMP. Weak-updates compatibility is checked after install.
-		if kernel != "6.12.0-160100.4-default" || target != kernel {
+		// A first installation needs the signed KMP built for the kernel that will
+		// boot. Leap publishes it only for the stock -default flavor and only for
+		// the kernel currently shipped, so require running == default boot kernel;
+		// the reviewed solver plan then proves the KMP exists for that release.
+		// Weak-updates compatibility is checked after install.
+		if _, kmpErr := distro.NvidiaKMPEdition(kernel); kmpErr != nil || target != kernel {
 			status.State = "kernel-missing"
-			return status, nil
+			return status, kernel, nil
 		}
 		// A .run installation may have a module without any RPM ownership.
 		if version, _ := m.run.Output("modinfo", "-k", kernel, "-F", "version", "nvidia"); version != "" {
 			status.State = "conflict"
 			status.Detail = "nvidia.ko without the official RPM stack"
-			return status, nil
+			return status, kernel, nil
 		}
 		status.State = "available"
-		return status, nil
+		return status, kernel, nil
 	}
 	for _, release := range uniqueStrings(kernel, target) {
 		version, err := m.run.Output("modinfo", "-k", release, "-F", "version", "nvidia")
 		if err != nil || version != nvidiaIntegrationVersion {
 			status.State = "kernel-missing"
-			return status, nil
+			return status, kernel, nil
 		}
 		signer, _ := m.run.Output("modinfo", "-k", release, "-F", "signer", "nvidia")
 		if signer != "SUSE Linux Enterprise Secure Boot CA" {
 			status.State = "unsigned-module"
-			return status, nil
+			return status, kernel, nil
 		}
 		filename, err := m.run.Output("modinfo", "-k", release, "-F", "filename", "nvidia")
 		if err != nil {
 			status.State = "kernel-missing"
-			return status, nil
+			return status, kernel, nil
 		}
 		// weak-updates may be a symlink: verify ownership of the real module.
 		filename, err = m.run.Output("readlink", "-f", filename)
 		if err != nil {
 			status.State = "kernel-missing"
-			return status, nil
+			return status, kernel, nil
 		}
 		owner, err := m.run.Output("rpm", "-qf", "--qf", "%{NAME}", filename)
 		if err != nil || owner != nvidiaSignedKMP {
 			status.State = "unsigned-module"
-			return status, nil
+			return status, kernel, nil
 		}
 	}
 	status.State = "reboot-required"
@@ -419,7 +431,7 @@ func (m nvidiaManager) status() (NvidiaStatus, error) {
 	if !managed && status.State != "driver-error" {
 		status.State = "unmanaged"
 	}
-	return status, nil
+	return status, kernel, nil
 }
 
 func containsVersion(versions []string, want string) bool {
@@ -498,7 +510,7 @@ func (s *SoftwareService) CheckNvidia() (bool, string, *dbus.Error) {
 	if err := newNvidiaManager().check(); err != nil {
 		return false, err.Error(), nil
 	}
-	return true, "NVIDIA 610.57.04: NVML, module version and SUSE KMP verified", nil
+	return true, "NVIDIA " + nvidiaIntegrationVersion + ": NVML, module version and SUSE KMP verified", nil
 }
 
 // ReconcileNvidiaSuspendPolicy applies the managed power guard at daemon
