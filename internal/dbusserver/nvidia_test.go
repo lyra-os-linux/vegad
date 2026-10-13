@@ -295,6 +295,20 @@ func TestNvidiaFreshInstallEligibility(t *testing.T) {
 	}
 }
 
+// On a clean system modinfo fails and prints "Module nvidia not found."; the
+// runner returns that text with the error. It is not a module version.
+func TestNvidiaFreshInstallIgnoresModinfoNotFound(t *testing.T) {
+	r := compatibleRunner()
+	key := "modinfo -k 6.12.0-160100.7-default -F version nvidia"
+	r.outputs[key] = "modinfo: ERROR: Module nvidia not found."
+	r.errors[key] = errors.New("modinfo: exit status 1: modinfo: ERROR: Module nvidia not found.")
+	m := nvidiaManager{run: r, recoveryPath: filepath.Join(t.TempDir(), "none")}
+	status, err := m.status()
+	if err != nil || status.State != "available" || !nvidiaInstallable(status) {
+		t.Fatalf("%+v %v", status, err)
+	}
+}
+
 // A first installation is not pinned to one kernel release: any stock -default
 // kernel that is also the default boot kernel is eligible, and the reviewed
 // solver plan later proves the signed KMP exists for it. Other flavors and a
