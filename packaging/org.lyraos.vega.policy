@@ -152,6 +152,20 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.parental.enroll">
+    <description>Initialize parental-control authority</description>
+    <description xml:lang="pt_BR">Inicializar a autoridade do controle parental</description>
+    <description xml:lang="es">Inicializar la autoridad del control parental</description>
+    <message>Administrator authentication is required to initialize parental controls</message>
+    <message xml:lang="pt_BR">É necessário autenticar como administrador para inicializar o controle parental</message>
+    <message xml:lang="es">Se requiere autenticación de administrador para inicializar el control parental</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.lyraos.vega.firewall.configure">
     <description>Configurar o firewall</description>
     <message>Autenticação é necessária para configurar o firewall</message>

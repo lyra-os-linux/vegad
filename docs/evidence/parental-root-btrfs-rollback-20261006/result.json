@@ -1,0 +1,27 @@
+{
+  "booted_root": "/dev/vda btrfs subvol=/@/.snapshots/7/snapshot",
+  "filesystem_uuid": "90403594-2cbb-4016-a94a-99753d81f08e",
+  "parental_scope": "/@lyra-parental",
+  "parental_authority": "/@lyra-parental-authority",
+  "snapper_configs": [
+    "root",
+    "lyra-parental"
+  ],
+  "snapper_config_registration": "SNAPPER_CONFIGS=\"root lyra-parental\"",
+  "rollback_command": "snapper --no-dbus -c root --ambit classic rollback 1",
+  "rollback_result": "created backup snapshot 6 and writable snapshot 7; default subvolume ID 268",
+  "post_rollback_reboot": true,
+  "root_marker_created_after_initial_snapshot_removed": true,
+  "all_five_mounts_after_reboot": true,
+  "installer_sequence_executed": false,
+  "upgrade_or_reinstall_qualified": false,
+  "qemu_off": true,
+  "base_hashes_unchanged": true,
+  "system_backing_sha256": "334e5bb66bbcdebd3145d8b65172719e374925b53e45df0bf6735725269241dd",
+  "domain_backing_sha256": "0c8d7ad7838862e6b19a28aba210dc1db083fa62c161ff7d9315afdfde0dbf8a",
+  "parental_scope_witness_sha256": "a73f1e8432fb272437f27c9287b7cb52c64c68795b921387c440ca691044c186",
+  "parental_scope_witness_inode": 261,
+  "authority_sentinel_sha256": "485812be98475291a393e9e6e5bf989dfad4e656500f4822987a82849951e02d",
+  "authority_sentinel_inode": 258,
+  "reference_lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

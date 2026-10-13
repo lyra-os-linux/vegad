@@ -152,16 +152,42 @@ func enrollmentMatches(l *directoryLease, ref RecoveryReference, pin referencePi
 // its stable reference.lock. proveFresh is a trusted, bounded, side-effect-free
 // INSTALLER attestation check bound to installation, operation and full digest.
 // Neither an empty directory nor root/wheel/NSS constitutes that attestation.
-// No production attestation adapter is supplied here. No dialogs under EX.
+// NewESPBackedReferenceProvisioner adapts the installed ESP permit. No dialogs
+// under EX; maintenance callbacks remain a caller responsibility.
 type ReferenceProvisioner struct {
-	writer     *ReferenceWriter
-	proveFresh func(string, string, string) error
+	writer          *ReferenceWriter
+	proveFresh      func(string, string, string) error
+	consumeFresh    func(string, string, string) error
+	requiresConsume bool
+}
+
+// Issuer reports the issuer identity fixed by this provisioner's trusted
+// service configuration. It is used to ensure enrollment verification and
+// durable sealing share the same authority.
+func (p *ReferenceProvisioner) Issuer() string {
+	if p == nil || p.writer == nil {
+		return ""
+	}
+	return p.writer.issuer
 }
 
 func NewReferenceProvisioner(directory, catalogDirectory, issuer string, qualify func(string, string) (string, error), proveFresh func(string, string, string) error) *ReferenceProvisioner {
-	return &ReferenceProvisioner{NewReferenceWriter(directory, catalogDirectory, issuer, qualify), proveFresh}
+	return &ReferenceProvisioner{writer: NewReferenceWriter(directory, catalogDirectory, issuer, qualify), proveFresh: proveFresh}
 }
-func (p *ReferenceProvisioner) check(initial RecoveryReference, operation string, revalidate func() error) error {
+
+// NewInstallerReferenceProvisioner requires a trusted installer to durably burn
+// the exact enrollment permission BEFORE the local completion marker. consume
+// must be bounded, noninteractive and irrevocable on success, with its record
+// outside the reference/catalog restoration domain. Neither callback may acquire
+// this authority's lock. If consumption succeeds but publication fails, ordinary
+// enrollment stays denied; only independent qualified maintenance can recover.
+// This constructor does not implement or authenticate the installer callbacks.
+func NewInstallerReferenceProvisioner(directory, catalogDirectory, issuer string, qualify func(string, string) (string, error), check, consume func(string, string, string) error) *ReferenceProvisioner {
+	p := NewReferenceProvisioner(directory, catalogDirectory, issuer, qualify, check)
+	p.consumeFresh, p.requiresConsume = consume, true
+	return p
+}
+func (p *ReferenceProvisioner) check(initial RecoveryReference, operation string, revalidate func() error, allowConsumed bool) error {
 	if revalidate == nil || revalidate() != nil {
 		return Denied
 	}
@@ -171,8 +197,15 @@ func (p *ReferenceProvisioner) check(initial RecoveryReference, operation string
 	if initial.mode != "first-install" || !token.MatchString(operation) {
 		return Conflict
 	}
-	if p == nil || p.writer == nil || p.proveFresh == nil || p.proveFresh(initial.installation, operation, initial.digest) != nil {
+	if p == nil || p.writer == nil || p.proveFresh == nil || (p.requiresConsume && p.consumeFresh == nil) {
 		return Denied
+	}
+	proofErr := p.proveFresh(initial.installation, operation, initial.digest)
+	if proofErr != nil {
+		code, consumed := proofErr.(Code)
+		if !allowConsumed || !p.requiresConsume || !consumed || code != InstallerPermissionConsumed {
+			return Denied
+		}
 	}
 	return nil
 }
@@ -184,6 +217,14 @@ func (p *ReferenceProvisioner) fresh(l *directoryLease, boundary string, s enrol
 		return Denied
 	}
 	return l.stable()
+}
+func (p *ReferenceProvisioner) consumed(s enrollment) bool {
+	if p == nil || p.proveFresh == nil {
+		return false
+	}
+	proofErr := p.proveFresh(s.reference.installation, s.operation, s.reference.digest)
+	code, ok := proofErr.(Code)
+	return ok && code == InstallerPermissionConsumed
 }
 func onlyEnrollmentLock(l *directoryLease) error {
 	fd, e := unix.Openat(l.dir, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
@@ -248,8 +289,19 @@ func (p *ReferenceProvisioner) finish(l *directoryLease, s enrollment, seal []by
 			return Conflict
 		}
 	}
-	if e = p.fresh(l, boundary, s, revalidate); e != nil {
-		return e
+	consumed := p.requiresConsume && p.consumed(s)
+	if consumed {
+		// The process may have stopped after burning the independent installer
+		// permission but before publishing its local completion marker. Resume
+		// only this exact digest and operation, after fresh maintenance/topology
+		// checks; never request the now-spent permission again.
+		if e = w.fresh(l, boundary, revalidate); e != nil {
+			return e
+		}
+	} else {
+		if e = p.fresh(l, boundary, s, revalidate); e != nil {
+			return e
+		}
 	}
 	if !refPresent {
 		if _, e = w.replace(l, "reference.json", nil, data, ReferenceLimit); e != nil {
@@ -281,8 +333,32 @@ func (p *ReferenceProvisioner) finish(l *directoryLease, s enrollment, seal []by
 	if e != nil || !pinMatches(pin, s.reference, w.issuer) {
 		return Conflict
 	}
-	if e = p.fresh(l, boundary, s, revalidate); e != nil {
+	if consumed {
+		if e = w.fresh(l, boundary, revalidate); e != nil {
+			return e
+		}
+	} else if e = p.fresh(l, boundary, s, revalidate); e != nil {
 		return e
+	}
+	if p.requiresConsume && !consumed {
+		if e = p.consumeFresh(s.reference.installation, s.operation, s.reference.digest); e != nil {
+			return e
+		}
+		w.point("installer:consumed")
+		// Success must leave the same permission unusable. A callback that says
+		// it consumed a still-valid permission cannot acknowledge enrollment.
+		proofErr := p.proveFresh(s.reference.installation, s.operation, s.reference.digest)
+		if proofErr == nil {
+			return Conflict
+		}
+		if code, ok := proofErr.(Code); !ok || code != InstallerPermissionConsumed {
+			return proofErr
+		}
+		// Recheck maintenance and topology after the irreversible side effect;
+		// do not require freshness again once the permission has been burned.
+		if e = w.fresh(l, boundary, revalidate); e != nil {
+			return e
+		}
 	}
 	if _, e = w.replace(l, enrollmentCommitName, nil, enrollmentCommitBytes(s, seal), enrollmentCommitLimit); e != nil {
 		return e
@@ -291,7 +367,7 @@ func (p *ReferenceProvisioner) finish(l *directoryLease, s enrollment, seal []by
 	return enrollmentMatches(l, s.reference, pin)
 }
 func (p *ReferenceProvisioner) Initialize(initial RecoveryReference, operation string, revalidate func() error) (result RecoveryReference, err error) {
-	if e := p.check(initial, operation, revalidate); e != nil {
+	if e := p.check(initial, operation, revalidate, false); e != nil {
 		return result, e
 	}
 	w := p.writer
@@ -337,10 +413,11 @@ func (p *ReferenceProvisioner) Initialize(initial RecoveryReference, operation s
 }
 
 // ResumeInitial only completes a matching interrupted first enrollment while
-// the installer STILL attests freshness. A permanent commit marker forbids repair
-// or resetting sequence 1 even when canonical files/lock have been lost.
+// the installer attests freshness, or after the exact permission was durably
+// consumed for this same operation/digest. A permanent commit marker forbids
+// repair or resetting sequence 1 even when canonical files/lock have been lost.
 func (p *ReferenceProvisioner) ResumeInitial(initial RecoveryReference, operation string, revalidate func() error) (result RecoveryReference, err error) {
-	if e := p.check(initial, operation, revalidate); e != nil {
+	if e := p.check(initial, operation, revalidate, true); e != nil {
 		return result, e
 	}
 	w := p.writer

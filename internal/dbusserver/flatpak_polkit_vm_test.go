@@ -90,6 +90,12 @@ printf '%s|%s\n' "$UID" "$*" >> /tmp/flatpak-vm.log
 	}
 	userSender := dbus.Sender(scanner.Text())
 	rootSender := dbus.Sender(conn.Names()[0])
+	if err := checkPolkit(rootSender, parentalEnrollmentPolkitAction, false); err != nil {
+		t.Fatalf("root authorization recheck denied for parental enrollment: %v", err)
+	}
+	if err := checkPolkit(userSender, parentalEnrollmentPolkitAction, false); err == nil {
+		t.Fatal("non-admin caller passed parental enrollment revalidation")
+	}
 	s := &SoftwareService{activity: &Activity{}, conn: conn, profile: profile.Desktop}
 	for _, action := range []string{"install", "remove", "update"} {
 		if err := requirePolkit(rootSender, "org.lyraos.vega.software."+action); err != nil {

@@ -1,0 +1,11 @@
+{
+  "kernel": "6.12.0-160100.4-default",
+  "sha256": {
+    "/usr/lib/modules/6.12.0-160100.4-default/kernel/fs/btrfs/btrfs.ko.zst": "861d59ac3e754b388ff3d485140ab28bf8590b730ab6c53499ce977d2c6253fa",
+    "/usr/lib/modules/6.12.0-160100.4-default/kernel/lib/raid6/raid6_pq.ko.zst": "022fb73aabc9b7baf13fb92f343796cf104d5f3cd5bc665dc02489b0a7716474",
+    "/usr/lib/modules/6.12.0-160100.4-default/kernel/crypto/xor.ko.zst": "0dbb040e2a162fbf461737d1e010b2131b40f63d622cdadac23bb24854f05c2b",
+    "/usr/lib/modules/6.12.0-160100.4-default/kernel/crypto/blake2b_generic.ko.zst": "d44f6acfc5d351e219ecb8cffde1d24ef400f242d735f58e4325183351bff8ec",
+    "/usr/lib/modules/6.12.0-160100.4-default/modules.dep.bin": "3be6d2c141a74a82deec54e3b9afb618a61f6724e679c9cf581e85090a8b2ebf",
+    "/tmp/lyra-parental-layout-20261006/initrd-btrfs.gz": "7cd3caea5193dbe42db717ac973cc8cc03e65db913d34a46461dc256dbf18f91"
+  }
+}

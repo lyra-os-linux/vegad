@@ -1,0 +1,17 @@
+#!/bin/bash
+export PATH=/usr/bin:/bin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs tmpfs /run
+modprobe virtio_pci
+modprobe virtio_blk
+modprobe btrfs
+for ((i=0;i<100;i++)); do [ -b /dev/vda ] && break; sleep 0.1; done
+mount -t btrfs /dev/vda /sysroot || exec bash
+mkdir -p /sysroot/dev /sysroot/proc /sysroot/sys /sysroot/run
+mount --move /dev /sysroot/dev
+mount --move /proc /sysroot/proc
+mount --move /sys /sysroot/sys
+mount --move /run /sysroot/run
+exec switch_root /sysroot /usr/lib/systemd/systemd

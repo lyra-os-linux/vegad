@@ -23,13 +23,14 @@ type Code string
 func (c Code) Error() string { return string(c) }
 
 const (
-	InvalidCatalog      Code = "InvalidCatalog"
-	UnsafeCatalog       Code = "UnsafeCatalog"
-	RecoveryRequired    Code = "RecoveryRequired"
-	Busy                Code = "Busy"
-	InvalidIdentity     Code = "InvalidIdentity"
-	Blocked             Code = "Blocked"
-	UnsupportedProducer Code = "UnsupportedProducer"
+	InvalidCatalog             Code = "InvalidCatalog"
+	UnsafeCatalog              Code = "UnsafeCatalog"
+	RecoveryRequired           Code = "RecoveryRequired"
+	Busy                       Code = "Busy"
+	InvalidIdentity            Code = "InvalidIdentity"
+	Blocked                    Code = "Blocked"
+	UnsupportedProducer        Code = "UnsupportedProducer"
+	InstallerPermissionConsumed Code = "InstallerPermissionConsumed"
 )
 
 var accountName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,62}$`)
