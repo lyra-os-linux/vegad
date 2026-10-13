@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -221,22 +222,28 @@ func validateNvidiaPlan(plan nvidiaPlan, kmpEdition string) error {
 				return errors.New("NVIDIA plan contains duplicate/non-package entries")
 			}
 			seen[pkg.Name] = true
-			expectedRepo := "lyra-nvidia-upstream"
+			expectedRepos := []string{"lyra-nvidia-upstream"}
 			version := NvidiaVersion + "-"
 			arch := "x86_64"
 			switch pkg.Name {
 			case "lyra-nvidia":
-				expectedRepo = "lyra-nvidia"
+				expectedRepos = []string{"lyra-nvidia"}
 				arch = "noarch"
 			case NvidiaKMP:
-				expectedRepo = "lyra-nvidia-oss"
+				expectedRepos = []string{"lyra-nvidia-oss"}
 				version = kmpEdition
 			case "nvidia-open", "nvidia-common-G07":
 			case "nvidia-compute-G07", "nvidia-compute-utils-G07", "nvidia-gl-G07", "nvidia-video-G07", "nvidia-modprobe", "nvidia-persistenced":
+			case "libnvidia-egl-gbm1", "libnvidia-egl-wayland21", "libnvidia-egl-x111", "libOpenCL1":
+				// Runtime libraries required by nvidia-gl-G07/nvidia-compute-G07. They
+				// are independent projects with their own versions, packaged both by
+				// Leap and by NVIDIA's channel; either trusted source is acceptable.
+				expectedRepos = []string{"lyra-nvidia-oss", "lyra-nvidia-upstream"}
+				version = ""
 			default:
 				return fmt.Errorf("NVIDIA plan includes an unqualified dependency: %s", pkg.Name)
 			}
-			if pkg.Repository != expectedRepo || pkg.Arch != arch || !strings.HasPrefix(pkg.Edition, version) {
+			if !slices.Contains(expectedRepos, pkg.Repository) || pkg.Arch != arch || !strings.HasPrefix(pkg.Edition, version) {
 				return fmt.Errorf("NVIDIA package source/version/architecture refused: %s %s %s (%s)", pkg.Name, pkg.Edition, pkg.Arch, pkg.Repository)
 			}
 		}

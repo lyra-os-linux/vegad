@@ -83,7 +83,10 @@ administrator deletion or retention cleanup. It lives in its own root-owned
    holding the package lock**, and recheck prerequisites before answering its
    commit prompt. Create and verify the recovery point inside that callback,
    after metadata refresh and before RPM commit. Accept only additions of the ten qualified packages, fixed
-   versions, expected architectures and sources. No kernel changes, removals,
+   versions, expected architectures and sources, plus the runtime libraries they
+   require when absent (`libnvidia-egl-gbm1`, `libnvidia-egl-wayland21`,
+   `libnvidia-egl-x111`, `libOpenCL1`) at their own versions from Leap OSS or the
+   official channel. No kernel changes, removals,
    upgrades, downgrades, DKMS, file-conflict overrides, solver choices or implicit
    EULA acceptance. Unexpected dependencies require a reviewed follow-up.
 7. Download before RPM commit; verify installed state. Only then persist the OBS
