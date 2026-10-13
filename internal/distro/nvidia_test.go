@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -64,12 +65,52 @@ func TestNvidiaInstallProtocol(t *testing.T) {
 }
 
 func freshBundlePlan(kmpEdition string) string {
+	return freshBundlePlanWith(kmpEdition, "")
+}
+
+// Dry-run on the GTX 1650 reference (2026-10-13, no NVIDIA packages installed):
+// nvidia-gl-G07 pulls the three EGL platform libraries and nvidia-compute-G07
+// pulls libOpenCL1, all at their own versions.
+const runtimeLibraryRows = `<solvable type="package" name="libnvidia-egl-gbm1" edition="1.1.3-160100.3.1" arch="x86_64" repository="lyra-nvidia-oss"/>` +
+	`<solvable type="package" name="libnvidia-egl-wayland21" edition="1.0.2-1" arch="x86_64" repository="lyra-nvidia-upstream"/>` +
+	`<solvable type="package" name="libnvidia-egl-x111" edition="1.0.6-160100.1.1" arch="x86_64" repository="lyra-nvidia-oss"/>` +
+	`<solvable type="package" name="libOpenCL1" edition="2.3.1-160100.2.1" arch="x86_64" repository="lyra-nvidia-oss"/>`
+
+func freshBundlePlanWith(kmpEdition, extraRows string) string {
 	rows := `<solvable type="package" name="lyra-nvidia" edition="` + NvidiaVersion + `-lp161.1.1" arch="noarch" repository="lyra-nvidia"/>`
 	for _, name := range []string{"nvidia-open", "nvidia-common-G07", "nvidia-compute-G07", "nvidia-compute-utils-G07", "nvidia-gl-G07", "nvidia-video-G07", "nvidia-modprobe", "nvidia-persistenced"} {
 		rows += `<solvable type="package" name="` + name + `" edition="` + NvidiaVersion + `-1" arch="x86_64" repository="lyra-nvidia-upstream"/>`
 	}
 	rows += `<solvable type="package" name="` + NvidiaKMP + `" edition="` + kmpEdition + `160100.2.4" arch="x86_64" repository="lyra-nvidia-oss"/>`
-	return `<stream><install-summary packages-to-change="10"><to-install>` + rows + `</to-install></install-summary>` + commitPrompt + `</stream>`
+	rows += extraRows
+	count := 10 + strings.Count(extraRows, "<solvable ")
+	return `<stream><install-summary packages-to-change="` + strconv.Itoa(count) + `"><to-install>` + rows + `</to-install></install-summary>` + commitPrompt + `</stream>`
+}
+
+func TestNvidiaFreshBundlePlanWithRuntimeLibraries(t *testing.T) {
+	var out bytes.Buffer
+	if err := answerNvidiaInstall(strings.NewReader(freshBundlePlanWith(testKMPEdition, runtimeLibraryRows)), &out, testKMPEdition, func() error { return nil }, func(uint32, string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "y\n" {
+		t.Fatal(out.String())
+	}
+	for _, tc := range []struct{ name, rows string }{
+		{"untrusted-source", strings.Replace(runtimeLibraryRows, `repository="lyra-nvidia-oss"`, `repository="repo-packman"`, 1)},
+		{"foreign-arch", strings.Replace(runtimeLibraryRows, `name="libOpenCL1" edition="2.3.1-160100.2.1" arch="x86_64"`, `name="libOpenCL1" edition="2.3.1-160100.2.1" arch="i586"`, 1)},
+		{"other-library", runtimeLibraryRows + `<solvable type="package" name="libvdpau1" edition="1.5-1.1" arch="x86_64" repository="lyra-nvidia-oss"/>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := answerNvidiaInstall(strings.NewReader(freshBundlePlanWith(testKMPEdition, tc.rows)), &out, testKMPEdition, func() error {
+				t.Fatal("recovery prepared for a refused plan")
+				return nil
+			}, func(uint32, string) {})
+			if err == nil || out.Len() != 0 {
+				t.Fatalf("err=%v reply=%q", err, out.String())
+			}
+		})
+	}
 }
 
 func TestNvidiaFreshBundlePlan(t *testing.T) {
