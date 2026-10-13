@@ -382,7 +382,10 @@ func (m nvidiaManager) inspect() (NvidiaStatus, string, error) {
 			return status, kernel, nil
 		}
 		// A .run installation may have a module without any RPM ownership.
-		if version, _ := m.run.Output("modinfo", "-k", kernel, "-F", "version", "nvidia"); version != "" {
+		// modinfo exits non-zero with "Module nvidia not found." when there is
+		// none; the runner returns that text too, so only a successful lookup
+		// with a version counts as a module.
+		if version, err := m.run.Output("modinfo", "-k", kernel, "-F", "version", "nvidia"); err == nil && version != "" {
 			status.State = "conflict"
 			status.Detail = "nvidia.ko without the official RPM stack"
 			return status, kernel, nil
