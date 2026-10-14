@@ -35,6 +35,41 @@ var nvidiaSources = []struct{ alias, url, key string }{
 	{"lyra-nvidia-oss", "https://download.opensuse.org/distribution/leap/16.1/repo/oss/", ""},
 }
 
+// RefreshNvidiaRepositories builds the system metadata cache of the NVIDIA
+// repositories that stay enabled after a successful installation: the
+// package-owned upstream channel and the OBS integration repository written
+// by EnableNvidiaOBS. InstallNvidiaBundle refreshes only its private cache, so
+// without this step the next unprivileged Vega query finds enabled
+// repositories it cannot refresh and reports them as skipped. Both signing
+// keys were approved during the installation; a key that is still untrusted
+// here fails non-interactively instead of being imported.
+func RefreshNvidiaRepositories() error {
+	return refreshNvidiaRepositoriesWith(func(name string, args ...string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		base := packageCommand(name, args...)
+		cmd := exec.CommandContext(ctx, base.Path, base.Args[1:]...)
+		cmd.Env = commandEnvC()
+		cmd.WaitDelay = 5 * time.Second
+		out, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	})
+}
+
+func refreshNvidiaRepositoriesWith(output func(string, ...string) (string, error)) error {
+	args := []string{"--non-interactive", "refresh", "--"}
+	for _, source := range nvidiaSources {
+		if source.key != "" {
+			args = append(args, source.alias)
+		}
+	}
+	out, err := output("zypper", args...)
+	if err != nil {
+		return repositoryRefreshError(out, err)
+	}
+	return nil
+}
+
 // NvidiaKMPEdition returns the RPM edition prefix the signed KMP must carry for
 // the given running kernel release, e.g. "615.71.09_k6.12.0_160100.7-" for
 // 6.12.0-160100.7-default. Only the stock -default flavor is qualified.

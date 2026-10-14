@@ -85,9 +85,12 @@ cache retains the serialized response; package parsing happens in the worker.
 
 Native queries use local repository metadata with `--no-refresh`. They do not
 persist the shared update state or change its refresh timestamp. Missing package
-matches (Zypper 104) remain empty results; other errors, including permissions,
-locks and invalid metadata, are returned. Repository refresh remains an explicit
-maintenance operation because writing the shared cache requires elevation.
+matches (Zypper 104) remain empty results. Skipped repositories (Zypper 106,
+typically an enabled repository whose cache was never built) keep the answer
+for the repositories that loaded and log the skipped names to the worker's
+stderr; other errors, including permissions, locks and invalid metadata, are
+returned. Repository refresh remains an explicit maintenance operation because
+writing the shared cache requires elevation.
 
 ## Files, capabilities and syscall families
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -70,17 +71,54 @@ func zypperSearchArgs(query string) []string {
 	return []string{"--non-interactive", "--no-refresh", "search", "--", query}
 }
 
+// Zypper exit status 106 (ZYPPER_EXIT_INF_REPOS_SKIPPED): the query ran over
+// the repositories it could load and skipped the rest, typically an enabled
+// repository whose metadata cache does not exist yet. Vega's read-only
+// queries run unprivileged on a read-only filesystem and cannot build that
+// cache; only the privileged refresh can.
+const zypperExitReposSkipped = 106
+
 // Only the documented no-match result is an empty successful query. Permission,
 // lock, metadata and backend errors must reach the caller instead of looking
-// like an empty repository or a fully up-to-date system.
+// like an empty repository or a fully up-to-date system. Skipped repositories
+// (106) are informational: the answer covers every readable repository and is
+// logged as partial rather than discarded, so a repository added outside the
+// Vega refresh flow cannot take the whole software interface down.
 func zypperReadError(out string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 104 {
-		return nil
+	if exit, ok := err.(*exec.ExitError); ok {
+		switch exit.ExitCode() {
+		case 104:
+			return nil
+		case zypperExitReposSkipped:
+			zypperWarnf("vegad: zypper skipped repositories %q; the answer covers the remaining ones until a privileged refresh builds their cache", zypperSkippedRepositories(out))
+			return nil
+		}
 	}
 	return fmt.Errorf("zypper query: %w — %s", err, out)
+}
+
+func zypperExitedWith(err error, code int) bool {
+	exit, ok := err.(*exec.ExitError)
+	return ok && exit.ExitCode() == code
+}
+
+// zypperWarnf is replaceable in tests. Logging goes to stderr, which the query
+// launcher captures separately from the JSON reply on stdout.
+var zypperWarnf = log.Printf
+
+var zypperSkippedRepositoryLine = regexp.MustCompile(`(?m)^Warning: Skipping repository '([^']+)'`)
+
+// zypperSkippedRepositories lists the repository names zypper reported as
+// skipped in the diagnostic output that accompanies exit status 106.
+func zypperSkippedRepositories(out string) []string {
+	var names []string
+	for _, m := range zypperSkippedRepositoryLine.FindAllStringSubmatch(out, -1) {
+		names = append(names, m[1])
+	}
+	return names
 }
 
 // Search shells out to `zypper search`, which (like pacman -Ss) only reads
@@ -92,8 +130,8 @@ func (z *zypperBackend) Search(query string) ([]PackageRef, error) {
 	}
 
 	out, err := runCommandOutput("zypper", zypperSearchArgs(query)...)
-	if err != nil {
-		return nil, zypperReadError(out, err)
+	if err = zypperReadError(out, err); err != nil {
+		return nil, err
 	}
 
 	var results []PackageRef
@@ -181,8 +219,8 @@ func zypperParseUpdates(extraArgs ...string) ([]PackageRef, error) {
 func zypperParseUpdatesWith(output func(string, ...string) (string, error), extraArgs ...string) ([]PackageRef, error) {
 	args := append([]string{"--non-interactive", "--no-refresh", "list-updates"}, extraArgs...)
 	out, err := output("zypper", args...)
-	if err != nil {
-		return nil, zypperReadError(out, err)
+	if err = zypperReadError(out, err); err != nil {
+		return nil, err
 	}
 
 	var results []PackageRef
@@ -407,7 +445,7 @@ func (z *zypperBackend) GetDetails(id string) (PackageDetails, error) {
 		}
 	}
 
-	if out, err := runCommandOutput("zypper", "--non-interactive", "--no-refresh", "info", "--", id); err == nil {
+	if out, err := runCommandOutput("zypper", "--non-interactive", "--no-refresh", "info", "--", id); zypperReadError(out, err) == nil && !zypperExitedWith(err, 104) {
 		info := parseZypperInfoBlock(out)
 		if details.Name == "" {
 			details.Name = info["Name"]

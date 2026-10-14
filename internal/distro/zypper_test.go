@@ -1,6 +1,7 @@
 package distro
 
 import (
+	"fmt"
 	"os/exec"
 	"reflect"
 	"strconv"
@@ -64,12 +65,14 @@ func TestParseZypperUntrustedKeyUnrelatedError(t *testing.T) {
 }
 
 // Permission failures must not masquerade as an empty successful query when
-// moving these operations from root to an ordinary user.
+// moving these operations from root to an ordinary user. Skipped repositories
+// (106) are the one informational status besides 104: zypper still answered
+// for every repository it could load.
 func TestZypperReadQueriesDistinguishNoResultsFromFailures(t *testing.T) {
-	for _, code := range []int{0, 104, 4, 5, 7, 106} {
+	for _, code := range []int{0, 104, 106, 4, 5, 7, 105} {
 		err := exec.Command("/bin/sh", "-c", "exit "+strconv.Itoa(code)).Run()
 		got := zypperReadError("repository diagnostic", err)
-		if (got == nil) != (code == 0 || code == 104) {
+		if (got == nil) != (code == 0 || code == 104 || code == 106) {
 			t.Errorf("exit %d: %v", code, got)
 		}
 		if got != nil && !strings.Contains(got.Error(), "repository diagnostic") {
@@ -78,5 +81,46 @@ func TestZypperReadQueriesDistinguishNoResultsFromFailures(t *testing.T) {
 	}
 	if err := zypperReadError("", &exec.Error{Name: "zypper", Err: exec.ErrNotFound}); err == nil {
 		t.Fatal("missing executable treated as no updates")
+	}
+}
+
+// A repository whose cache was never built (added by a package or by root
+// outside Vega) makes the unprivileged query exit 106 with the answer intact.
+// The skipped repositories are logged, not turned into a failure.
+func TestZypperReadToleratesSkippedRepositoriesAndLogsThem(t *testing.T) {
+	const out = `Error building the cache:
+[lyra-nvidia|https://download.opensuse.org/repositories/home:/rodrigosbrito:/nvidia/openSUSE_Leap_16.1/] No permission to write repository cache.
+Warning: The metadata cache needs to be built for the 'lyra-nvidia' repository. You can run 'zypper refresh' as root to do this.
+Warning: Skipping repository 'lyra-nvidia' because of the above error.
+Error building the cache:
+[lyra-nvidia-upstream|https://developer.download.nvidia.com/compute/cuda/repos/suse16/x86_64/] No permission to write repository cache.
+Warning: The metadata cache needs to be built for the 'NVIDIA official SUSE 16 - managed by Lyra NVIDIA integration' repository. You can run 'zypper refresh' as root to do this.
+Warning: Skipping repository 'NVIDIA official SUSE 16 - managed by Lyra NVIDIA integration' because of the above error.
+Some of the repositories have not been refreshed because of an error.
+Loading repository data...
+Reading installed packages...
+No updates found.`
+	want := []string{"lyra-nvidia", "NVIDIA official SUSE 16 - managed by Lyra NVIDIA integration"}
+	if got := zypperSkippedRepositories(out); !reflect.DeepEqual(got, want) {
+		t.Fatalf("zypperSkippedRepositories() = %q, want %q", got, want)
+	}
+	var logged string
+	previous := zypperWarnf
+	zypperWarnf = func(format string, args ...any) { logged = fmt.Sprintf(format, args...) }
+	defer func() { zypperWarnf = previous }()
+	err := exec.Command("/bin/sh", "-c", "exit 106").Run()
+	if got := zypperReadError(out, err); got != nil {
+		t.Fatalf("exit 106 with an answer treated as failure: %v", got)
+	}
+	for _, name := range want {
+		if !strings.Contains(logged, name) {
+			t.Errorf("skipped repository %q not logged: %q", name, logged)
+		}
+	}
+	updates, err := zypperParseUpdatesWith(func(string, ...string) (string, error) {
+		return out, exec.Command("/bin/sh", "-c", "exit 106").Run()
+	})
+	if err != nil || len(updates) != 0 {
+		t.Fatalf("list-updates with skipped repositories = %v, %v; want no updates, no error", updates, err)
 	}
 }
