@@ -31,21 +31,39 @@ func (f *FirewallService) Status() (bool, string, *dbus.Error) {
 }
 
 func firewalldStatus() (bool, string, *dbus.Error) {
-	out, err := runCommandOutput("firewall-cmd", "--state")
+	running, err := firewalldRunning()
 	if err != nil {
-		if strings.Contains(strings.ToLower(out), "not running") {
-			return false, "", nil
-		}
-		return false, "", dbus.MakeFailedError(fmt.Errorf("firewall-cmd --state: %w — %s", err, out))
+		return false, "", dbus.MakeFailedError(err)
 	}
-
+	if !running {
+		return false, "", nil
+	}
 	zone := ""
-	if strings.TrimSpace(out) == "running" {
-		if zoneOut, zoneErr := runCommandOutput("firewall-cmd", "--get-active-zone"); zoneErr == nil {
-			zone = firstActiveZone(zoneOut)
-		}
+	if zoneOut, zoneErr := runCommandOutput("firewall-cmd", "--get-active-zone"); zoneErr == nil {
+		zone = firstActiveZone(zoneOut)
 	}
-	return strings.TrimSpace(out) == "running", zone, nil
+	return true, zone, nil
+}
+
+// firewalldRunning asks systemd whether firewalld is active instead of running
+// `firewall-cmd --state`. That command talks to firewalld over D-Bus and needs
+// a polkit authorization that only an active local session receives silently;
+// from SSH or the vega-web broker it fails with "Authorization failed"
+// (vegad#79). `systemctl is-active` needs no authorization and runs as the
+// ordinary caller inside the query worker. The active zone query does not
+// need that authorization either, so it stays best-effort.
+func firewalldRunning() (bool, error) {
+	out, err := runCommandOutput("systemctl", "is-active", "firewalld.service")
+	switch strings.TrimSpace(out) {
+	case "active", "reloading", "refreshing", "activating":
+		return true, nil
+	case "inactive", "failed", "deactivating":
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("systemctl is-active firewalld: %w — %s", err, out)
+	}
+	return false, nil
 }
 
 var firewalldCatalog = []struct {
