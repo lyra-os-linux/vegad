@@ -90,6 +90,8 @@ install -Dm644 packaging/org.lyraos.Vega1.service \
   %{buildroot}%{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
 install -Dm644 packaging/org.lyraos.vega.policy \
   %{buildroot}%{_datadir}/polkit-1/actions/org.lyraos.vega.policy
+install -Dm644 packaging/polkit-1/rules.d/50-vegad-remote-admin.rules \
+  %{buildroot}%{_datadir}/polkit-1/rules.d/50-vegad-remote-admin.rules
 install -Dm644 internal/i18n/catalog/en-US.json \
   %{buildroot}%{_datadir}/locale/en_US/LC_MESSAGES/vegad.json
 install -Dm644 internal/i18n/catalog/pt-BR.json \
@@ -141,6 +143,7 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 %{_datadir}/dbus-1/system.d/org.lyraos.Vega1.conf
 %{_datadir}/dbus-1/system-services/org.lyraos.Vega1.service
 %{_datadir}/polkit-1/actions/org.lyraos.vega.policy
+%{_datadir}/polkit-1/rules.d/50-vegad-remote-admin.rules
 %lang(en) %{_datadir}/locale/en_US/LC_MESSAGES/vegad.json
 %lang(pt_BR) %{_datadir}/locale/pt_BR/LC_MESSAGES/vegad.json
 %lang(es) %{_datadir}/locale/es_ES/LC_MESSAGES/vegad.json

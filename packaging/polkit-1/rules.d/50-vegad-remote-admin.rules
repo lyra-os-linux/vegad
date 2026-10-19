@@ -1,0 +1,34 @@
+// Vega: administração remota por membros de wheel (Lyra OS Server).
+//
+// A política em org.lyraos.vega.policy só autoriza mutações com auth_admin em
+// sessão local ativa, e as leituras *.read-admin só em silêncio nessa mesma
+// sessão. Fora de um seat local ativo (SSH, painel vega-web, console serial)
+// o polkit usa allow_any=no e nega sem oferecer desafio, então vega-cli e
+// vega-web não conseguem pedir a senha do administrador como o vega-gtk faz
+// na sessão gráfica.
+//
+// Esta regra espelha, para um membro de wheel em sessão não local, o que o
+// desktop já concede ao usuário da sessão ativa: as quatro leituras
+// intermediadas (backup, kernel, snapshots, firewall) em silêncio; o journal
+// (logs.read-admin) com a própria senha, retida como o auth_admin_keep do
+// desktop; e toda ação mutável com a própria senha (AUTH_SELF), sem retenção.
+// Nunca retorna YES para mutações e nunca aceita a conta de serviço vega-web:
+// o painel autentica o usuário real pelo broker PAM/polkit e a identidade
+// autorizada continua sendo a dele. Sessões locais ativas seguem a política
+// padrão (agente gráfico, auth_admin). Regras locais carregadas antes desta
+// continuam valendo.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.lyraos.vega.") !== 0)
+        return;
+    if (subject.user === "vega-web")
+        return polkit.Result.NO;
+    if (subject.user === "root" || !subject.isInGroup("wheel"))
+        return;
+    if (subject.local && subject.active)
+        return;
+    if (/^org\.lyraos\.vega\.(backup|kernel|snapshots|firewall)\.read-admin$/.test(action.id))
+        return polkit.Result.YES;
+    if (action.id === "org.lyraos.vega.logs.read-admin")
+        return polkit.Result.AUTH_SELF_KEEP;
+    return polkit.Result.AUTH_SELF;
+});
