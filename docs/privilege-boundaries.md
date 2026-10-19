@@ -54,15 +54,16 @@ vega-gtk does through the graphical session agent (vega-web#17, vega-cli#26).
 `packaging/polkit-1/rules.d/50-vegad-remote-admin.rules` closes that gap for
 members of `wheel` whose subject is not a local active session:
 
-| Subject | `*.read-admin` reads | Mutations |
-| --- | --- | --- |
-| Local active session (desktop) | policy defaults: silent | policy defaults: `auth_admin` through the session agent |
-| `wheel` member, non-local or inactive session | `YES` (silent, same information the desktop grants its active user) | `AUTH_SELF`: the user's own password, never retained |
-| Service account `vega-web` | `NO` | `NO` |
-| Other users | policy defaults (denied) | policy defaults (denied) |
+| Subject | Brokered reads (`backup`, `kernel`, `snapshots`, `firewall` `.read-admin`) | Journal (`logs.read-admin`) | Mutations |
+| --- | --- | --- | --- |
+| Local active session (desktop) | policy defaults: silent | policy defaults: `auth_admin_keep` through the session agent | policy defaults: `auth_admin` through the session agent |
+| `wheel` member, non-local or inactive session | `YES` (silent, same information the desktop grants its active user) | `AUTH_SELF_KEEP`: own password, retained like the desktop | `AUTH_SELF`: own password, never retained |
+| Service account `vega-web` | `NO` | `NO` | `NO` |
+| Other users | policy defaults (denied) | policy defaults (denied) | policy defaults (denied) |
 
-The rule never returns `YES` for a mutation, never uses a `_KEEP` result, and
-never changes the authenticated identity: vega-cli answers the challenge with
+The rule never returns `YES` for a mutation, retains an authorization only for
+the journal (mirroring the desktop), and never changes the authenticated
+identity: vega-cli answers the challenge with
 `pkttyagent`, and vega-web answers it through its root broker with the PAM
 identity of the logged-in user (`docs/web-authorization.md` in vega-web). The
 silent remote read mirrors the existing desktop decision that `*.read-admin`

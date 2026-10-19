@@ -37,13 +37,15 @@ grep -Fq 'return polkit.Result.NO;' "$rules"
 grep -Fq 'subject.isInGroup("wheel")' "$rules"
 grep -Fq 'if (subject.local && subject.active)' "$rules"
 grep -Fq 'return polkit.Result.AUTH_SELF;' "$rules"
-if grep -Eq 'AUTH_(SELF|ADMIN)_KEEP' "$rules"; then
-  echo "remote administration must not retain polkit authorizations" >&2
+if grep -Eq 'AUTH_ADMIN_KEEP' "$rules" ||
+   [ "$(grep -c 'AUTH_SELF_KEEP' "$rules")" -ne 1 ] ||
+   ! grep -B1 -F 'return polkit.Result.AUTH_SELF_KEEP;' "$rules" | grep -Fq 'logs.read-admin'; then
+  echo "a retained authorization is only allowed for logs.read-admin (desktop parity)" >&2
   exit 1
 fi
 if [ "$(grep -c 'polkit.Result.YES' "$rules")" -ne 1 ] ||
-   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq 'read-admin'; then
-  echo "polkit.Result.YES is only allowed for the *.read-admin actions" >&2
+   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq '(backup|kernel|snapshots|firewall)\\.read-admin'; then
+  echo "polkit.Result.YES is only allowed for the four brokered *.read-admin actions" >&2
   exit 1
 fi
 grep -Fq 'polkit-1/rules.d/50-vegad-remote-admin.rules' packaging/vegad.spec
