@@ -38,7 +38,10 @@ authorization requests.
 
 The full GTK test also exposed firewalld's `config.info` authorization for
 `getServices` and `getPorts`: those reads stay in the broker instead of prompting
-from an unprivileged worker. Firewall status still runs as the ordinary user.
+from an unprivileged worker. Firewall status still runs as the ordinary user and asks systemd
+(`systemctl is-active firewalld.service`) instead of `firewall-cmd --state`,
+which needs the FirewallD1 authorization and fails from a remote session
+(vegad#79).
 Wi-Fi listing uses NetworkManager's cached results (`nmcli --rescan no`), so a
 background query does not trigger the separate scan authorization.
 
