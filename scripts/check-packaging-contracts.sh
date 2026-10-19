@@ -44,7 +44,7 @@ if grep -Eq 'AUTH_ADMIN_KEEP' "$rules" ||
   exit 1
 fi
 if [ "$(grep -c 'polkit.Result.YES' "$rules")" -ne 1 ] ||
-   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq '(backup|kernel|snapshots|firewall)\\.read-admin'; then
+   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq '(backup|kernel|snapshots|firewall)\.read-admin'; then
   echo "polkit.Result.YES is only allowed for the four brokered *.read-admin actions" >&2
   exit 1
 fi
