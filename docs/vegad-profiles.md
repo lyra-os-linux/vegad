@@ -45,6 +45,11 @@ classifica patches), além de indicar andamento e o último erro.
 Uma falha de rede ou de repositório agenda nova tentativa em duas horas, com
 até cinco minutos de atraso aleatório, sem alterar o ciclo diário normal.
 
+Em sessões remotas (SSH, vega-web), a regra polkit
+`50-vegad-remote-admin.rules` pede a própria senha de membros de `wheel` para
+ações administrativas e libera em silêncio as leituras `*.read-admin`; ver
+`privilege-boundaries.md`.
+
 Desktop e Server anunciam `nvidia-official-v1` e `nvidia-recovery-v1`.
 Consultas continuam públicas. A instalação exige confirmação e recuperação
 verificada: Snapper no Btrfs; Restic e restauração offline no layout Server/ext4

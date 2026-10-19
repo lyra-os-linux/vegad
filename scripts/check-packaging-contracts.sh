@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-for command in xmllint systemd-analyze rpmspec; do
+for command in xmllint systemd-analyze rpmspec node; do
   command -v "$command" >/dev/null || {
     echo "missing contract validator: $command" >&2
     exit 1
@@ -12,6 +12,28 @@ for command in xmllint systemd-analyze rpmspec; do
 done
 
 xmllint --noout packaging/org.lyraos.Vega1.conf packaging/org.lyraos.vega.policy
+
+# Regra polkit de administração remota: sintaxe e invariantes de segurança.
+rules=packaging/polkit-1/rules.d/50-vegad-remote-admin.rules
+# node --check recusa a extensão .rules; analisar o fonte como corpo de função
+# valida a sintaxe sem executar nada.
+node -e 'new Function(require("fs").readFileSync(process.argv[1], "utf8"))' "$rules"
+grep -Fq 'if (subject.user === "vega-web")' "$rules"
+grep -Fq 'return polkit.Result.NO;' "$rules"
+grep -Fq 'subject.isInGroup("wheel")' "$rules"
+grep -Fq 'if (subject.local && subject.active)' "$rules"
+grep -Fq 'return polkit.Result.AUTH_SELF;' "$rules"
+if grep -Eq 'AUTH_(SELF|ADMIN)_KEEP' "$rules"; then
+  echo "remote administration must not retain polkit authorizations" >&2
+  exit 1
+fi
+if [ "$(grep -c 'polkit.Result.YES' "$rules")" -ne 1 ] ||
+   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq 'read-admin'; then
+  echo "polkit.Result.YES is only allowed for the *.read-admin actions" >&2
+  exit 1
+fi
+grep -Fq 'polkit-1/rules.d/50-vegad-remote-admin.rules' packaging/vegad.spec
+grep -Fq 'polkit-1/rules.d/50-vegad-remote-admin.rules' packaging/vegad.obs.spec
 grep -Fx 'Name=org.lyraos.Vega1' packaging/org.lyraos.Vega1.service >/dev/null
 grep -Fx 'BusName=org.lyraos.Vega1' packaging/vegad.service >/dev/null
 systemd-analyze verify \

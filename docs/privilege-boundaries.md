@@ -42,6 +42,34 @@ from an unprivileged worker. Firewall status still runs as the ordinary user.
 Wi-Fi listing uses NetworkManager's cached results (`nmcli --rescan no`), so a
 background query does not trigger the separate scan authorization.
 
+## Remote administration (wheel members outside a local seat)
+
+`org.lyraos.vega.policy` authorizes mutations with `auth_admin` only in an
+active local session and allows the `*.read-admin` reads silently only there.
+Outside a local seat (SSH, the vega-web panel, a serial console) Polkit applies
+`allow_any=no` and denies without a challenge. On a headless Lyra OS Server this
+left vega-cli and vega-web unable to ask the administrator's password the way
+vega-gtk does through the graphical session agent (vega-web#17, vega-cli#26).
+
+`packaging/polkit-1/rules.d/50-vegad-remote-admin.rules` closes that gap for
+members of `wheel` whose subject is not a local active session:
+
+| Subject | `*.read-admin` reads | Mutations |
+| --- | --- | --- |
+| Local active session (desktop) | policy defaults: silent | policy defaults: `auth_admin` through the session agent |
+| `wheel` member, non-local or inactive session | `YES` (silent, same information the desktop grants its active user) | `AUTH_SELF`: the user's own password, never retained |
+| Service account `vega-web` | `NO` | `NO` |
+| Other users | policy defaults (denied) | policy defaults (denied) |
+
+The rule never returns `YES` for a mutation, never uses a `_KEEP` result, and
+never changes the authenticated identity: vega-cli answers the challenge with
+`pkttyagent`, and vega-web answers it through its root broker with the PAM
+identity of the logged-in user (`docs/web-authorization.md` in vega-web). The
+silent remote read mirrors the existing desktop decision that `*.read-admin`
+is system information, not permission to modify it, and is limited to the same
+group that already holds `sudo`. Local rules loaded earlier still win.
+`scripts/check-packaging-contracts.sh` verifies the syntax and these invariants.
+
 ## Query worker
 
 Root callers use a static service account because DynamicUser can be rejected
