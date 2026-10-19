@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-for command in xmllint systemd-analyze rpmspec node; do
+for command in xmllint systemd-analyze rpmspec; do
   command -v "$command" >/dev/null || {
     echo "missing contract validator: $command" >&2
     exit 1
@@ -15,9 +15,23 @@ xmllint --noout packaging/org.lyraos.Vega1.conf packaging/org.lyraos.vega.policy
 
 # Regra polkit de administração remota: sintaxe e invariantes de segurança.
 rules=packaging/polkit-1/rules.d/50-vegad-remote-admin.rules
-# node --check recusa a extensão .rules; analisar o fonte como corpo de função
-# valida a sintaxe sem executar nada.
-node -e 'new Function(require("fs").readFileSync(process.argv[1], "utf8"))' "$rules"
+# O contêiner do CI não tem node; quando ele existe (estações de trabalho),
+# analisar o fonte como corpo de função valida a sintaxe sem executar nada.
+# Sempre: chaves e parênteses balanceados e a assinatura esperada da regra.
+if command -v node >/dev/null; then
+  node -e 'new Function(require("fs").readFileSync(process.argv[1], "utf8"))' "$rules"
+fi
+grep -Fq 'polkit.addRule(function(action, subject) {' "$rules"
+code="$(sed 's,//.*$,,' "$rules")"
+for pair in '{ }' '( )'; do
+  set -- $pair
+  opened="$(printf '%s' "$code" | tr -cd "$1" | wc -c)"
+  closed="$(printf '%s' "$code" | tr -cd "$2" | wc -c)"
+  if [ "$opened" -ne "$closed" ]; then
+    echo "unbalanced $1$2 in $rules ($opened vs $closed)" >&2
+    exit 1
+  fi
+done
 grep -Fq 'if (subject.user === "vega-web")' "$rules"
 grep -Fq 'return polkit.Result.NO;' "$rules"
 grep -Fq 'subject.isInGroup("wheel")' "$rules"
