@@ -15,7 +15,15 @@ const (
 	Server  Profile = "server"
 
 	DefaultConfigPath = "/etc/vega/vegad.conf"
+
+	// ServerMarkerPath identifies a Lyra OS Server installation. The Server
+	// image renders it from release-server.toml (lyraos-server); desktop
+	// editions ship /usr/lib/lyra-os/release instead.
+	ServerMarkerPath = "/usr/lib/lyra-os/server-release"
 )
+
+// serverMarkerPath is replaced by tests.
+var serverMarkerPath = ServerMarkerPath
 
 func Parse(value string) (Profile, error) {
 	switch Profile(strings.ToLower(strings.TrimSpace(value))) {
@@ -28,8 +36,10 @@ func Parse(value string) (Profile, error) {
 	}
 }
 
-// Load reads the profile from VEGAD_PROFILE first, then from path. Desktop is
-// the compatibility default for installations made before profiles existed.
+// Load reads the profile from VEGAD_PROFILE first, then from path. When
+// neither configures it, the installed edition decides: the Server marker
+// selects server and everything else keeps the desktop compatibility default
+// for installations made before profiles existed.
 func Load(path string) (Profile, string, error) {
 	if value, ok := os.LookupEnv("VEGAD_PROFILE"); ok {
 		p, err := Parse(value)
@@ -38,7 +48,7 @@ func Load(path string) (Profile, string, error) {
 
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
-		return Desktop, "compatibility default", nil
+		return detectEdition()
 	}
 	if err != nil {
 		return "", path, err
@@ -61,6 +71,17 @@ func Load(path string) (Profile, string, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return "", path, err
+	}
+	return detectEdition()
+}
+
+// detectEdition selects the profile from the installed edition when no
+// configuration named one. The Server image carries ServerMarkerPath, so a
+// fresh Lyra OS Server runs the server profile without any extra file in the
+// image (lyraos-server#31); every other installation stays on desktop.
+func detectEdition() (Profile, string, error) {
+	if info, err := os.Stat(serverMarkerPath); err == nil && info.Mode().IsRegular() {
+		return Server, "edition marker " + serverMarkerPath, nil
 	}
 	return Desktop, "compatibility default", nil
 }

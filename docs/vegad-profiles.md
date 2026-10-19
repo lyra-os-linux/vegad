@@ -7,16 +7,17 @@ O `vegad` possui dois perfis de produto definidos pelo administrador do host:
 
 O perfil é lido de `VEGAD_PROFILE` no ambiente confiável do serviço ou de
 `/etc/vega/vegad.conf`. O valor enviado por clientes D-Bus nunca seleciona o
-perfil. Na ausência de configuração, `desktop` é usado para preservar a
-compatibilidade de instalações existentes.
+perfil. Na ausência de configuração, o vegad detecta a edição instalada: o
+marcador `/usr/lib/lyra-os/server-release`, renderizado pela imagem do Lyra OS
+Server, seleciona `server`; qualquer outra instalação usa `desktop`, preservando
+a compatibilidade de instalações anteriores aos perfis. O journal registra a
+origem (`VEGAD_PROFILE`, o arquivo, `edition marker …` ou `compatibility
+default`).
 
-O pacote desktop instala:
-
-```ini
-VEGAD_PROFILE=desktop
-```
-
-O pacote do Lyra Server deve instalar `/etc/vega/vegad.conf` com:
+O pacote instala `/etc/vega/vegad.conf` apenas com comentários
+(`%config(noreplace)`); instalações desktop anteriores mantêm o valor explícito
+que já tinham. Para fixar o perfil independentemente da detecção, copie um
+modelo para o arquivo:
 
 ```ini
 VEGAD_PROFILE=server
