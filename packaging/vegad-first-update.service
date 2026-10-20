@@ -9,8 +9,12 @@ ConditionKernelCommandLine=!rd.live.image
 # Only the Lyra OS Desktop image ships this file. Installing vegad on an
 # existing openSUSE Leap must not trigger repository preparation.
 ConditionPathExists=/usr/lib/lyra-os/release
-Wants=network-online.target
-After=network-online.target time-sync.target
+# No Wants=network-online.target: dependencies are pulled in before the
+# Conditions above are evaluated, so it dragged NetworkManager-wait-online
+# (+5.6 s) into every boot, even after first-update.done (lyraos-desktop#168).
+# The ExecStart wrapper below waits for the network instead, only when the
+# unit actually runs, and without delaying multi-user.target.
+After=network.target time-sync.target
 # A failure (typically no network yet) is retried below; after five tries in
 # three hours it waits for the next boot instead of looping.
 StartLimitIntervalSec=3h
@@ -23,7 +27,10 @@ Type=exec
 EnvironmentFile=-/etc/vega/vegad.conf
 # Wait for a Zypper lock held by Vega or another tool instead of failing.
 Environment=ZYPP_LOCK_TIMEOUT=600
-ExecStart=/usr/lib/vega/vegad first-update
+# Type=exec: startup completes when the shell is exec'd, so waiting for
+# NetworkManager here never delays login. Without nm-online (or when it times
+# out) vegad runs anyway and a network failure follows Restart= below.
+ExecStart=/bin/sh -c 'if [ -x /usr/bin/nm-online ]; then /usr/bin/nm-online -q --timeout=90 || :; fi; exec /usr/lib/vega/vegad first-update'
 Restart=on-failure
 RestartSec=15min
 # Signal the coordinator first: drain current command for 30s, then TERM/KILL

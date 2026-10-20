@@ -40,6 +40,10 @@ do Vega, conforme a seção de revisão de chaves abaixo.
   esse marcador. Marcadores de versões anteriores são preservados, pois não
   é possível distinguir com segurança sucesso real de dispensa antiga.
 - É `Type=exec`: o boot e o login não esperam a preparação terminar.
+- A unit não puxa `network-online.target`: isso acionava o
+  `NetworkManager-wait-online` (+5,6 s) em todo boot, mesmo com a preparação
+  concluída. Quando a unit roda, ela própria espera a rede com
+  `nm-online --timeout=90` antes de chamar o vegad, sem atrasar o login.
 
 ## Vega durante a preparação
 
