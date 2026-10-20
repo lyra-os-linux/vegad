@@ -51,3 +51,33 @@ func TestFirewallStatusReportsStoppedFirewalld(t *testing.T) {
 		t.Fatalf("expected a stopped firewall without error, got running=%v zone=%q err=%v", running, zone, derr)
 	}
 }
+
+// firewalld ships a predefined "docker" zone bound to docker0. It is listed
+// as active even when the interface does not exist, and sorts before
+// "public"; Status must report the zone that filters real traffic (vegad#83).
+func TestFirstActiveZonePrefersZoneBoundToExistingInterface(t *testing.T) {
+	existing := map[string]bool{"enp0s2": true, "eth0": true}
+	original := netInterfaceExists
+	netInterfaceExists = func(name string) bool { return existing[name] }
+	t.Cleanup(func() { netInterfaceExists = original })
+
+	cases := []struct {
+		name, output, want string
+	}{
+		{"docker zone without docker0", "docker\n  interfaces: docker0\npublic (default)\n  interfaces: enp0s2\n", "public"},
+		{"single zone", "public\n  interfaces: eth0\n", "public"},
+		{"default zone unbound, other bound", "home\n  interfaces: enp0s2\npublic (default)\n  interfaces: wlan9\n", "home"},
+		{"source-bound zone", "docker\n  interfaces: docker0\ntrusted\n  sources: 10.0.0.0/8\n", "trusted"},
+		{"nothing bound falls back to default", "docker\n  interfaces: docker0\npublic (default)\n  interfaces: wlan9\n", "public"},
+		{"nothing bound, no default", "docker\n  interfaces: docker0\n", "docker"},
+		{"default and active marker", "block\n  interfaces: docker0\nwork (default, active)\n  interfaces: eth0\n", "work"},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstActiveZone(tc.output); got != tc.want {
+				t.Fatalf("firstActiveZone(%q) = %q, want %q", tc.output, got, tc.want)
+			}
+		})
+	}
+}

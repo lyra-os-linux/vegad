@@ -2,6 +2,8 @@ package dbusserver
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -254,16 +256,75 @@ func validPortNumber(value string) bool {
 	return err == nil && number >= 1 && number <= 65535
 }
 
+// netInterfaceExists reports whether a network interface is present. firewalld
+// ships predefined zones bound to interfaces that may not exist (the "docker"
+// zone lists docker0 even without Docker), and those still show up in
+// --get-active-zone. Replaceable in tests.
+var netInterfaceExists = func(name string) bool {
+	_, err := os.Stat(filepath.Join("/sys/class/net", name))
+	return err == nil
+}
+
+type activeZone struct {
+	name      string
+	isDefault bool
+	bound     bool // has an existing interface or a source
+}
+
+// firstActiveZone picks the zone that actually filters this machine's traffic
+// from `firewall-cmd --get-active-zone` output (vegad#83): the default zone
+// when it is bound to an existing interface or a source, otherwise the first
+// bound zone, otherwise the default zone, otherwise the first zone listed.
 func firstActiveZone(value string) string {
-	for _, line := range strings.Split(value, "\n") {
-		line = strings.TrimSpace(line)
+	var zones []activeZone
+	for _, raw := range strings.Split(value, "\n") {
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
-		if idx := strings.Index(line, "("); idx > 0 {
-			return strings.TrimSpace(line[:idx])
+		indented := raw != strings.TrimLeft(raw, " \t")
+		if !indented || len(zones) == 0 {
+			zone := activeZone{name: line}
+			if idx := strings.Index(line, "("); idx > 0 {
+				zone.name = strings.TrimSpace(line[:idx])
+				zone.isDefault = strings.Contains(line[idx:], "default")
+			}
+			zones = append(zones, zone)
+			continue
 		}
-		return line
+		current := &zones[len(zones)-1]
+		key, values, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		for _, item := range strings.Fields(values) {
+			switch strings.TrimSpace(key) {
+			case "interfaces":
+				if netInterfaceExists(item) {
+					current.bound = true
+				}
+			case "sources":
+				current.bound = true
+			}
+		}
 	}
-	return ""
+	if len(zones) == 0 {
+		return ""
+	}
+	for _, zone := range zones {
+		if zone.isDefault && zone.bound {
+			return zone.name
+		}
+	}
+	for _, zone := range zones {
+		if zone.bound {
+			return zone.name
+		}
+	}
+	for _, zone := range zones {
+		if zone.isDefault {
+			return zone.name
+		}
+	}
+	return zones[0].name
 }
