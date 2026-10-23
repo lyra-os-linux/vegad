@@ -86,6 +86,27 @@ if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect org.lyraos.Vega1 \
   exit 1
 fi
 
+# Every method and signal of the canonical contract must be visible through
+# Introspect(); the node is hand-written in server.go and can drift from the
+# XML. Bluetooth is intentionally absent from the server profile.
+contract_missing=0
+for xml in "$dbus_client_dir"/dbus/org.lyraos.Vega1.*.xml; do
+  iface="$(sed -n 's/.*<interface name="\([^"]*\)".*/\1/p' "$xml")"
+  [ "$iface" != org.lyraos.Vega1.Bluetooth ] || continue
+  introspection="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect \
+    org.lyraos.Vega1 /org/lyraos/Vega1 "$iface")"
+  for kind in method signal; do
+    while read -r member; do
+      [ -n "$member" ] || continue
+      if ! grep -Eq "^\.$member[[:space:]]+$kind[[:space:]]" <<<"$introspection"; then
+        echo "introspecção sem $kind $iface.$member do contrato" >&2
+        contract_missing=1
+      fi
+    done < <(sed -n "s/.*<$kind name=\"\([^\"]*\)\".*/\1/p" "$xml")
+  done
+done
+[ "$contract_missing" = 0 ] || exit 1
+
 # The preparation interface is additive: its server-profile response must
 # remain readable, while retry requires explicit administrative authorization.
 preparation="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \

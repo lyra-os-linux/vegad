@@ -281,7 +281,12 @@ func (s *Server) Export() error {
 					{Name: "line", Type: "s", Direction: "out"},
 				}},
 			}},
-			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots)},
+			{Name: BusName + ".Snapshots", Methods: introspect.Methods(snapshots), Signals: []introspect.Signal{
+				{Name: "ClearProgress", Args: []introspect.Arg{
+					{Name: "deletedCount", Type: "u", Direction: "out"},
+					{Name: "totalCount", Type: "u", Direction: "out"},
+				}},
+			}},
 			{Name: BusName + ".Logs", Methods: introspect.Methods(logs)},
 			{Name: BusName + ".Backup", Methods: introspect.Methods(backup), Signals: []introspect.Signal{
 				{Name: "BackupProgress", Args: []introspect.Arg{
