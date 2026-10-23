@@ -11,8 +11,10 @@ O contrato D-Bus que este daemon implementa vive em
 (`dbus/org.lyraos.Vega1.*.xml`) e deve ser mantido em sincronia com
 `internal/dbusserver/*.go`. Os frontends que consomem esse contrato são
 [`vega-gtk`](https://github.com/lyra-os-linux/vega),
-[`vega-cli`](https://github.com/lyra-os-linux/vega-cli) e
-[`vega-web`](https://github.com/lyra-os-linux/vega-web).
+[`vega-cli`](https://github.com/lyra-os-linux/vega-cli),
+[`vega-web`](https://github.com/lyra-os-linux/vega-web),
+[`vega-qt`](https://github.com/lyra-os-linux/vega-qt) e o experimental
+[`vega-xfce`](https://github.com/lyra-os-linux/vega-xfce).
 
 Ver [`docs/vegad-profiles.md`](docs/vegad-profiles.md) para os perfis
 `desktop`/`server`.
