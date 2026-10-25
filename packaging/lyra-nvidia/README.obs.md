@@ -5,7 +5,7 @@ copy of the files in this directory; this directory is the source of truth.
 
 ```sh
 osc checkout home:rodrigosbrito:nvidia lyra-nvidia
-cp packaging/lyra-nvidia/{lyra-nvidia.spec,lyra-nvidia.changes,README.md,LICENSE,lyra-nvidia-upstream.repo} home:rodrigosbrito:nvidia/lyra-nvidia/
+cp packaging/lyra-nvidia/{lyra-nvidia.spec,lyra-nvidia.changes,README.md,LICENSE,lyra-nvidia-upstream.repo,60-lyra-nvidia-pm.conf} home:rodrigosbrito:nvidia/lyra-nvidia/
 cd home:rodrigosbrito:nvidia/lyra-nvidia && osc addremove && osc commit -m "Update to $(sed -n 's/^Version: *//p' lyra-nvidia.spec)"
 ```
 

@@ -27,9 +27,27 @@ Lyra após qualificação. Não há locks de kernel ou pacotes, e DKMS de outros
 dispositivos não é bloqueado. Essa política exige manutenção: não manter uma
 versão antiga indefinidamente quando houver correções de segurança.
 
-O RPM contém somente esta documentação, a licença da integração e a definição
-do repositório oficial NVIDIA/SUSE16 com verificação de assinaturas. Não
-executa o instalador `.run`, downloads em scriptlets ou mudanças no bootloader.
+O RPM contém somente esta documentação, a licença da integração, a definição
+do repositório oficial NVIDIA/SUSE16 com verificação de assinaturas e
+`/usr/lib/modprobe.d/60-lyra-nvidia-pm.conf`. Não executa o instalador `.run`,
+downloads em scriptlets ou mudanças no bootloader.
+
+## Economia de energia em notebooks híbridos
+
+O padrão do driver (`NVreg_DynamicPowerManagement=0x03`) desativa o RTD3 em
+notebooks anteriores ao Ampere, e a GPU NVIDIA fica ligada mesmo ociosa. O
+pacote define `0x02` (fine-grained), que permite desligá-la quando não há
+trabalho. Para mudar o valor, crie um arquivo de mesmo nome em
+`/etc/modprobe.d` e reinicie.
+
+O RTD3 também exige o driver Vulkan do Mesa para a GPU integrada
+(`libvulkan_intel` ou `libvulkan_radeon`). Sem ele, o renderizador Vulkan do
+GTK 4 roda todos os apps na GPU NVIDIA. O Vega instala esse driver pelos
+repositórios do sistema logo após a transação NVIDIA. Ele não é dependência
+deste pacote porque a transação NVIDIA usa só o OSS do Leap, cujo Mesa diverge
+do instalado depois de uma atualização. Para conferir:
+`cat /sys/bus/pci/devices/<slot da GPU>/power/runtime_status` deve mostrar
+`suspended` com a GPU ociosa.
 
 ## Instalação piloto
 
