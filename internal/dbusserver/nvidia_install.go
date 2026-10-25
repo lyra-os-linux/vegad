@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -20,6 +21,7 @@ var nvidiaInstallMu sync.Mutex
 
 // Replaceable in tests; the real refresh needs root and the network.
 var refreshNvidiaRepositories = distro.RefreshNvidiaRepositories
+var installIntegratedVulkanDrivers = distro.InstallIntegratedVulkanDrivers
 
 func (s *SoftwareService) InstallNvidia(sender dbus.Sender, confirmed bool) (uint32, *dbus.Error) {
 	// A cancelled dialog must never authorize, create snapshots or touch repos.
@@ -127,6 +129,16 @@ func (m nvidiaManager) install(p profile.Profile, report progressFunc) error {
 			if err := refreshNvidiaRepositories(); err != nil {
 				log.Printf("vegad: NVIDIA repositories installed but not refreshed: %v", err)
 				report(94, "NVIDIA: repository metadata refresh deferred to the next update check")
+			}
+			// Hybrid notebooks need the integrated GPU's Vulkan driver, or GTK
+			// renders on the NVIDIA GPU and runtime D3 never engages. The
+			// driver itself is already verified, so this is not fatal either.
+			report(95, "NVIDIA: installing the integrated GPU Vulkan driver")
+			if installed, err := installIntegratedVulkanDrivers(); err != nil {
+				log.Printf("vegad: integrated GPU Vulkan driver not installed: %v", err)
+				report(96, "NVIDIA: integrated GPU Vulkan driver not installed; the NVIDIA GPU may stay powered on")
+			} else if len(installed) > 0 {
+				log.Printf("vegad: installed integrated GPU Vulkan drivers: %s", strings.Join(installed, " "))
 			}
 		}
 	}

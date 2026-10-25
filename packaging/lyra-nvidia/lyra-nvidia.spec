@@ -8,6 +8,7 @@ URL:            https://github.com/lyra-os-linux/vegad/tree/main/packaging/lyra-
 Source0:        README.md
 Source1:        LICENSE
 Source2:        lyra-nvidia-upstream.repo
+Source3:        60-lyra-nvidia-pm.conf
 BuildArch:      noarch
 # libzypp owns /etc/zypp and /etc/zypp/repos.d. It must be present both in
 # OBS's directory-ownership check and on systems consuming this repository.
@@ -31,7 +32,8 @@ Conflicts:      nvidia-driver-G07-kmp
 Opt-in integration profile for NVIDIA 615.71.09 on Leap 16.1 x86_64.
 Requires matching upstream NVIDIA userspace and the SUSE-signed CUDA KMP.
 Rejects incompatible NVIDIA DKMS providers without blocking unrelated DKMS
-users or creating kernel/package locks. Includes upstream repository metadata;
+users or creating kernel/package locks. Enables fine-grained runtime D3
+power management so hybrid notebooks can power off an idle NVIDIA GPU. Includes upstream repository metadata;
 proprietary driver binaries are obtained directly from NVIDIA, not this RPM.
 This profile does not certify a future kernel or an unsupported GPU.
 
@@ -44,10 +46,12 @@ cp %{SOURCE1} LICENSE
 
 %install
 install -D -m 0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/zypp/repos.d/lyra-nvidia-upstream.repo
+install -D -m 0644 %{SOURCE3} %{buildroot}%{_prefix}/lib/modprobe.d/60-lyra-nvidia-pm.conf
 
 %files
 %license LICENSE
 %doc README.md
 %config(noreplace) %{_sysconfdir}/zypp/repos.d/lyra-nvidia-upstream.repo
+%{_prefix}/lib/modprobe.d/60-lyra-nvidia-pm.conf
 
 %changelog

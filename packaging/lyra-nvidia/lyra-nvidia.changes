@@ -1,4 +1,12 @@
 -------------------------------------------------------------------
+Sun Oct 25 13:30:00 UTC 2026 - Rodrigo Brito <rodrigo@lyraos.com.br>
+
+- Ship /usr/lib/modprobe.d/60-lyra-nvidia-pm.conf with
+  NVreg_DynamicPowerManagement=0x02 (fine-grained runtime D3). The
+  driver default disables RTD3 on pre-Ampere notebooks; on the GTX 1650
+  Mobile reference the idle dGPU now suspends (vegad#78).
+
+-------------------------------------------------------------------
 Mon Oct 13 16:30:00 UTC 2026 - Rodrigo Brito <rodrigo@lyraos.com.br>
 
 - Update to 615.71.09, matching vegad distro.NvidiaVersion.
