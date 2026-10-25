@@ -6,6 +6,9 @@ type methodPrivilege uint8
 const (
 	queryPublic methodPrivilege = iota
 	queryJournal
+	// brokeredPublic is a public read, like queryPublic, whose backend only
+	// answers root; it runs in the broker without any polkit check.
+	brokeredPublic
 	privilegedRead
 	administrative
 	maintenance
@@ -48,7 +51,11 @@ var methodPolicies = map[string]methodPolicy{
 	"DateTime.ListLocales":        {queryPublic, ""},
 	"DateTime.ListKeymaps":        {queryPublic, ""},
 	"DateTime.Apply":              {administrative, ""},
-	"Firewall.Status":             {queryPublic, ""},
+	// firewalld authorizes even the active zone through polkit's
+	// org.fedoraproject.FirewallD1.info, which the query worker (a system unit
+	// outside the caller's session) is denied. Status stays public for vega-web
+	// and SSH callers (vegad#79), so it runs in the broker without polkit.
+	"Firewall.Status": {brokeredPublic, ""},
 	// firewalld's config.info reads require privileged backend access. Keep
 	// these two reads in the broker; a user worker would trigger its agent.
 	"Firewall.ListServices":             {privilegedRead, "org.lyraos.vega.firewall.read-admin"},

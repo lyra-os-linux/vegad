@@ -126,3 +126,40 @@ func TestWifiListingDoesNotRequestScanAuthorization(t *testing.T) {
 		t.Fatalf("listing must use existing scan data: %v %v", rows, err)
 	}
 }
+
+// firewalld denies its active zone to the query worker (polkit FirewallD1.info),
+// so Status must run in the broker; it stays public, without any polkit check,
+// for vega-web and SSH callers (vegad#79).
+func TestFirewallStatusRunsInBrokerWithoutPolkit(t *testing.T) {
+	policy := methodPolicies["Firewall.Status"]
+	if policy.privilege != brokeredPublic || policy.action != "" {
+		t.Fatalf("Firewall.Status policy = %+v", policy)
+	}
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "pkcheck-called")
+	t.Setenv("PATH", bin)
+	if err := os.WriteFile(filepath.Join(bin, "pkcheck"), []byte("#!/bin/sh\ntouch '"+marker+"'\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "firewall-cmd"), []byte("#!/bin/sh\nprintf 'public (default)\\n  interfaces: lo\\n'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte("#!/bin/sh\necho active\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{activity: &Activity{}, profile: profile.Desktop}
+	methods, err := s.routedMethods(s.queryService("Firewall"), BusName+".Firewall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := reflect.ValueOf(methods["Status"]).Call([]reflect.Value{reflect.ValueOf(dbus.Sender(":1.42"))})
+	if !out[2].IsNil() {
+		t.Fatalf("Status failed: %v", out[2].Interface())
+	}
+	if running, zone := out[0].Bool(), out[1].String(); !running || zone != "public" {
+		t.Fatalf("Status = %v %q, want true public", running, zone)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("public Firewall.Status consulted polkit")
+	}
+}
