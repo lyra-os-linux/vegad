@@ -2,6 +2,7 @@ package dbusserver
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,6 +44,8 @@ func firewalldStatus() (bool, string, *dbus.Error) {
 	zone := ""
 	if zoneOut, zoneErr := runCommandOutput("firewall-cmd", "--get-active-zone"); zoneErr == nil {
 		zone = firstActiveZone(zoneOut)
+	} else {
+		log.Printf("vegad: firewall active zone unavailable: %v — %s", zoneErr, strings.TrimSpace(zoneOut))
 	}
 	return true, zone, nil
 }
@@ -52,8 +55,8 @@ func firewalldStatus() (bool, string, *dbus.Error) {
 // a polkit authorization that only an active local session receives silently;
 // from SSH or the vega-web broker it fails with "Authorization failed"
 // (vegad#79). `systemctl is-active` needs no authorization and runs as the
-// ordinary caller inside the query worker. The active zone query does not
-// need that authorization either, so it stays best-effort.
+// ordinary caller. The active zone query does need it: Status runs in the
+// broker, as root, so that firewall-cmd can read the runtime zones.
 func firewalldRunning() (bool, error) {
 	out, err := runCommandOutput("systemctl", "is-active", "firewalld.service")
 	switch strings.TrimSpace(out) {

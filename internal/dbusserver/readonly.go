@@ -100,7 +100,7 @@ func (s *Server) routedMethods(service interface{}, iface string) (map[string]in
 					return methodFailure(routedType, err)
 				}
 			}
-			if policy.privilege == privilegedRead || os.Geteuid() != 0 {
+			if policy.privilege == privilegedRead || policy.privilege == brokeredPublic || os.Geteuid() != 0 {
 				return fn.Call(originalArgs)
 			}
 			caller, err := resolveDesktopUser(s.conn, sender)
