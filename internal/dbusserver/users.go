@@ -84,6 +84,9 @@ func (u *UsersService) CreateUser(sender dbus.Sender, username, fullName, passwo
 			selected = append(selected, "wheel")
 		}
 	}
+	if err := checkSupervision(username, selected, nil); err != nil {
+		return dbus.MakeFailedError(err)
+	}
 	args := []string{"-m", "-s", "/bin/bash", "-c", fullName}
 	if len(selected) > 0 {
 		args = append(args, "-G", strings.Join(selected, ","))
@@ -105,6 +108,11 @@ func (u *UsersService) CreateUser(sender dbus.Sender, username, fullName, passwo
 	}
 	if len(photo) > 0 {
 		if err := installUserPhoto(username, photo); err != nil {
+			return dbus.MakeFailedError(err)
+		}
+	}
+	if containsGroup(selected, supervisedGroup) {
+		if err := applySupervisionFilter(u.conn, username, true); err != nil {
 			return dbus.MakeFailedError(err)
 		}
 	}
@@ -154,8 +162,32 @@ func (u *UsersService) UpdateUser(sender dbus.Sender, username, fullName, passwo
 	if isAdmin && !seen["wheel"] {
 		selected = append(selected, "wheel")
 	}
+	admins, err := wheelMembers()
+	if err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	if err := checkSupervision(username, selected, admins); err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	wasSupervised := containsGroup(userGroups(username), supervisedGroup)
+	supervised := containsGroup(selected, supervisedGroup)
+	// Hide the terminals before the account becomes supervised, so a failure
+	// never leaves a supervised account without them hidden.
+	if supervised && !wasSupervised {
+		if err := applySupervisionFilter(u.conn, username, true); err != nil {
+			return dbus.MakeFailedError(err)
+		}
+	}
 	if out, err := exec.Command("usermod", "-c", fullName, "-G", strings.Join(selected, ","), username).CombinedOutput(); err != nil {
+		if supervised && !wasSupervised {
+			_ = applySupervisionFilter(u.conn, username, false)
+		}
 		return dbus.MakeFailedError(fmt.Errorf("usermod: %w — %s", err, strings.TrimSpace(string(out))))
+	}
+	if wasSupervised && !supervised {
+		if err := applySupervisionFilter(u.conn, username, false); err != nil {
+			return dbus.MakeFailedError(err)
+		}
 	}
 	if password != "" {
 		cmd := exec.Command("chpasswd")
@@ -340,6 +372,17 @@ func (u *UsersService) SetAdmin(sender dbus.Sender, username string, isAdmin boo
 	}
 	if username == "root" {
 		return nil
+	}
+	admins, err := wheelMembers()
+	if err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	final := userGroups(username)
+	if isAdmin {
+		final = append(final, "wheel")
+	}
+	if err := checkSupervision(username, final, admins); err != nil {
+		return dbus.MakeFailedError(err)
 	}
 
 	var cmd *exec.Cmd
