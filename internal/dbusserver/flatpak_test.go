@@ -13,6 +13,7 @@ import (
 )
 
 func TestFlatpakMutationRejectsOptionsAndNonIDsBeforeExecution(t *testing.T) {
+	withFlatpakInstalled(t)
 	t.Setenv("PATH", t.TempDir())
 	for _, id := range []string{"", "--all", "-y", "org.example.*", "org.example.App/stable", "org.example.App\n", " org.example.App", "https://example.org/app.flatpakref", "org.example", "org..App", "org.bad-domain.App", strings.Repeat("a", 256)} {
 		for _, operation := range []string{"install", "uninstall", "update"} {
@@ -66,6 +67,7 @@ func TestFlatpakAppCommandsSeparateArgumentsAndKeepUserIdentity(t *testing.T) {
 }
 
 func TestFlatpakSystemInstallRequiresPolkit(t *testing.T) {
+	withFlatpakInstalled(t)
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
 	argsFile := filepath.Join(bin, "args")
