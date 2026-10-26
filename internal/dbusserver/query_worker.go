@@ -28,7 +28,7 @@ func (s *Server) queryService(iface string) interface{} {
 	case "Hardware":
 		return &HardwareService{activity: s.activity}
 	case "Users":
-		return &UsersService{activity: s.activity}
+		return &UsersService{activity: s.activity, conn: s.conn}
 	case "Services":
 		return &ServicesService{activity: s.activity}
 	case "Snapshots":

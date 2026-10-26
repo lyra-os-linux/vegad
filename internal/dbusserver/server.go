@@ -186,7 +186,7 @@ func (s *Server) Export() error {
 		return err
 	}
 
-	users := &UsersService{activity: s.activity}
+	users := &UsersService{activity: s.activity, conn: s.conn}
 	if err := s.export(users, BusName+".Users"); err != nil {
 		return err
 	}
