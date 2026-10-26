@@ -101,7 +101,21 @@ func capabilityUnavailable(capability string) *dbus.Error {
 	return dbus.NewError(BusName+".Error.CapabilityUnavailable", []interface{}{fmt.Sprintf("capacidade %s indisponível no perfil ativo", capability)})
 }
 
-func (s *SoftwareService) flatpakEnabled() bool { return s.profile == profile.Desktop }
+// flatpakBinary is a variable so tests can point it at a fixture.
+var flatpakBinary = "/usr/bin/flatpak"
+
+// flatpakEnabled reports whether Flatpak takes part in the Software
+// listings. Flatpak is optional on the desktop: Lyra OS 16.1 installs it only
+// when the administrator enables it in Vega (parental controls). Without the
+// binary, Flatpak is absent from search, installed and update lists instead of
+// failing them, and the RPM results are still returned.
+func (s *SoftwareService) flatpakEnabled() bool {
+	if s.profile != profile.Desktop {
+		return false
+	}
+	_, err := os.Stat(flatpakBinary)
+	return err == nil
+}
 
 // PackageRef identifies a package within one origin ("official", "flathub")
 // so the UI can dedupe the same app found across origins.
