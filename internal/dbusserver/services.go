@@ -2,6 +2,7 @@ package dbusserver
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -200,42 +201,164 @@ func listAllSystemdServices(locale string) ([]ManagedServiceInfo, error) {
 	return rows, nil
 }
 
-// conditionSkippedServices reports the inactive units whose last start was
-// skipped by an unmet Condition*= (e.g. bluetooth.service without an adapter).
-// They are enabled but cannot run on this machine, so frontends must not flag
-// them as failures; they are reported as unavailable instead. A zero
-// ConditionTimestampMonotonic means the condition was never checked.
+// conditionSkippedServices reports the inactive units that cannot run on this
+// machine because a Condition*= is unmet (e.g. bluetooth.service without an
+// adapter). They are enabled but are not failures, so they are reported as
+// unavailable instead. When systemd already checked the conditions, its
+// ConditionResult decides. A zero ConditionTimestampMonotonic means the unit
+// was never started (bluetooth.service is only pulled in by bluetooth.target
+// when an adapter appears), so the conditions are read over D-Bus and the
+// path-based ones evaluated here.
 func conditionSkippedServices(names []string) map[string]bool {
 	skipped := map[string]bool{}
-	if len(names) == 0 {
+	// Templates (getty@.service) are never active, and systemctl show
+	// aborts the whole call on them.
+	var units []string
+	for _, name := range names {
+		if !strings.HasSuffix(name, "@.service") {
+			units = append(units, name)
+		}
+	}
+	if len(units) == 0 {
 		return skipped
 	}
-	args := append([]string{"show", "-p", "Id", "-p", "ActiveState", "-p", "ConditionResult", "-p", "ConditionTimestampMonotonic", "--"}, names...)
+	args := append([]string{"show", "-p", "Id", "-p", "ActiveState", "-p", "ConditionResult", "-p", "ConditionTimestampMonotonic", "--"}, units...)
 	out, err := runCommandOutput("systemctl", args...)
 	if err != nil {
 		return skipped
 	}
-	return parseConditionSkipped(out)
+	skipped, unchecked := parseConditionSkipped(out, units)
+	if len(unchecked) == 0 {
+		return skipped
+	}
+	conn, err := dbus.ConnectSystemBus()
+	if err != nil {
+		return skipped
+	}
+	defer conn.Close()
+	for _, name := range unchecked {
+		if conditions, err := unitConditions(conn, name); err == nil && !conditionsMet(conditions) {
+			skipped[name] = true
+		}
+	}
+	return skipped
 }
 
-func parseConditionSkipped(out string) map[string]bool {
+// parseConditionSkipped returns the inactive units whose last condition check
+// failed, and the inactive units whose conditions were never checked. systemctl
+// show prints one block per requested name, in order; the results are keyed by
+// the requested name, because an alias (dbus-org.bluez.service) reports the
+// Id of its target.
+func parseConditionSkipped(out string, names []string) (map[string]bool, []string) {
 	skipped := map[string]bool{}
-	for _, block := range strings.Split(out, "\n\n") {
+	var unchecked []string
+	blocks := strings.Split(out, "\n\n")
+	for i, block := range blocks {
 		props := map[string]string{}
 		for _, line := range strings.Split(block, "\n") {
 			if key, value, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
 				props[key] = value
 			}
 		}
-		if props["Id"] == "" || props["ActiveState"] != "inactive" || props["ConditionResult"] != "no" {
+		name := props["Id"]
+		if len(blocks) == len(names) {
+			name = names[i]
+		}
+		if name == "" || props["ActiveState"] != "inactive" {
 			continue
 		}
 		if ts := props["ConditionTimestampMonotonic"]; ts == "" || ts == "0" {
+			unchecked = append(unchecked, name)
 			continue
 		}
-		skipped[props["Id"]] = true
+		if props["ConditionResult"] == "no" {
+			skipped[name] = true
+		}
 	}
-	return skipped
+	return skipped, unchecked
+}
+
+// unitCondition mirrors an entry of the systemd Unit.Conditions property,
+// a(sbbsi). State is positive when the condition passed, negative when it
+// failed and zero when it was never checked.
+type unitCondition struct {
+	Type    string
+	Trigger bool
+	Negate  bool
+	Param   string
+	State   int32
+}
+
+func unitConditions(conn *dbus.Conn, name string) ([]unitCondition, error) {
+	obj := conn.Object("org.freedesktop.systemd1", systemdUnitPath(name))
+	value, err := obj.GetProperty("org.freedesktop.systemd1.Unit.Conditions")
+	if err != nil {
+		return nil, err
+	}
+	var conditions []unitCondition
+	if err := value.Store(&conditions); err != nil {
+		return nil, err
+	}
+	return conditions, nil
+}
+
+// systemdUnitPath escapes a unit name like systemd's bus_label_escape.
+func systemdUnitPath(name string) dbus.ObjectPath {
+	var b strings.Builder
+	b.WriteString("/org/freedesktop/systemd1/unit/")
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 0 && c >= '0' && c <= '9') {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "_%02x", c)
+	}
+	return dbus.ObjectPath(b.String())
+}
+
+// conditionsMet follows systemd's rule: every plain condition must pass and,
+// when there are triggering ("|") conditions, at least one of them. A
+// condition this code cannot evaluate counts as passed, so a unit is never
+// hidden on a guess.
+func conditionsMet(conditions []unitCondition) bool {
+	hasTrigger, triggerMet := false, false
+	for _, condition := range conditions {
+		met, known := evaluateCondition(condition)
+		if !known {
+			met = true
+		}
+		if condition.Trigger {
+			hasTrigger = true
+			triggerMet = triggerMet || met
+			continue
+		}
+		if !met {
+			return false
+		}
+	}
+	return !hasTrigger || triggerMet
+}
+
+func evaluateCondition(condition unitCondition) (met bool, known bool) {
+	if condition.State != 0 {
+		return condition.State > 0, true
+	}
+	var ok bool
+	switch condition.Type {
+	case "ConditionPathExists":
+		_, err := os.Stat(condition.Param)
+		ok = err == nil
+	case "ConditionPathIsDirectory":
+		info, err := os.Stat(condition.Param)
+		ok = err == nil && info.IsDir()
+	case "ConditionDirectoryNotEmpty":
+		entries, err := os.ReadDir(condition.Param)
+		ok = err == nil && len(entries) > 0
+	default:
+		return false, false
+	}
+	return ok != condition.Negate, true
 }
 
 func serviceLabelFromName(name string) string {
