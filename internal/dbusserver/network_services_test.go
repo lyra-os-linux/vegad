@@ -53,9 +53,66 @@ func TestParseConditionSkippedOnlyFlagsCheckedUnmetConditions(t *testing.T) {
 		"Id=crashed.service\nActiveState=failed\nConditionResult=yes\nConditionTimestampMonotonic=5000",
 		"Id=stopped.service\nActiveState=inactive\nConditionResult=yes\nConditionTimestampMonotonic=5000",
 	}, "\n\n")
-	got := parseConditionSkipped(out)
-	want := map[string]bool{"bluetooth.service": true}
+	got, unchecked := parseConditionSkipped(out, []string{"dbus-org.bluez.service", "cups.service", "never-started.service", "crashed.service", "stopped.service"})
+	want := map[string]bool{"dbus-org.bluez.service": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseConditionSkipped = %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(unchecked, []string{"never-started.service"}) {
+		t.Fatalf("unchecked = %v, want [never-started.service]", unchecked)
+	}
+}
+
+func TestParseConditionSkippedFallsBackToIdWhenBlocksMismatch(t *testing.T) {
+	out := "Id=bluetooth.service\nActiveState=inactive\nConditionResult=no\nConditionTimestampMonotonic=42"
+	got, _ := parseConditionSkipped(out, []string{"a.service", "b.service"})
+	if !reflect.DeepEqual(got, map[string]bool{"bluetooth.service": true}) {
+		t.Fatalf("parseConditionSkipped = %v", got)
+	}
+}
+
+func TestConditionsMetEvaluatesUncheckedPathConditions(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing")
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		conditions []unitCondition
+		want       bool
+	}{
+		{"no conditions", nil, true},
+		{"missing directory", []unitCondition{{Type: "ConditionPathIsDirectory", Param: missing}}, false},
+		{"existing directory", []unitCondition{{Type: "ConditionPathIsDirectory", Param: dir}}, true},
+		{"negated missing path", []unitCondition{{Type: "ConditionPathExists", Negate: true, Param: missing}}, true},
+		{"empty directory", []unitCondition{{Type: "ConditionDirectoryNotEmpty", Param: empty}}, false},
+		{"already failed", []unitCondition{{Type: "ConditionPathExists", Param: dir, State: -1}}, false},
+		{"unknown type counts as met", []unitCondition{{Type: "ConditionVirtualization", Param: "!container"}}, true},
+		{"one trigger met", []unitCondition{
+			{Type: "ConditionPathExists", Trigger: true, Param: missing},
+			{Type: "ConditionPathExists", Trigger: true, Param: dir},
+		}, true},
+		{"no trigger met", []unitCondition{
+			{Type: "ConditionPathExists", Trigger: true, Param: missing},
+			{Type: "ConditionPathIsDirectory", Trigger: true, Param: missing},
+		}, false},
+	} {
+		if got := conditionsMet(test.conditions); got != test.want {
+			t.Errorf("%s: conditionsMet = %v, want %v", test.name, got, test.want)
+		}
+	}
+}
+
+func TestSystemdUnitPathEscapesLikeSystemd(t *testing.T) {
+	for name, want := range map[string]string{
+		"bluetooth.service":      "/org/freedesktop/systemd1/unit/bluetooth_2eservice",
+		"systemd-pstore.service": "/org/freedesktop/systemd1/unit/systemd_2dpstore_2eservice",
+		"9p.service":             "/org/freedesktop/systemd1/unit/_39p_2eservice",
+	} {
+		if got := string(systemdUnitPath(name)); got != want {
+			t.Errorf("systemdUnitPath(%q) = %q, want %q", name, got, want)
+		}
 	}
 }
