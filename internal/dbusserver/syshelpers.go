@@ -27,12 +27,23 @@ func commandAvailable(name string) bool {
 // systemCommand limits the relaxed umask to Zypper. The daemon keeps its
 // restrictive UMask=0077 for credentials and other administrative files,
 // while libzypp metadata remains reusable by unprivileged read-only clients.
+//
+// nmcli runs with LC_ALL=C.UTF-8. The daemon and the query worker have no
+// locale (or LC_ALL=C), and there nmcli prints every non-ASCII character as
+// "?": the default wired connection of a pt_BR install became
+// "Conex?o cabeada 1", and passing that name back (SetStaticIPv4) failed with
+// "no such connection profile". C.UTF-8 keeps the English messages; nmcli's
+// terse output has no column alignment to break.
 func systemCommand(name string, args ...string) *exec.Cmd {
 	if name == "zypper" {
 		wrapped := append([]string{"-c", `umask 0022; exec /usr/bin/zypper "$@"`, "vega-zypper"}, args...)
 		return exec.Command("/bin/sh", wrapped...)
 	}
-	return exec.Command(name, args...)
+	cmd := exec.Command(name, args...)
+	if name == "nmcli" {
+		cmd.Env = append(os.Environ(), "LC_ALL=C.UTF-8")
+	}
+	return cmd
 }
 
 func runCommandOutput(name string, args ...string) (string, error) {
