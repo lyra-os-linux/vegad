@@ -113,6 +113,34 @@ func TestDesktopReadPolicyDoesNotAuthorizeMutations(t *testing.T) {
 	}
 }
 
+// Vega installs a queue of packages as one transaction each. Installing must
+// stay an administrator action, but the password is asked once for the queue
+// instead of once per package.
+func TestSoftwareInstallKeepsAdministratorAuthorization(t *testing.T) {
+	data, err := os.ReadFile("../../packaging/org.lyraos.vega.policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Actions []struct {
+			ID     string `xml:"id,attr"`
+			Active string `xml:"defaults>allow_active"`
+		} `xml:"action"`
+	}
+	if err := xml.Unmarshal(data, &policy); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range policy.Actions {
+		if action.ID == "org.lyraos.vega.software.install" {
+			if action.Active != "auth_admin_keep" {
+				t.Fatalf("software.install must be auth_admin_keep, got %q", action.Active)
+			}
+			return
+		}
+	}
+	t.Fatal("software.install action not found")
+}
+
 func TestWifiListingDoesNotRequestScanAuthorization(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
