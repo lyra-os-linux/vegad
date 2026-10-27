@@ -1,6 +1,7 @@
 package dbusserver
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -43,16 +45,26 @@ type BluetoothDeviceInfo struct {
 
 const bluetoothReceiverStatePath = "/tmp/vegad-bluetooth-receiver"
 
+// bluetoothSysfsPath lists the kernel's Bluetooth controllers. Without one,
+// bluetooth.service stays condition-stopped and bluetoothctl waits forever
+// for bluetoothd, so queries check it before calling bluetoothctl.
+var bluetoothSysfsPath = "/sys/class/bluetooth"
+
+// bluetoothQueryTimeout bounds read-only bluetoothctl calls, keeping a stuck
+// bluetoothd from holding the query worker until its 60s deadline.
+var bluetoothQueryTimeout = 5 * time.Second
+
 func (b *BluetoothService) Status() (BluetoothStatus, *dbus.Error) {
 	b.activity.Touch()
 	status := BluetoothStatus{
 		Available:         commandAvailable("bluetoothctl"),
 		TransferAvailable: commandAvailable("bt-obex"),
 	}
-	if !status.Available {
+	if !status.Available || !bluetoothAdapterPresent() {
+		status.Available = false
 		return status, nil
 	}
-	out, err := runCommandOutput("bluetoothctl", "show")
+	out, err := bluetoothctlQuery("show")
 	if err != nil {
 		return status, nil
 	}
@@ -82,10 +94,10 @@ func (b *BluetoothService) Status() (BluetoothStatus, *dbus.Error) {
 
 func (b *BluetoothService) ListDevices() ([]BluetoothDeviceInfo, *dbus.Error) {
 	b.activity.Touch()
-	if !commandAvailable("bluetoothctl") {
+	if !commandAvailable("bluetoothctl") || !bluetoothAdapterPresent() {
 		return []BluetoothDeviceInfo{}, nil
 	}
-	out, err := runCommandOutput("bluetoothctl", "devices")
+	out, err := bluetoothctlQuery("devices")
 	if err != nil {
 		return []BluetoothDeviceInfo{}, nil
 	}
@@ -240,7 +252,7 @@ func (b *BluetoothDeviceInfo) displayName() string {
 
 func bluetoothDeviceInfo(address string) BluetoothDeviceInfo {
 	info := BluetoothDeviceInfo{Address: address}
-	out, err := runCommandOutput("bluetoothctl", "info", address)
+	out, err := bluetoothctlQuery("info", address)
 	if err != nil {
 		return info
 	}
@@ -280,6 +292,20 @@ func bluetoothctl(args ...string) *dbus.Error {
 		return dbus.MakeFailedError(err)
 	}
 	return nil
+}
+
+func bluetoothAdapterPresent() bool {
+	entries, err := os.ReadDir(bluetoothSysfsPath)
+	return err == nil && len(entries) > 0
+}
+
+func bluetoothctlQuery(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), bluetoothQueryTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bluetoothctl", args...)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 func bluetoothOnOff(enabled bool) string {

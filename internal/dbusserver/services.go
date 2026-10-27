@@ -113,6 +113,9 @@ func serviceInfo(name, label, description string) ManagedServiceInfo {
 		if out, err := runCommandOutput("systemctl", "show", "-p", "LoadState", "--value", name); err == nil {
 			available = strings.TrimSpace(out) != "" && strings.TrimSpace(out) != "not-found"
 		}
+		if available && enabled && !active && conditionSkippedServices([]string{name})[name] {
+			available = false
+		}
 	}
 
 	return ManagedServiceInfo{
@@ -169,6 +172,14 @@ func listAllSystemdServices(locale string) ([]ManagedServiceInfo, error) {
 		}
 	}
 
+	var stopped []string
+	for name := range availableByUnit {
+		if enabledByUnit[name] && !activeByUnit[name] {
+			stopped = append(stopped, name)
+		}
+	}
+	skipped := conditionSkippedServices(stopped)
+
 	rows := make([]ManagedServiceInfo, 0, len(availableByUnit))
 	for name := range availableByUnit {
 		description := descriptionByUnit[name]
@@ -181,12 +192,50 @@ func listAllSystemdServices(locale string) ([]ManagedServiceInfo, error) {
 			Description: description,
 			Enabled:     enabledByUnit[name],
 			Active:      activeByUnit[name],
-			Available:   true,
+			Available:   !skipped[name],
 		})
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, nil
+}
+
+// conditionSkippedServices reports the inactive units whose last start was
+// skipped by an unmet Condition*= (e.g. bluetooth.service without an adapter).
+// They are enabled but cannot run on this machine, so frontends must not flag
+// them as failures; they are reported as unavailable instead. A zero
+// ConditionTimestampMonotonic means the condition was never checked.
+func conditionSkippedServices(names []string) map[string]bool {
+	skipped := map[string]bool{}
+	if len(names) == 0 {
+		return skipped
+	}
+	args := append([]string{"show", "-p", "Id", "-p", "ActiveState", "-p", "ConditionResult", "-p", "ConditionTimestampMonotonic", "--"}, names...)
+	out, err := runCommandOutput("systemctl", args...)
+	if err != nil {
+		return skipped
+	}
+	return parseConditionSkipped(out)
+}
+
+func parseConditionSkipped(out string) map[string]bool {
+	skipped := map[string]bool{}
+	for _, block := range strings.Split(out, "\n\n") {
+		props := map[string]string{}
+		for _, line := range strings.Split(block, "\n") {
+			if key, value, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+				props[key] = value
+			}
+		}
+		if props["Id"] == "" || props["ActiveState"] != "inactive" || props["ConditionResult"] != "no" {
+			continue
+		}
+		if ts := props["ConditionTimestampMonotonic"]; ts == "" || ts == "0" {
+			continue
+		}
+		skipped[props["Id"]] = true
+	}
+	return skipped
 }
 
 func serviceLabelFromName(name string) string {

@@ -44,3 +44,18 @@ func TestDisableServicePropagatesEveryCommandFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestParseConditionSkippedOnlyFlagsCheckedUnmetConditions(t *testing.T) {
+	out := strings.Join([]string{
+		"Id=bluetooth.service\nActiveState=inactive\nConditionResult=no\nConditionTimestampMonotonic=4899624",
+		"Id=cups.service\nActiveState=active\nConditionResult=yes\nConditionTimestampMonotonic=6467410",
+		"Id=never-started.service\nActiveState=inactive\nConditionResult=no\nConditionTimestampMonotonic=0",
+		"Id=crashed.service\nActiveState=failed\nConditionResult=yes\nConditionTimestampMonotonic=5000",
+		"Id=stopped.service\nActiveState=inactive\nConditionResult=yes\nConditionTimestampMonotonic=5000",
+	}, "\n\n")
+	got := parseConditionSkipped(out)
+	want := map[string]bool{"bluetooth.service": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseConditionSkipped = %v, want %v", got, want)
+	}
+}
