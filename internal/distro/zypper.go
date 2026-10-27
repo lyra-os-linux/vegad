@@ -484,6 +484,11 @@ func (z *zypperBackend) Remove(pkg string, report ProgressFunc, pkgReport Packag
 // already shown in the Updates tab. A failure in one repo doesn't stop the
 // rest: remaining repos still run, and every failure is collected into one
 // final error.
+//
+// `zypper update --repo` loads only that repository, so an update that needs
+// a newer dependency from a later repository is held back ("will not be
+// installed", exit 0). When every repository pass succeeded and updates are
+// still pending, one unrestricted `zypper update` finishes them.
 func (z *zypperBackend) UpdateAll(report ProgressFunc, pkgReport PackageProgressFunc) error {
 	return updateAllByRepository(zypperGroupedUpdates, runZypperTransactionXML, report, pkgReport)
 }
@@ -536,6 +541,19 @@ func updateAllByRepository(list func() ([]RepoUpdateGroup, error), run func([]st
 
 	if len(failures) > 0 {
 		return failures
+	}
+
+	remaining, err := list()
+	if err != nil {
+		return err
+	}
+	if len(remaining) > 0 {
+		if err := run(
+			[]string{"--non-interactive", "update", "-y"},
+			func(percent uint32, message string) { report(99, message) }, pkgReport,
+			"Concluindo atualizações que dependem de outros repositórios...", "Atualização concluída"); err != nil {
+			return err
+		}
 	}
 	report(100, "Atualização concluída")
 	return nil
