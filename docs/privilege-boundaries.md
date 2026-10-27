@@ -59,7 +59,7 @@ members of `wheel` whose subject is not a local active session:
 
 | Subject | Brokered reads (`backup`, `kernel`, `snapshots`, `firewall` `.read-admin`) | Journal (`logs.read-admin`) | Mutations |
 | --- | --- | --- | --- |
-| Local active session (desktop) | policy defaults: silent | policy defaults: `auth_admin_keep` through the session agent | policy defaults: `auth_admin` through the session agent |
+| Local active session (desktop) | policy defaults: silent | policy defaults: `auth_admin_keep` through the session agent | policy defaults: `auth_admin` through the session agent; `software.install` is `auth_admin_keep`, so a Vega install queue asks once |
 | `wheel` member, non-local or inactive session | `YES` (silent, same information the desktop grants its active user) | `AUTH_SELF_KEEP`: own password, retained like the desktop | `AUTH_SELF`: own password, never retained |
 | Service account `vega-web` | `NO` | `NO` | `NO` |
 | Other users | policy defaults (denied) | policy defaults (denied) | policy defaults (denied) |
