@@ -1,8 +1,10 @@
 package dbusserver
 
 import (
+	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/lyraos/vegad/internal/distro"
 	"github.com/lyraos/vegad/internal/profile"
@@ -18,10 +20,17 @@ func RunTrustedKeysJob(activeProfile profile.Profile) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), trustedKeysJobTimeout)
+	defer cancel()
 	return maintainTrustedKeys(activeProfile, string(cmdline), func() error {
-		return distro.ImportTrustedPackageKeys(trustedKeyringPath())
+		return distro.ImportTrustedPackageKeysContext(ctx, trustedKeyringPath())
 	})
 }
+
+// trustedKeysJobTimeout bounds how long the job waits for an RPM transaction
+// that holds the database lock, such as the Zypper update installing vegad.
+// It must stay below TimeoutStartSec of vegad-trusted-keys.service.
+const trustedKeysJobTimeout = 25 * time.Minute
 
 func maintainTrustedKeys(activeProfile profile.Profile, cmdline string, importKeys func() error) error {
 	if activeProfile != profile.Desktop || isLiveCmdline(cmdline) {
