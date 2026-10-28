@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // DefaultTrustedKeyringPath is the package-signing keyring shipped by the
@@ -119,8 +121,55 @@ func ImportTrustedPackageKeysContext(ctx context.Context, path string) error {
 	if err := checkPinnedFingerprints(found, trustedPackageSigningFingerprints); err != nil {
 		return err
 	}
-	if out, err := preparationCommandOutput(ctx, packageCommand("rpmkeys", "--import", "--", path)); err != nil {
-		return fmt.Errorf("importar chaves confiáveis no RPM: %w — %s", err, out)
+	return importRPMKeys(ctx, path)
+}
+
+// rpmLockRetryInterval is how often a busy RPM database is retried. It is a
+// variable only so tests do not have to wait.
+var rpmLockRetryInterval = 5 * time.Second
+
+// importRPMKeys runs rpmkeys --import, waiting while another transaction
+// holds the RPM database lock. The vegad RPM queues key maintenance from its
+// own %post, so the first attempt usually meets the lock of the Zypper
+// transaction that is installing vegad; failing there logged a spurious
+// error on every update (vegad#99). Any other rpmkeys error fails at once.
+// Waiting ends with ctx, so callers must bound it.
+func importRPMKeys(ctx context.Context, path string) error {
+	waiting := false
+	for {
+		cmd := packageCommand("rpmkeys", "--import", "--", path)
+		cmd.Env = commandEnvC()
+		out, err := preparationCommandOutput(ctx, cmd)
+		if err == nil {
+			return nil
+		}
+		if !rpmLockBusy(out) {
+			return fmt.Errorf("importar chaves confiáveis no RPM: %w — %s", err, out)
+		}
+		if ctx.Err() != nil {
+			return rpmLockTimeout(ctx)
+		}
+		if !waiting {
+			log.Printf("vegad: aguardando a transação RPM em andamento terminar para importar as chaves confiáveis")
+			waiting = true
+		}
+		timer := time.NewTimer(rpmLockRetryInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return rpmLockTimeout(ctx)
+		case <-timer.C:
+		}
 	}
-	return nil
+}
+
+func rpmLockTimeout(ctx context.Context) error {
+	return fmt.Errorf("importar chaves confiáveis no RPM: banco RPM ocupado por outra transação: %w", ctx.Err())
+}
+
+// rpmLockBusy reports whether rpmkeys failed only because another process
+// holds the RPM transaction lock. rpmkeys runs under LC_ALL=C, so the
+// message is "can't create transaction lock on .../.rpm.lock (...)".
+func rpmLockBusy(out string) bool {
+	return strings.Contains(out, "transaction lock") || strings.Contains(out, ".rpm.lock")
 }

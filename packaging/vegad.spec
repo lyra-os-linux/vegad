@@ -175,8 +175,9 @@ systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true
 systemctl enable --now vegad-update-check.timer 2>/dev/null || true
 systemctl enable --now vegad-log-export.timer 2>/dev/null || true
-# Queue key maintenance without waiting while this RPM transaction holds
-# the database lock. No refresh or package installation is performed.
+# Queue key maintenance without blocking this scriptlet. The service starts
+# while this RPM transaction still holds the database lock and waits for it
+# to be released (vegad#99). No refresh or package installation is performed.
 systemctl enable vegad-trusted-keys.service 2>/dev/null || true
 systemctl --no-block start vegad-trusted-keys.service 2>/dev/null || true
 # Fresh images enable preparation for the next installed boot. Upgrades

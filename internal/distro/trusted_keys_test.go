@@ -1,13 +1,16 @@
 package distro
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseKeyringPrimaryFingerprintsSkipsSubkeys(t *testing.T) {
@@ -170,5 +173,82 @@ func TestRequiredKeyringToolsCannotSilentlySkip(t *testing.T) {
 				t.Fatalf("missing tools did not fail: %v %s", err, out)
 			}
 		})
+	}
+}
+
+// fakeRPMKeys puts an rpmkeys on PATH that reports a held RPM transaction
+// lock for the first busy calls, then runs the given final shell command.
+// It returns the file counting the calls.
+func fakeRPMKeys(t *testing.T, busy int, final string) string {
+	t.Helper()
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\n" +
+		"n=$(($(cat \"$VEGAD_TEST_CALLS\" 2>/dev/null || echo 0) + 1))\n" +
+		"echo \"$n\" > \"$VEGAD_TEST_CALLS\"\n" +
+		"if [ \"$n\" -le " + strconv.Itoa(busy) + " ]; then\n" +
+		"  echo \"error: can't create transaction lock on /usr/lib/sysimage/rpm/.rpm.lock (Resource temporarily unavailable)\" >&2\n" +
+		"  exit 1\n" +
+		"fi\n" + final + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "rpmkeys"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VEGAD_TEST_CALLS", calls)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	interval := rpmLockRetryInterval
+	rpmLockRetryInterval = 10 * time.Millisecond
+	t.Cleanup(func() { rpmLockRetryInterval = interval })
+	return calls
+}
+
+func rpmKeysCalls(t *testing.T, calls string) string {
+	t.Helper()
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// The vegad RPM queues key maintenance from %post, while the Zypper
+// transaction installing it still holds the RPM lock (vegad#99).
+func TestTrustedPackageKeysWaitForRPMLock(t *testing.T) {
+	calls := fakeRPMKeys(t, 3, "exit 0")
+	if err := importRPMKeys(context.Background(), "keyring.asc"); err != nil {
+		t.Fatal(err)
+	}
+	if got := rpmKeysCalls(t, calls); got != "4" {
+		t.Fatalf("rpmkeys calls = %s, want 4", got)
+	}
+}
+
+func TestTrustedPackageKeysOtherErrorsFailAtOnce(t *testing.T) {
+	calls := fakeRPMKeys(t, 0, "echo 'error: keyring.asc: import read failed(2).' >&2; exit 1")
+	err := importRPMKeys(context.Background(), "keyring.asc")
+	if err == nil || !strings.Contains(err.Error(), "import read failed") {
+		t.Fatalf("err = %v, want the rpmkeys error", err)
+	}
+	if got := rpmKeysCalls(t, calls); got != "1" {
+		t.Fatalf("rpmkeys calls = %s, want 1", got)
+	}
+}
+
+func TestTrustedPackageKeysLockWaitIsBounded(t *testing.T) {
+	fakeRPMKeys(t, 1000, "exit 0")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	err := importRPMKeys(ctx, "keyring.asc")
+	if err == nil || !strings.Contains(err.Error(), "ocupado") {
+		t.Fatalf("err = %v, want a busy RPM database error", err)
+	}
+}
+
+func TestTrustedPackageKeysRunUnderCLocale(t *testing.T) {
+	calls := fakeRPMKeys(t, 0, "echo \"$LC_ALL\" > \"$VEGAD_TEST_CALLS.locale\"")
+	if err := importRPMKeys(context.Background(), "keyring.asc"); err != nil {
+		t.Fatal(err)
+	}
+	if got := rpmKeysCalls(t, calls+".locale"); got != "C" {
+		t.Fatalf("rpmkeys LC_ALL = %q, want C", got)
 	}
 }

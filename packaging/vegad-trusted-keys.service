@@ -16,7 +16,9 @@ ExecStart=/usr/lib/vega/vegad sync-trusted-keys
 # An RPM upgrade may still hold the database lock when the job is queued.
 Restart=on-failure
 RestartSec=5min
-TimeoutStartSec=2min
+# The job waits up to 25 min for an RPM transaction holding the database
+# lock, such as the update that installs vegad itself.
+TimeoutStartSec=30min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
