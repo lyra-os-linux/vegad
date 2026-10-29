@@ -143,10 +143,11 @@ wait:
 	} else if run.code != 0 {
 		result.Findings = append(result.Findings, env.finding(SeverityAttention, "stress.incomplete", lastLines(string(run.out), 12), "code", strconv.Itoa(run.code)))
 	}
-	// Thermal throttling below Tjmax is normal in laptops: attention, not
-	// failure; so is a load frequency under half the nominal one.
+	// Throttling under sustained load is normal in laptops: a passed test
+	// stays healthy and the count is only informative. Attention is kept for
+	// a real loss of performance, a load frequency under half the nominal.
 	if monitor.throttleEvents > 0 {
-		result.Findings = append(result.Findings, env.finding(SeverityAttention, "cpu.throttled", "", "count", strconv.Itoa(monitor.throttleEvents)))
+		result.Findings = append(result.Findings, env.finding(Info, "cpu.throttled", "", "count", strconv.Itoa(monitor.throttleEvents)))
 	}
 	if base := baseMHz(env); base > 0 && avg > 0 && avg < base/2 {
 		result.Findings = append(result.Findings, env.finding(SeverityAttention, "cpu.slow-under-load", "avg "+strconv.Itoa(avg)+" MHz, base "+strconv.Itoa(base)+" MHz", "mhz", strconv.Itoa(avg), "base", strconv.Itoa(base)))

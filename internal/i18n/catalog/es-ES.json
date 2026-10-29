@@ -85,7 +85,7 @@
   "diagnostics.finding.cpu.verify-failed": "El procesador produjo {count} resultados erróneos bajo carga",
   "diagnostics.finding.memory.verify-failed": "La memoria devolvió {count} resultados corruptos: la RAM puede estar defectuosa",
   "diagnostics.finding.stress.incomplete": "La prueba de carga terminó antes de lo previsto (código {code})",
-  "diagnostics.finding.cpu.throttled": "El procesador redujo la velocidad {count} veces para enfriarse; común en portátiles",
+  "diagnostics.finding.cpu.throttled": "El procesador redujo la velocidad {count} veces para enfriarse bajo carga continua; normal en portátiles",
   "diagnostics.finding.cpu.slow-under-load": "Bajo carga el procesador funcionó a {mhz} MHz, menos de la mitad de sus {base} MHz nominales; revise la refrigeración",
   "diagnostics.finding.scrub.errors": "La verificación del sistema de archivos encontró errores: {errors}",
   "diagnostics.finding.scrub.incomplete": "La verificación del sistema de archivos no terminó ({status})",
