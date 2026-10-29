@@ -159,17 +159,24 @@ func TestCPUStressVerificationFailureFails(t *testing.T) {
 	}
 }
 
-func TestThrottlingAndSlowLoadAreAttentionNotFailure(t *testing.T) {
+func TestThrottlingAloneKeepsAPassedTestHealthy(t *testing.T) {
 	host := laptop()
-	host.set("/proc/cpuinfo", "cpu MHz\t\t: 1000.000\n")
-	host.set("/sys/devices/system/cpu/cpu0/thermal_throttle/core_throttle_count", "0\n")
 	env, _ := heavyEnv(t, host, func(ctx context.Context, name string, args ...string) ([]byte, int, error) {
 		host.set("/sys/devices/system/cpu/cpu0/thermal_throttle/core_throttle_count", "2100\n")
 		return answerAfter(fixture(t, "stress-vm.txt"), 0)(ctx, name, args...)
 	})
 	result := runMemoryStress(context.Background(), env, noProgress)
-	codes := findingCodes(result.Findings)
-	if result.Verdict != Attention || codes["cpu.throttled"].Severity != SeverityAttention || codes["cpu.slow-under-load"].Severity != SeverityAttention {
+	if result.Verdict != Ok || findingCodes(result.Findings)["cpu.throttled"].Severity != Info {
+		t.Fatalf("verdict %s %+v", result.Verdict, result.Findings)
+	}
+}
+
+func TestSlowLoadIsAttention(t *testing.T) {
+	host := laptop()
+	host.set("/proc/cpuinfo", "cpu MHz\t\t: 1000.000\n")
+	env, _ := heavyEnv(t, host, answerAfter(fixture(t, "stress-cpu.txt"), 0))
+	result := runCPUStress(context.Background(), env, noProgress)
+	if result.Verdict != Attention || findingCodes(result.Findings)["cpu.slow-under-load"].Severity != SeverityAttention {
 		t.Fatalf("verdict %s %+v", result.Verdict, result.Findings)
 	}
 }

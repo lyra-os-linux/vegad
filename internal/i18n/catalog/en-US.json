@@ -85,7 +85,7 @@
   "diagnostics.finding.cpu.verify-failed": "The processor produced {count} wrong results under load",
   "diagnostics.finding.memory.verify-failed": "Memory returned {count} corrupted results: the RAM may be faulty",
   "diagnostics.finding.stress.incomplete": "The load test ended early (code {code})",
-  "diagnostics.finding.cpu.throttled": "The processor slowed down {count} times to cool off; common in laptops",
+  "diagnostics.finding.cpu.throttled": "The processor slowed down {count} times to cool off under sustained load; normal in laptops",
   "diagnostics.finding.cpu.slow-under-load": "Under load the processor ran at {mhz} MHz, under half its nominal {base} MHz; check cooling",
   "diagnostics.finding.scrub.errors": "The file system check found errors: {errors}",
   "diagnostics.finding.scrub.incomplete": "The file system check did not finish ({status})",
