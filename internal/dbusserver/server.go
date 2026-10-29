@@ -234,6 +234,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	diagnosticsService := newDiagnosticsService(s.activity, s.conn)
+	if err := s.export(diagnosticsService, BusName+".Diagnostics"); err != nil {
+		return err
+	}
+
 	// dbus-next (and any well-behaved D-Bus client) calls Introspect() to
 	// discover method signatures before invoking them — godbus doesn't
 	// provide this automatically, so without it every call from such a
@@ -324,6 +329,29 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Network", Methods: introspect.Methods(network)},
 			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
 			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
+			{Name: BusName + ".Diagnostics", Methods: introspect.Methods(diagnosticsService), Signals: []introspect.Signal{
+				{Name: "Progress", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "stage", Type: "s", Direction: "out"},
+					{Name: "percent", Type: "u", Direction: "out"},
+					{Name: "message", Type: "s", Direction: "out"},
+				}},
+				{Name: "Sample", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "sample", Type: "a{sv}", Direction: "out"},
+				}},
+				{Name: "StageFinished", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "stage", Type: "s", Direction: "out"},
+					{Name: "verdict", Type: "s", Direction: "out"},
+					{Name: "summary", Type: "s", Direction: "out"},
+				}},
+				{Name: "Finished", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "result", Type: "s", Direction: "out"},
+					{Name: "message", Type: "s", Direction: "out"},
+				}},
+			}},
 		},
 	}
 	if bluetooth != nil {

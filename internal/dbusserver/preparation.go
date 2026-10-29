@@ -323,5 +323,5 @@ func (s *PreparationService) ApproveKey(sender dbus.Sender, repo, fingerprint, t
 			}
 			return nil
 		})
-	}), nil
+	})
 }

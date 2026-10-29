@@ -62,13 +62,19 @@ func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbu
 		return 0, dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))
 	}
 
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
 	done, ok := k.activity.begin()
 	if !ok {
+		release()
 		return 0, dbus.MakeFailedError(fmt.Errorf("daemon encerrando; repita a chamada"))
 	}
 	txID := k.nextTxID.Add(1)
 	go func() {
 		defer done()
+		defer release()
 		err := withSnapshots("Instalação de kernel: "+kernel, func() error {
 			return kb.Install(kernel, func(uint32, string) {})
 		})
@@ -87,6 +93,11 @@ func (k *KernelService) Remove(sender dbus.Sender, kernel string) *dbus.Error {
 	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
 		return err
 	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return busy
+	}
+	defer release()
 	kb := k.provider.Kernel()
 	if !kb.IsSupportedPackage(kernel) {
 		return dbus.MakeFailedError(fmt.Errorf("kernel inválido: %s", kernel))

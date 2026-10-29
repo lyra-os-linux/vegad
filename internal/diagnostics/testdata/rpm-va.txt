@@ -1,0 +1,28 @@
+.........    /etc/polkit-1/rules.d (replaced)
+.........    /usr/share/polkit-1/rules.d (replaced)
+SM5....T.    /etc/os-release
+.M.......  g /var/log/alternatives.log
+....L....    /usr/bin/luarocks-admin
+S.5....T.  c /etc/nvim/sysinit.vim
+.M.......  g /var/lib/wtmpdb
+.M....G..  g /etc/brlapi.key
+S.5....T.  c /etc/default/grub
+S.5....T.    /var/cache/gio-2.0/gnome-mimeapps.list
+.M.......  g /run/ostree
+.M.......  g /etc/iscsi/initiatorname.iscsi
+.M.......  g /var/lib/chrony/drift
+.M.......  g /var/lib/bluetooth
+.M.......  g /var/cache/PackageKit
+.M.......  g /etc/plymouth/plymouthd.conf
+.M.......  g /var/lib/flatpak
+S.5....T.  c /etc/gdm/custom.conf
+.M.......  g /run/tmux
+.M.......  g /run/media
+.M.......  g /run/podman
+.M.......  g /etc/dconf/db/lyra-supervised
+.M.......    /usr/bin
+.M.......    /usr/lib
+.M.......    /usr/lib64
+.M.......    /usr/share
+.........    /usr/share/polkit-1/rules.d (replaced)
+.........    /usr/share/polkit-1/rules.d (replaced)

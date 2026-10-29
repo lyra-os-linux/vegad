@@ -9,10 +9,11 @@ unclassified method, and its coverage is checked against every exported method.
 
 | Operation class | Methods | Execution and authorization |
 | --- | ---: | --- |
-| Public queries | 47 | Caller UID; the dedicated `vegad-query` account for a root caller; no capabilities or elevation |
+| Public queries | 49 | Caller UID; the dedicated `vegad-query` account for a root caller; no capabilities or elevation |
+| Brokered public reads | 3 | No Polkit; answered by the root coordinator because only it holds the state (`Firewall.Status`, `Diagnostics.ListTests`, `Diagnostics.Current`) |
 | Journal queries | 2 | Polkit `logs.read-admin`, then a non-root worker with the journal group |
 | Brokered reads | 10 | Noninteractive Polkit session check; active local desktop allowed without a password; root coordinator reads the required system files and protected firewall information |
-| Administrative operations | 54 | Existing per-operation Polkit and transaction handlers |
+| Administrative operations | 58 | Existing per-operation Polkit and transaction handlers |
 | Metadata refresh | 1 | Existing rate-limited background maintenance; shared with the scheduled refresh |
 | Retired driver operations | 2 | Existing explicit unsupported-operation responses |
 
@@ -222,3 +223,15 @@ References: [Zypper return codes](https://manpages.opensuse.org/Tumbleweed/zyppe
 `Software.InstallNvidia` is an explicitly confirmed administrative operation
 under `software.install`; see [NVIDIA integration](nvidia.md). Status and checks
 remain public worker queries and never reconcile suspend policy.
+
+## Health diagnostics
+
+`Diagnostics.Start` and `Diagnostics.Cancel` require
+`org.lyraos.vega.hardware.diagnose` (`auth_admin_keep` locally). Tests run as
+root in the coordinator, each tool in its own process group so a cancel stops
+every child. `Diagnostics.Report` runs in the coordinator after an interactive
+`logs.read-admin` check, the same retained authorization as the Logs page,
+because reports include journal excerpts. Disk serial numbers, MAC addresses,
+SSIDs and the hostname are masked when the caller asks for a redacted copy.
+A diagnostic and every system transaction (software, backup, snapshots,
+kernel) exclude each other; both sides answer `org.lyraos.Vega1.Error.Busy`.

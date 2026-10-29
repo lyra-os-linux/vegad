@@ -210,10 +210,15 @@ func (s *SoftwareService) SearchNative(query string) ([]PackageRef, *dbus.Error)
 // identifies the operation to systemd-logind for the duration of work, so a
 // shutdown request doesn't cut a package transaction short (see
 // withShutdownInhibit).
-func (s *SoftwareService) startTransaction(why string, work func(report progressFunc, pkgReport packageProgressFunc) error) uint32 {
+func (s *SoftwareService) startTransaction(why string, work func(report progressFunc, pkgReport packageProgressFunc) error) (uint32, *dbus.Error) {
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
 	done, ok := s.activity.begin()
 	if !ok {
-		return 0
+		release()
+		return 0, shuttingDownError()
 	}
 	txID := s.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
@@ -231,6 +236,7 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 	}
 	go func() {
 		defer done()
+		defer release()
 		err := explainFirstUpdateLock(withShutdownInhibit(why, func() error { return work(report, pkgReport) }))
 		// Every transaction funnels through here, and any of them can change
 		// what is still pending — drop the cached lists before the UI reacts
@@ -246,7 +252,7 @@ func (s *SoftwareService) startTransaction(why string, work func(report progress
 			log.Printf("vegad: emit TransactionFinished: %v", emitErr)
 		}
 	}()
-	return txID
+	return txID, nil
 }
 
 func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32, *dbus.Error) {
@@ -279,9 +285,9 @@ func (s *SoftwareService) Install(sender dbus.Sender, origin, id string) (uint32
 			return withSnapshots("Instalação oficial: "+id, func() error {
 				return s.provider.Package().Install(id, report, pkgReport)
 			})
-		}), nil
+		})
 	case "flathub":
-		return s.startTransaction("Instalação Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return installFlatpak(id, report) }), nil
+		return s.startTransaction("Instalação Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return installFlatpak(id, report) })
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -313,7 +319,7 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			return withSnapshots("Remoção oficial: "+id, func() error {
 				return s.provider.Package().Remove(id, report, pkgReport)
 			})
-		}), nil
+		})
 	case "flathub":
 		u, err := resolveDesktopUser(s.conn, sender)
 		if err != nil {
@@ -332,7 +338,7 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 				return 0, err
 			}
 		}
-		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return removeFlatpak(id, scope, u, report) }), nil
+		return s.startTransaction("Remoção Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error { return removeFlatpak(id, scope, u, report) })
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -602,7 +608,7 @@ func (s *SoftwareService) UpdateAll(sender dbus.Sender) (uint32, *dbus.Error) {
 			return updateAllFlatpak(u, report)
 		}
 		return nil
-	}), nil
+	})
 }
 
 func (s *SoftwareService) UpdateAllNative(sender dbus.Sender) (uint32, *dbus.Error) {
@@ -617,7 +623,7 @@ func (s *SoftwareService) UpdateAllNative(sender dbus.Sender) (uint32, *dbus.Err
 		return withSnapshots("Atualização nativa completa", func() error {
 			return s.provider.Package().UpdateAll(report, pkgReport)
 		})
-	}), nil
+	})
 }
 
 // UpdatePackage updates a single pending update (see ListUpdates), letting
@@ -647,7 +653,7 @@ func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (
 			return withSnapshots("Atualização oficial: "+id, func() error {
 				return s.provider.Package().UpdatePackage(id, report, pkgReport)
 			})
-		}), nil
+		})
 	case "flathub":
 		u := desktopUserOrNil(s.conn, sender, "UpdatePackage")
 		scope := "system"
@@ -658,7 +664,7 @@ func (s *SoftwareService) UpdatePackage(sender dbus.Sender, origin, id string) (
 		}
 		return s.startTransaction("Atualização Flathub: "+id, func(report progressFunc, _ packageProgressFunc) error {
 			return updateFlatpak(id, scope, u, report)
-		}), nil
+		})
 	default:
 		return 0, dbus.MakeFailedError(fmt.Errorf("origem desconhecida: %s", origin))
 	}
@@ -716,7 +722,7 @@ func (s *SoftwareService) ClearCache(sender dbus.Sender) (uint32, *dbus.Error) {
 			}
 		}
 		return nil
-	}), nil
+	})
 }
 
 func (s *SoftwareService) ClearNativeCache(sender dbus.Sender) (uint32, *dbus.Error) {
@@ -731,7 +737,7 @@ func (s *SoftwareService) ClearNativeCache(sender dbus.Sender) (uint32, *dbus.Er
 		return withSnapshots("Limpeza de cache nativo", func() error {
 			return s.provider.Package().ClearCache(report)
 		})
-	}), nil
+	})
 }
 
 // withSnapshots is best effort for normal package transactions, not a recovery
@@ -789,10 +795,15 @@ func (s *SoftwareService) emitRepoKeyPending(txID uint32, repo, keyId, fingerpri
 // emit an extra RepoKeyPending signal (tagged with this same txID) when the
 // repo's signing key still needs the user's approval, ahead of the
 // TransactionFinished that follows either way.
-func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint32, report progressFunc) error) uint32 {
+func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint32, report progressFunc) error) (uint32, *dbus.Error) {
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
 	done, ok := s.activity.begin()
 	if !ok {
-		return 0
+		release()
+		return 0, shuttingDownError()
 	}
 	txID := s.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
@@ -802,6 +813,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 	}
 	go func() {
 		defer done()
+		defer release()
 		err := explainFirstUpdateLock(withShutdownInhibit(why, func() error { return work(txID, report) }))
 		s.invalidateUpdateCaches()
 		success := err == nil
@@ -814,7 +826,7 @@ func (s *SoftwareService) startTransactionWithID(why string, work func(txID uint
 			log.Printf("vegad: emit TransactionFinished: %v", emitErr)
 		}
 	}()
-	return txID
+	return txID, nil
 }
 
 // AddRepo registers a new repository (name pointing at url) and tries to
@@ -840,7 +852,7 @@ func (s *SoftwareService) AddRepo(sender dbus.Sender, name, url string) (uint32,
 			}
 		}
 		return err
-	}), nil
+	})
 }
 
 // TrustRepoKey imports/trusts keyId (as previously reported via a
@@ -855,5 +867,5 @@ func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (
 	}
 	return s.startTransaction("Confiar em chave de repositório: "+repo, func(report progressFunc, _ packageProgressFunc) error {
 		return s.provider.Package().TrustRepoKey(repo, keyId, report)
-	}), nil
+	})
 }

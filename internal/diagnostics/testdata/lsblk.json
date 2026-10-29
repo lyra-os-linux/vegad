@@ -1,0 +1,13 @@
+{
+   "blockdevices": [
+      {
+         "name": "zram0",
+         "type": "disk",
+         "tran": null
+      },{
+         "name": "nvme0n1",
+         "type": "disk",
+         "tran": "nvme"
+      }
+   ]
+}

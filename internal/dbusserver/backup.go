@@ -233,7 +233,7 @@ func (b *BackupService) RunBackupNow(sender dbus.Sender, configID string) (uint3
 			}
 		}
 		return err
-	}), nil
+	})
 }
 
 func (b *BackupService) ListSnapshots(configID string) ([]BackupSnapshotInfo, *dbus.Error) {
@@ -276,7 +276,7 @@ func (b *BackupService) RestoreSnapshot(sender dbus.Sender, snapshotID, targetPa
 			return err
 		}
 		return restoreBackup(cfg, snapshotID, validatedTarget, mode, nil, report)
-	}), nil
+	})
 }
 
 func (b *BackupService) DeleteConfig(sender dbus.Sender, configID string) *dbus.Error {
@@ -402,7 +402,7 @@ func (b *BackupService) RestoreItems(sender dbus.Sender, snapshotID, targetPath,
 			return err
 		}
 		return restoreBackup(cfg, snapshotID, validatedTarget, mode, paths, report)
-	}), nil
+	})
 }
 
 func (b *BackupService) validateRestoreRequest(sender dbus.Sender, targetPath, mode string, backupRoots []string) (string, error) {
@@ -508,10 +508,15 @@ func (b *BackupService) startTransaction(
 	emitProgress func(uint32, uint32, string) error,
 	emitFinished func(uint32, bool, string) error,
 	work func(report progressFunc) error,
-) uint32 {
+) (uint32, *dbus.Error) {
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
 	done, ok := b.activity.begin()
 	if !ok {
-		return 0
+		release()
+		return 0, shuttingDownError()
 	}
 	txID := b.nextTxID.Add(1)
 	report := func(percent uint32, message string) {
@@ -521,6 +526,7 @@ func (b *BackupService) startTransaction(
 	}
 	go func() {
 		defer done()
+		defer release()
 		err := withShutdownInhibit(why, func() error { return work(report) })
 		success := err == nil
 		message := "Concluído"
@@ -531,7 +537,7 @@ func (b *BackupService) startTransaction(
 			fmt.Printf("vegad: emit transaction finished: %v\n", emitErr)
 		}
 	}()
-	return txID
+	return txID, nil
 }
 
 func normalizeBackupConfig(cfg BackupConfig) (BackupConfig, error) {

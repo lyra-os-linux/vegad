@@ -47,10 +47,18 @@ var methodPolicies = map[string]methodPolicy{
 	"Bluetooth.SendFile":          {administrative, ""},
 	"Bluetooth.StartFileReceiver": {administrative, ""},
 	"DateTime.Status":             {queryPublic, ""},
-	"DateTime.ListTimezones":      {queryPublic, ""},
-	"DateTime.ListLocales":        {queryPublic, ""},
-	"DateTime.ListKeymaps":        {queryPublic, ""},
-	"DateTime.Apply":              {administrative, ""},
+	// Diagnostics keeps the running job in the broker: the reads must see it.
+	"Diagnostics.ListTests": {brokeredPublic, ""},
+	"Diagnostics.Current":   {brokeredPublic, ""},
+	"Diagnostics.Start":     {administrative, ""},
+	"Diagnostics.Cancel":    {administrative, ""},
+	// Reports hold journal excerpts: the same interactive, retained
+	// logs.read-admin as the Logs page, checked inside Report.
+	"Diagnostics.Report":     {administrative, ""},
+	"DateTime.ListTimezones": {queryPublic, ""},
+	"DateTime.ListLocales":   {queryPublic, ""},
+	"DateTime.ListKeymaps":   {queryPublic, ""},
+	"DateTime.Apply":         {administrative, ""},
 	// firewalld authorizes even the active zone through polkit's
 	// org.fedoraproject.FirewallD1.info, which the query worker (a system unit
 	// outside the caller's session) is denied. Status stays public for vega-web

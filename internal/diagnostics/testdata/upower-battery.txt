@@ -1,0 +1,30 @@
+  native-path:          BAT1
+  vendor:               SMP
+  model:                AP18E7M
+  serial:               0000
+  power supply:         yes
+  updated:              Thu Oct 29 11:11:35 2026 (10 seconds ago)
+  has history:          yes
+  has statistics:       yes
+  battery
+    present:             yes
+    rechargeable:        yes
+    state:               fully-charged
+    warning-level:       none
+    energy:              50.358 Wh
+    energy-empty:        0 Wh
+    energy-full:         50.358 Wh
+    energy-full-design:  58.751 Wh
+    voltage-min-design:  15.4 V
+    capacity-level:      Full
+    energy-rate:         0 W
+    voltage:             17 V
+    charge-cycles:       197
+    percentage:          100%
+    capacity:            85.7143%
+    technology:          lithium-ion
+    icon-name:          'battery-full-charged-symbolic'
+  History (voltage):
+    1793283065	17.000	fully-charged
+    1793283005	17.001	fully-charged
+
