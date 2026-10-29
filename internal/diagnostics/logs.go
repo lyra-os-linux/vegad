@@ -175,7 +175,9 @@ func classifyJournal(boots map[int][]journalEntry) logClassification {
 
 const coredumpMessageID = "fc2e22bc6ee647b6b90729ab34a250b1"
 
-var scopeSuffix = regexp.MustCompile(`-[0-9]+\.scope$`)
+// scopeSuffix drops the per-launch part of a scope name: the PID in
+// app-gnome-vega-7012.scope and the UUID in vte-spawn-<uuid>.scope.
+var scopeSuffix = regexp.MustCompile(`-(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.scope$`)
 
 // coredumpGroups counts crashes per executable and per app scope, so the
 // same binary crashing inside different apps stays distinguishable.

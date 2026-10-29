@@ -213,7 +213,7 @@ func TestReportRedactsSerialsHostnameAndMACs(t *testing.T) {
 		Host:      map[string]string{"hostname": "rodrigo-nitro", "product": "Nitro"},
 		Sensitive: []string{"rodrigo-nitro", "KN34291K6QHL"},
 		Stages: []diagnostics.StageResult{{ID: "disk-health", Verdict: diagnostics.Ok, Findings: []diagnostics.Finding{
-			{Code: "logs.errors", Raw: "r8169 eth0: RTL8168h, 9c:2d:cd:a1:b2:c3, IRQ 140\nconnected to SSID 'CasaRodrigo'\nserial KN34291K6QHL"},
+			{Code: "logs.errors", Raw: "r8169 eth0: RTL8168h, 9c:2d:cd:a1:b2:c3, IRQ 140\nconnected to SSID 'CasaRodrigo'\nserial KN34291K6QHL\n1  /home/rodrigo/Git/vega/target/debug/vega-gtk SIGSEGV"},
 		}}},
 	}
 	if err := s.store.save(report); err != nil {
@@ -224,7 +224,7 @@ func TestReportRedactsSerialsHostnameAndMACs(t *testing.T) {
 		t.Fatalf("unredacted report: %s", plain)
 	}
 	masked, _ := s.report(4, true)
-	for _, secret := range []string{"KN34291K6QHL", "rodrigo-nitro", "9c:2d:cd", "CasaRodrigo"} {
+	for _, secret := range []string{"KN34291K6QHL", "rodrigo-nitro", "9c:2d:cd", "CasaRodrigo", "/home/rodrigo"} {
 		if strings.Contains(masked, secret) {
 			t.Errorf("%s leaked: %s", secret, masked)
 		}

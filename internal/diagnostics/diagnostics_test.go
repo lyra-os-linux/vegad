@@ -191,6 +191,8 @@ func coredumpJournal() []byte {
 		`{"MESSAGE_ID":"fc2e22bc6ee647b6b90729ab34a250b1","COREDUMP_EXE":"/usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess","COREDUMP_USER_UNIT":"app-gnome-vega-9133.scope","COREDUMP_SIGNAL_NAME":"SIGABRT"}`,
 		`{"MESSAGE_ID":"fc2e22bc6ee647b6b90729ab34a250b1","COREDUMP_EXE":"/usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess","COREDUMP_USER_UNIT":"app-gnome-org.lyraos.Beam-511.scope","COREDUMP_SIGNAL_NAME":"SIGSEGV"}`,
 		`{"MESSAGE_ID":"fc2e22bc6ee647b6b90729ab34a250b1","COREDUMP_COMM":"ZoomWebviewHost","COREDUMP_SIGNAL_NAME":"SIGSEGV","COREDUMP_EXE":null}`,
+		`{"MESSAGE_ID":"fc2e22bc6ee647b6b90729ab34a250b1","COREDUMP_EXE":"/usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess","COREDUMP_USER_UNIT":"vte-spawn-599b4205-023d-4fc7-b8ff-ac901deac42f.scope","COREDUMP_SIGNAL_NAME":"SIGABRT"}`,
+		`{"MESSAGE_ID":"fc2e22bc6ee647b6b90729ab34a250b1","COREDUMP_EXE":"/usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess","COREDUMP_USER_UNIT":"vte-spawn-711a32cd-b38b-4ff6-b987-4a28d677f1b3.scope","COREDUMP_SIGNAL_NAME":"SIGABRT"}`,
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
 }
@@ -224,7 +226,8 @@ func TestLogsClassifyKnownNoiseAndGroupCrashesByApp(t *testing.T) {
 	}
 	crashes := codes["logs.coredumps"]
 	if !strings.Contains(crashes.Raw, "    2  /usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess (app-gnome-vega) SIGABRT") ||
-		!strings.Contains(crashes.Raw, "(app-gnome-org.lyraos.Beam) SIGSEGV") || !strings.Contains(crashes.Raw, "ZoomWebviewHost") {
+		!strings.Contains(crashes.Raw, "(app-gnome-org.lyraos.Beam) SIGSEGV") || !strings.Contains(crashes.Raw, "ZoomWebviewHost") ||
+		!strings.Contains(crashes.Raw, "    2  /usr/libexec/libwebkit2gtk-4_1-0/WebKitWebProcess (vte-spawn) SIGABRT") {
 		t.Fatalf("coredumps not grouped per app scope: %q", crashes.Raw)
 	}
 	perBoot := result.Metrics["errorsPerBoot"].(map[string]int)

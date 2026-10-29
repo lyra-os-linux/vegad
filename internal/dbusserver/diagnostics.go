@@ -488,12 +488,14 @@ func (st *diagnosticStore) load(jobID uint32, redact bool) (string, error) {
 var (
 	macPattern  = regexp.MustCompile(`(?i)\b([0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b`)
 	ssidPattern = regexp.MustCompile(`(?i)(ssid[ =:]+['"]?)([^'"\s,;]+)`)
+	homePattern = regexp.MustCompile(`/home/[^/\s'"]+`)
 )
 
 const redacted = "[redacted]"
 
 // redactValue masks the job's sensitive values (serial numbers, hostname)
-// and any MAC address or SSID wherever they appear, including log lines.
+// and any MAC address, SSID or home directory name wherever they appear,
+// including log lines and crash paths.
 func redactValue(value any, sensitive []string) any {
 	switch v := value.(type) {
 	case string:
@@ -501,6 +503,7 @@ func redactValue(value any, sensitive []string) any {
 			v = strings.ReplaceAll(v, secret, redacted)
 		}
 		v = macPattern.ReplaceAllString(v, redacted)
+		v = homePattern.ReplaceAllString(v, "/home/"+redacted)
 		return ssidPattern.ReplaceAllString(v, "${1}"+redacted)
 	case []any:
 		for i := range v {
