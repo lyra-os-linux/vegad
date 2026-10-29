@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,6 +52,8 @@ type DiagnosticsService struct {
 	newEnv func(locale string, bootsBack int) *diagnostics.Env
 	// lookup resolves a test id; replaced in tests.
 	lookup func(id string) (diagnostics.Test, bool)
+	// snapshot wraps a repair in a pre/post snapshot; replaced in tests.
+	snapshot func(action string, work func() error) error
 
 	mu  sync.Mutex
 	job *runningDiagnostic
@@ -71,6 +74,7 @@ func newDiagnosticsService(activity *Activity, conn *dbus.Conn) *DiagnosticsServ
 		store:    &diagnosticStore{dir: diagnosticsReportDir, keep: 10},
 		newEnv:   diagnostics.HostEnv,
 		lookup:   diagnostics.Lookup,
+		snapshot: withSnapshots,
 	}
 }
 
@@ -245,6 +249,136 @@ func (s *DiagnosticsService) report(jobID uint32, redact bool) (string, *dbus.Er
 	return report, nil
 }
 
+const repairAction = "org.lyraos.vega.hardware.repair"
+
+func (s *DiagnosticsService) Repair(sender dbus.Sender, jobID uint32, remedies []string) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, repairAction); err != nil {
+		return 0, err
+	}
+	return s.repair(jobID, remedies)
+}
+
+type plannedRemedy struct {
+	remedy diagnostics.Remedy
+	args   []string
+}
+
+// repair plans the requested remedies from the stored report of jobID. The
+// arguments (packages, units) come only from that report.
+func (s *DiagnosticsService) repair(jobID uint32, remedies []string) (uint32, *dbus.Error) {
+	if len(remedies) == 0 {
+		return 0, notSupported("nenhum reparo pedido")
+	}
+	requested := map[string]bool{}
+	for _, id := range remedies {
+		if _, ok := diagnostics.LookupRemedy(id); !ok {
+			return 0, notSupported("reparo desconhecido: " + id)
+		}
+		if requested[id] {
+			return 0, notSupported("reparo repetido: " + id)
+		}
+		requested[id] = true
+	}
+	source, err := s.store.loadReport(jobID)
+	if err != nil {
+		return 0, notSupported(err.Error())
+	}
+	var plan []plannedRemedy
+	var retests []string
+	for _, remedy := range diagnostics.Remedies {
+		if !requested[remedy.ID] {
+			continue
+		}
+		found := false
+		seen := map[string]bool{}
+		var args []string
+		for _, stage := range source.Stages {
+			for _, finding := range stage.Findings {
+				if finding.Remedy != remedy.ID {
+					continue
+				}
+				found = true
+				for _, arg := range finding.RemedyArgs {
+					if !seen[arg] {
+						seen[arg] = true
+						args = append(args, arg)
+					}
+				}
+			}
+		}
+		if !found {
+			return 0, notSupported(fmt.Sprintf("o relatório %d não propõe %s", source.JobID, remedy.ID))
+		}
+		plan = append(plan, plannedRemedy{remedy, args})
+		if !slices.Contains(retests, remedy.Retest) {
+			retests = append(retests, remedy.Retest)
+		}
+	}
+	release, busy := operations.beginDiagnostic()
+	if busy != nil {
+		return 0, busy
+	}
+	done, ok := s.activity.begin()
+	if !ok {
+		release()
+		return 0, shuttingDownError()
+	}
+	id, storeErr := s.store.nextID()
+	if storeErr != nil {
+		done()
+		release()
+		return 0, dbus.MakeFailedError(storeErr)
+	}
+	stages := make([]string, 0, len(plan)+len(retests))
+	for _, p := range plan {
+		stages = append(stages, "repair:"+p.remedy.ID)
+	}
+	stages = append(stages, retests...)
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &runningDiagnostic{id: id, tests: stages, stage: stages[0], cancel: cancel}
+	s.mu.Lock()
+	s.job = job
+	s.mu.Unlock()
+	locale := source.Locale
+	if locale == "" {
+		locale = vegai18n.DefaultLocale
+	}
+	env := s.newEnv(locale, 8)
+	go func() {
+		defer done()
+		defer release()
+		defer cancel()
+		s.runRepair(ctx, job, env, source.JobID, plan, retests)
+	}()
+	return id, nil
+}
+
+func (s *DiagnosticsService) runRepair(ctx context.Context, job *runningDiagnostic, env *diagnostics.Env, of uint32, plan []plannedRemedy, retests []string) {
+	inhibitor, err := acquireShutdownInhibit("Reparo do diagnóstico")
+	if err != nil {
+		log.Printf("vegad: reparo %d sem inibição de desligamento: %v", job.id, err)
+	}
+	defer inhibitor.Release()
+	report := s.newReport(job, env)
+	report.RepairOf = of
+	s.save(report)
+	_ = s.snapshot(fmt.Sprintf("Vega: reparo do diagnóstico %d", of), func() error {
+		for _, p := range plan {
+			p := p
+			s.stage(ctx, job, env, report, "repair:"+p.remedy.ID, 15*time.Minute, true, "", func(ctx context.Context, progress diagnostics.Progress) diagnostics.StageResult {
+				return p.remedy.Run(ctx, env, p.args, progress)
+			})
+		}
+		return nil
+	})
+	// The tests run again to say whether the problems are gone.
+	for _, id := range retests {
+		s.testStage(ctx, job, env, report, id)
+	}
+	s.finish(job, env, report)
+}
+
 func (s *DiagnosticsService) setProgress(job *runningDiagnostic, stage string, percent uint32, message string) {
 	s.mu.Lock()
 	job.stage, job.percent = stage, percent
@@ -306,49 +440,56 @@ func stageTimeout(test diagnostics.Test, env *diagnostics.Env) time.Duration {
 	return timeout
 }
 
-func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, env *diagnostics.Env) {
-	inhibitor, err := acquireShutdownInhibit("Diagnóstico de saúde")
-	if err != nil {
-		log.Printf("vegad: diagnóstico %d sem inibição de desligamento: %v", job.id, err)
-	}
-	defer inhibitor.Release()
-
-	report := &diagnosticReport{Schema: 1, JobID: job.id, Started: time.Now().Format(time.RFC3339), Host: hostInfo(env), Stages: []diagnostics.StageResult{}}
+func (s *DiagnosticsService) newReport(job *runningDiagnostic, env *diagnostics.Env) *diagnosticReport {
+	report := &diagnosticReport{Schema: 1, JobID: job.id, Started: time.Now().Format(time.RFC3339), Host: hostInfo(env), Stages: []diagnostics.StageResult{}, Locale: env.Locale}
 	if name, err := os.Hostname(); err == nil && name != "" {
 		report.Host["hostname"] = name
 		report.Sensitive = append(report.Sensitive, name)
 	}
-	s.save(report)
-	for _, id := range job.tests {
-		test, _ := s.lookup(id)
-		s.setProgress(job, id, 0, "")
-		var result diagnostics.StageResult
-		available, reason := test.Availability(env)
-		switch {
-		case ctx.Err() != nil:
-			result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Cancelled, Summary: vegai18n.T(env.Locale, "diagnostics.summary.not-run"), Findings: []diagnostics.Finding{}}
-		case !available:
-			result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Unavailable, Summary: vegai18n.T(env.Locale, "diagnostics.summary.unavailable"), Findings: []diagnostics.Finding{}, Metrics: map[string]any{"reason": reason}}
-		default:
-			stageCtx, stop := context.WithTimeout(ctx, stageTimeout(test, env))
-			result = test.Run(stageCtx, env, func(percent uint32, message string) {
-				s.setProgress(job, id, percent, message)
-			})
-			stop()
-			if ctx.Err() != nil && result.Verdict != diagnostics.Cancelled {
-				result.Verdict = diagnostics.Cancelled
-			}
+	return report
+}
+
+// stage runs one step of a job (a test or a repair) with its timeout,
+// records it in the report and emits StageFinished.
+func (s *DiagnosticsService) stage(ctx context.Context, job *runningDiagnostic, env *diagnostics.Env, report *diagnosticReport, id string, timeout time.Duration, available bool, reason string, run func(context.Context, diagnostics.Progress) diagnostics.StageResult) {
+	s.setProgress(job, id, 0, "")
+	var result diagnostics.StageResult
+	switch {
+	case ctx.Err() != nil:
+		result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Cancelled, Summary: vegai18n.T(env.Locale, "diagnostics.summary.not-run"), Findings: []diagnostics.Finding{}}
+	case !available:
+		result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Unavailable, Summary: vegai18n.T(env.Locale, "diagnostics.summary.unavailable"), Findings: []diagnostics.Finding{}, Metrics: map[string]any{"reason": reason}}
+	default:
+		stageCtx, stop := context.WithTimeout(ctx, timeout)
+		result = run(stageCtx, func(percent uint32, message string) {
+			s.setProgress(job, id, percent, message)
+		})
+		stop()
+		if ctx.Err() != nil && result.Verdict != diagnostics.Cancelled {
+			result.Verdict = diagnostics.Cancelled
 		}
-		result.ID = id
-		if result.Findings == nil {
-			result.Findings = []diagnostics.Finding{}
-		}
-		report.Sensitive = append(report.Sensitive, result.Sensitive...)
-		report.Stages = append(report.Stages, result)
-		s.setProgress(job, id, 100, result.Summary)
-		s.emit("StageFinished", job.id, id, string(result.Verdict), result.Summary)
-		s.save(report)
 	}
+	result.ID = id
+	if result.Findings == nil {
+		result.Findings = []diagnostics.Finding{}
+	}
+	report.Sensitive = append(report.Sensitive, result.Sensitive...)
+	report.Stages = append(report.Stages, result)
+	s.setProgress(job, id, 100, result.Summary)
+	s.emit("StageFinished", job.id, id, string(result.Verdict), result.Summary)
+	s.save(report)
+}
+
+// testStage runs a health test as a stage of job.
+func (s *DiagnosticsService) testStage(ctx context.Context, job *runningDiagnostic, env *diagnostics.Env, report *diagnosticReport, id string) {
+	test, _ := s.lookup(id)
+	available, reason := test.Availability(env)
+	s.stage(ctx, job, env, report, id, stageTimeout(test, env), available, reason, func(ctx context.Context, progress diagnostics.Progress) diagnostics.StageResult {
+		return test.Run(ctx, env, progress)
+	})
+}
+
+func (s *DiagnosticsService) finish(job *runningDiagnostic, env *diagnostics.Env, report *diagnosticReport) {
 	result := diagnostics.Aggregate(report.Stages)
 	report.Result = string(result)
 	report.Finished = time.Now().Format(time.RFC3339)
@@ -357,6 +498,20 @@ func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, en
 	s.job = nil
 	s.mu.Unlock()
 	s.emit("Finished", job.id, string(result), vegai18n.T(env.Locale, "diagnostics.result."+string(result)))
+}
+
+func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, env *diagnostics.Env) {
+	inhibitor, err := acquireShutdownInhibit("Diagnóstico de saúde")
+	if err != nil {
+		log.Printf("vegad: diagnóstico %d sem inibição de desligamento: %v", job.id, err)
+	}
+	defer inhibitor.Release()
+	report := s.newReport(job, env)
+	s.save(report)
+	for _, id := range job.tests {
+		s.testStage(ctx, job, env, report, id)
+	}
+	s.finish(job, env, report)
 }
 
 func (s *DiagnosticsService) save(report *diagnosticReport) {
@@ -401,6 +556,10 @@ type diagnosticReport struct {
 	Result    string                    `json:"result,omitempty"`
 	Stages    []diagnostics.StageResult `json:"stages"`
 	Sensitive []string                  `json:"sensitive,omitempty"`
+	// Locale of the texts, reused by a repair of this job.
+	Locale string `json:"locale,omitempty"`
+	// RepairOf is the job a repair job fixed.
+	RepairOf uint32 `json:"repairOf,omitempty"`
 }
 
 var diagnosticsReportDir = "/var/lib/vega/diagnostics"
@@ -492,6 +651,34 @@ func (st *diagnosticStore) save(report *diagnosticReport) error {
 		ids = ids[1:]
 	}
 	return nil
+}
+
+// loadReport reads the stored report of jobID (the newest when 0), whole.
+func (st *diagnosticStore) loadReport(jobID uint32) (*diagnosticReport, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if jobID == 0 {
+		ids, err := st.ids()
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("nenhum diagnóstico foi executado")
+		}
+		jobID = ids[len(ids)-1]
+	}
+	data, err := os.ReadFile(st.path(jobID))
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("relatório %d não encontrado", jobID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var report diagnosticReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
 
 // load returns the report of jobID (the newest when 0), without the

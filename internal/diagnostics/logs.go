@@ -271,7 +271,16 @@ func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 		for _, unit := range failed {
 			lines = append(lines, unit.Unit+"  "+unit.Description)
 		}
-		findings = append(findings, env.finding(SeverityAttention, "logs.failed-units", strings.Join(lines, "\n"), "count", strconv.Itoa(len(failed))))
+		units := env.finding(SeverityAttention, "logs.failed-units", strings.Join(lines, "\n"), "count", strconv.Itoa(len(failed)))
+		for _, unit := range failed {
+			if validUnitName(unit.Unit) {
+				units.RemedyArgs = append(units.RemedyArgs, unit.Unit)
+			}
+		}
+		if len(units.RemedyArgs) > 0 {
+			units.Remedy = "restart-units"
+		}
+		findings = append(findings, units)
 	}
 	if n := countGroups(classified.errors); n > 0 {
 		findings = append(findings, env.finding(Info, "logs.errors", strings.Join(sortedGroups(classified.errors, 30), "\n"), "count", strconv.Itoa(n), "unique", strconv.Itoa(len(classified.errors))))

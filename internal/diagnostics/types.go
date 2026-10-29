@@ -41,6 +41,10 @@ type Finding struct {
 	Code     string   `json:"code"`
 	Text     string   `json:"text"`
 	Raw      string   `json:"raw,omitempty"`
+	// Remedy names a safe fix Repair can apply (remedy.go); RemedyArgs are
+	// its details, read back from the stored report, never from a caller.
+	Remedy     string   `json:"remedy,omitempty"`
+	RemedyArgs []string `json:"remedyArgs,omitempty"`
 }
 
 // StageResult is the outcome of one test.

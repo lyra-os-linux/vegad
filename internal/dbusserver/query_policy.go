@@ -52,6 +52,7 @@ var methodPolicies = map[string]methodPolicy{
 	"Diagnostics.Current":   {brokeredPublic, ""},
 	"Diagnostics.Start":     {administrative, ""},
 	"Diagnostics.Cancel":    {administrative, ""},
+	"Diagnostics.Repair":    {administrative, ""},
 	// Reports hold journal excerpts: the same interactive, retained
 	// logs.read-admin as the Logs page, checked inside Report.
 	"Diagnostics.Report":     {administrative, ""},

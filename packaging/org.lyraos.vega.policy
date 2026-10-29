@@ -255,6 +255,20 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.hardware.repair">
+    <description>Repair problems found by the health diagnostics</description>
+    <description xml:lang="pt_BR">Corrigir problemas encontrados pelo diagnóstico de saúde</description>
+    <description xml:lang="es">Corregir problemas encontrados por el diagnóstico de salud</description>
+    <message>Authentication is required to reinstall packages, restart services or change the clock settings</message>
+    <message xml:lang="pt_BR">É necessário autenticar para reinstalar pacotes, reiniciar serviços ou alterar o relógio</message>
+    <message xml:lang="es">Es necesario autenticarse para reinstalar paquetes, reiniciar servicios o cambiar el reloj</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.lyraos.vega.snapshots.read-admin">
     <description>Read protected system snapshots</description>
     <description xml:lang="pt_BR">Ler snapshots protegidos do sistema</description>

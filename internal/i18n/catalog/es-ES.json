@@ -103,5 +103,15 @@
   "diagnostics.progress.cpu-stress": "Exigiendo el procesador",
   "diagnostics.progress.memory-stress": "Exigiendo la memoria",
   "diagnostics.progress.fs-scrub": "Verificando el sistema de archivos",
-  "diagnostics.progress.disk-bench": "Midiendo el rendimiento del disco"
+  "diagnostics.progress.disk-bench": "Midiendo el rendimiento del disco",
+  "diagnostics.finding.repair.failed": "{tool} no pudo aplicar la corrección (código {code})",
+  "diagnostics.finding.repair.unit-failed": "{unit} sigue fallando después de reiniciar; consulte su registro",
+  "diagnostics.summary.repair-failed": "No se aplicó la corrección",
+  "diagnostics.summary.repair.reinstall": "Reinstalados: {packages}",
+  "diagnostics.summary.repair.verify": "Dependencias que faltaban instaladas",
+  "diagnostics.summary.repair.restart": "{ok} de {total} servicios funcionando de nuevo",
+  "diagnostics.summary.repair.ntp": "Sincronización de hora por red activada",
+  "diagnostics.progress.repair.reinstall": "Reinstalando {packages}",
+  "diagnostics.progress.repair.restart": "Reiniciando {unit}",
+  "diagnostics.progress.repair.ntp": "Activando la sincronización de hora"
 }

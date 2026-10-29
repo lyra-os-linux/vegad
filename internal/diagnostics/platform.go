@@ -182,7 +182,13 @@ func runPlatform(ctx context.Context, env *Env, progress Progress) StageResult {
 		synced := values["NTPSynchronized"] == "yes"
 		result.Metrics["ntpSynchronized"] = synced
 		if !synced {
-			findings = append(findings, env.finding(SeverityAttention, "platform.ntp", "NTP="+values["NTP"]+" NTPSynchronized="+values["NTPSynchronized"]))
+			ntp := env.finding(SeverityAttention, "platform.ntp", "NTP="+values["NTP"]+" NTPSynchronized="+values["NTPSynchronized"])
+			// Turning synchronization on helps only when it is off; an
+			// enabled but unsynchronized clock points at the network.
+			if values["NTP"] != "yes" {
+				ntp.Remedy = "enable-ntp"
+			}
+			findings = append(findings, ntp)
 		}
 	}
 	if have("mokutil") {
