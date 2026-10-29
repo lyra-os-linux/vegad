@@ -178,10 +178,10 @@ func TestDiagnosticCancelStopsTheJobAndKeepsAPartialReport(t *testing.T) {
 }
 
 func TestDiagnosticStageTimeoutComesFromTheEstimate(t *testing.T) {
-	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 10}); got != time.Minute {
+	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 10}, &diagnostics.Env{}); got != time.Minute {
 		t.Errorf("short test: %s", got)
 	}
-	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 240}); got != 8*time.Minute {
+	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 240}, &diagnostics.Env{}); got != 8*time.Minute {
 		t.Errorf("stress test: %s", got)
 	}
 }
@@ -296,4 +296,62 @@ func TestListTestsReportsEveryContractTest(t *testing.T) {
 	if !got["packages"].Available || got["disk-health"].Reason != "missing-tool:smartmontools" || !got["cpu-stress"].RequiresAc {
 		t.Fatalf("rows %+v", got)
 	}
+}
+
+func TestStartRefusesLoadTestsOnBatteryAndLowResources(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{"cpu-stress": okStage("cpu-stress"), "logs": okStage("logs")})
+	kind := "on-battery"
+	s.lookup = func(id string) (diagnostics.Test, bool) {
+		return diagnostics.Test{ID: id, EstimatedSeconds: 1, Run: okStage(id), Preflight: func(*diagnostics.Env) error {
+			if id == "logs" {
+				return nil
+			}
+			return &diagnostics.PreflightError{Kind: kind, Detail: id}
+		}}, id == "cpu-stress" || id == "logs"
+	}
+	if _, err := s.start([]string{"logs", "cpu-stress"}, nil); err == nil || err.Name != BusName+".Error.OnBattery" {
+		t.Fatalf("battery: %v", err)
+	}
+	if release, busy := operations.beginTransaction(); busy != nil {
+		t.Fatal("a refused start held the gate")
+	} else {
+		release()
+	}
+	kind = "insufficient-resources"
+	if _, err := s.start([]string{"cpu-stress"}, nil); err == nil || err.Name != BusName+".Error.InsufficientResources" {
+		t.Fatalf("resources: %v", err)
+	}
+	if id, err := s.start([]string{"logs"}, nil); err != nil || id == 0 {
+		t.Fatalf("logs alone: %d %v", id, err)
+	}
+	waitIdle(t, s)
+}
+
+func TestSampleSignalCarriesOnlyMeasuredKeysWithContractTypes(t *testing.T) {
+	pkg, mhz, load := 81, 3600, 11.5
+	values := sampleVariants(diagnostics.Sample{PkgTempC: &pkg, AvgMHz: &mhz, Load1: &load})
+	if len(values) != 3 {
+		t.Fatalf("values %+v", values)
+	}
+	if values["pkgTempC"].Signature().String() != "i" || values["avgMHz"].Signature().String() != "u" || values["load1"].Signature().String() != "d" {
+		t.Fatalf("signatures %+v", values)
+	}
+}
+
+func TestStartPassesDurationAndMemoryOptionsToTheTests(t *testing.T) {
+	got := make(chan [2]int, 1)
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{
+		"memory-stress": func(ctx context.Context, env *diagnostics.Env, progress diagnostics.Progress) diagnostics.StageResult {
+			got <- [2]int{env.DurationSeconds, env.MemoryPercent}
+			return diagnostics.StageResult{Verdict: diagnostics.Ok}
+		},
+	})
+	_, err := s.start([]string{"memory-stress"}, map[string]dbus.Variant{"durationSeconds": dbus.MakeVariant(uint32(60)), "memoryPercent": dbus.MakeVariant(uint32(40))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options := <-got; options != [2]int{60, 40} {
+		t.Fatalf("options %v", options)
+	}
+	waitIdle(t, s)
 }

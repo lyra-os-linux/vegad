@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -82,14 +83,49 @@ func waitError(err error) error {
 	return err
 }
 
-// HostEnv is the real system.
+// WorkDir is where disk-bench writes its file. vegad removes it after every
+// run and again at startup, in case a crash left a benchmark file behind.
+const WorkDir = "/var/tmp/vega-diagnostics"
+
+// HostEnv is the real system, with the contract's default options.
 func HostEnv(locale string, bootsBack int) *Env {
 	return &Env{
-		Locale:    locale,
-		BootsBack: bootsBack,
-		Run:       ExecRunner,
-		ReadFile:  os.ReadFile,
-		Glob:      filepath.Glob,
-		LookPath:  exec.LookPath,
+		Locale:          locale,
+		BootsBack:       bootsBack,
+		DurationSeconds: 240,
+		MemoryPercent:   70,
+		Run:             ExecRunner,
+		ReadFile:        os.ReadFile,
+		Glob:            filepath.Glob,
+		LookPath:        exec.LookPath,
+		Statfs:          statfs,
+		NumCPU:          runtime.NumCPU,
+		WorkDir:         WorkDir,
+		SampleInterval:  5 * time.Second,
 	}
+}
+
+func statfs(path string) (uint64, uint64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, 0, err
+	}
+	return st.Blocks * uint64(st.Bsize), st.Bavail * uint64(st.Bsize), nil
+}
+
+// CleanupWorkDir removes benchmark leftovers. Safe to call when absent.
+func CleanupWorkDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }

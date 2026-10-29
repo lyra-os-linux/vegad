@@ -3,6 +3,7 @@ package dbusserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -85,7 +86,7 @@ func (s *DiagnosticsService) ListTests() ([]DiagnosticTest, *dbus.Error) {
 		available, reason := test.Availability(env)
 		tests = append(tests, DiagnosticTest{
 			Id: test.ID, Available: available, Reason: reason,
-			EstimatedSeconds: test.EstimatedSeconds, RequiresAc: test.RequiresAC,
+			EstimatedSeconds: test.Seconds(env), RequiresAc: test.RequiresAC,
 		})
 	}
 	return tests, nil
@@ -167,6 +168,20 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	if err != nil {
 		return 0, err
 	}
+	env := s.newEnv(opts.locale, int(opts.bootsBack))
+	env.DurationSeconds = int(opts.durationSeconds)
+	env.MemoryPercent = int(opts.memoryPercent)
+	// Safeguards that refuse the whole job up front; a test that is merely
+	// unavailable still runs as an "unavailable" stage.
+	for _, id := range tests {
+		test, _ := s.lookup(id)
+		if available, _ := test.Availability(env); !available {
+			continue
+		}
+		if err := test.Check(env); err != nil {
+			return 0, preflightError(err)
+		}
+	}
 	release, busy := operations.beginDiagnostic()
 	if busy != nil {
 		return 0, busy
@@ -187,7 +202,7 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	s.mu.Lock()
 	s.job = job
 	s.mu.Unlock()
-	env := s.newEnv(opts.locale, int(opts.bootsBack))
+	env.Sample = func(sample diagnostics.Sample) { s.emit("Sample", id, sampleVariants(sample)) }
 	go func() {
 		defer done()
 		defer release()
@@ -246,9 +261,45 @@ func (s *DiagnosticsService) emit(signal string, args ...interface{}) {
 	}
 }
 
-// stageTimeout is twice the estimate, never under a minute.
-func stageTimeout(test diagnostics.Test) time.Duration {
-	timeout := 2 * time.Duration(test.EstimatedSeconds) * time.Second
+func preflightError(err error) *dbus.Error {
+	var preflight *diagnostics.PreflightError
+	if errors.As(err, &preflight) {
+		switch preflight.Kind {
+		case "on-battery":
+			return dbus.NewError(BusName+".Error.OnBattery", []interface{}{"conecte o computador à tomada: " + preflight.Detail})
+		case "insufficient-resources":
+			return dbus.NewError(BusName+".Error.InsufficientResources", []interface{}{preflight.Detail})
+		}
+	}
+	return dbus.MakeFailedError(err)
+}
+
+// sampleVariants is the a{sv} of the Sample signal: only measured keys.
+func sampleVariants(sample diagnostics.Sample) map[string]dbus.Variant {
+	values := map[string]dbus.Variant{}
+	add := func(key string, value *int) {
+		if value != nil {
+			if key == "avgMHz" || key == "throttleEvents" {
+				values[key] = dbus.MakeVariant(uint32(max(0, *value)))
+			} else {
+				values[key] = dbus.MakeVariant(int32(*value))
+			}
+		}
+	}
+	add("pkgTempC", sample.PkgTempC)
+	add("maxCoreTempC", sample.MaxCoreTempC)
+	add("avgMHz", sample.AvgMHz)
+	add("throttleEvents", sample.ThrottleEvents)
+	add("nvmeTempC", sample.NvmeTempC)
+	if sample.Load1 != nil {
+		values["load1"] = dbus.MakeVariant(*sample.Load1)
+	}
+	return values
+}
+
+// stageTimeout is twice the estimate for this host, never under a minute.
+func stageTimeout(test diagnostics.Test, env *diagnostics.Env) time.Duration {
+	timeout := 2 * time.Duration(test.Seconds(env)) * time.Second
 	if timeout < time.Minute {
 		timeout = time.Minute
 	}
@@ -279,7 +330,7 @@ func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, en
 		case !available:
 			result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Unavailable, Summary: vegai18n.T(env.Locale, "diagnostics.summary.unavailable"), Findings: []diagnostics.Finding{}, Metrics: map[string]any{"reason": reason}}
 		default:
-			stageCtx, stop := context.WithTimeout(ctx, stageTimeout(test))
+			stageCtx, stop := context.WithTimeout(ctx, stageTimeout(test, env))
 			result = test.Run(stageCtx, env, func(percent uint32, message string) {
 				s.setProgress(job, id, percent, message)
 			})

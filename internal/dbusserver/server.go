@@ -16,6 +16,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
+	"github.com/lyraos/vegad/internal/diagnostics"
 	"github.com/lyraos/vegad/internal/distro"
 	"github.com/lyraos/vegad/internal/profile"
 )
@@ -234,6 +235,10 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	// A crash or kill -9 during disk-bench must not leave gigabytes behind.
+	if err := diagnostics.CleanupWorkDir(diagnostics.WorkDir); err != nil {
+		log.Printf("vegad: limpar %s: %v", diagnostics.WorkDir, err)
+	}
 	diagnosticsService := newDiagnosticsService(s.activity, s.conn)
 	if err := s.export(diagnosticsService, BusName+".Diagnostics"); err != nil {
 		return err
