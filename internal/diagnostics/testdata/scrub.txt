@@ -1,0 +1,9 @@
+Starting scrub on devid 1
+
+Scrub device /dev/nvme0n1p2 (id 1) done
+Scrub started:    Wed Oct 28 15:52:12 2026
+Status:           finished
+Duration:         0:00:49
+Total to scrub:   91.90GiB
+Rate:             1.88GiB/s
+Error summary:    no errors found

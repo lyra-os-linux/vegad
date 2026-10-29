@@ -18,6 +18,30 @@ type Test struct {
 	RequiresAC       bool
 	NeedsBtrfs       bool
 	Run              TestFunc
+	// Estimate refines EstimatedSeconds for this host and options.
+	Estimate func(env *Env) uint32
+	// Preflight refuses a start the safeguards forbid (*PreflightError).
+	Preflight func(env *Env) error
+}
+
+// Seconds is the expected duration on this host.
+func (t Test) Seconds(env *Env) uint32 {
+	if t.Estimate != nil {
+		return t.Estimate(env)
+	}
+	return t.EstimatedSeconds
+}
+
+// Check runs the safeguards that apply before the test starts: line power
+// for load tests, then the test's own resource checks.
+func (t Test) Check(env *Env) error {
+	if t.RequiresAC && !onLinePower(env) {
+		return &PreflightError{Kind: "on-battery", Detail: t.ID}
+	}
+	if t.Preflight != nil {
+		return t.Preflight(env)
+	}
+	return nil
 }
 
 // Tests lists every test in the order a full run executes them: quick reads
@@ -27,10 +51,10 @@ var Tests = []Test{
 	{ID: "disk-health", Tools: []Tool{{"smartctl", "smartmontools"}}, EstimatedSeconds: 10, Run: runDiskHealth},
 	{ID: "logs", Tools: []Tool{{"journalctl", "systemd"}}, EstimatedSeconds: 20, Run: runLogs},
 	{ID: "platform", EstimatedSeconds: 30, Run: runPlatform},
-	{ID: "fs-scrub", Tools: []Tool{{"btrfs", "btrfsprogs"}}, EstimatedSeconds: 120, NeedsBtrfs: true},
-	{ID: "cpu-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true},
-	{ID: "memory-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true},
-	{ID: "disk-bench", Tools: []Tool{{"fio", "fio"}}, EstimatedSeconds: 120, RequiresAC: true},
+	{ID: "fs-scrub", Tools: []Tool{{"btrfs", "btrfsprogs"}}, EstimatedSeconds: 120, NeedsBtrfs: true, Run: runScrub, Estimate: scrubEstimate},
+	{ID: "cpu-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runCPUStress, Estimate: stressEstimate},
+	{ID: "memory-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runMemoryStress, Estimate: stressEstimate, Preflight: memoryPreflight},
+	{ID: "disk-bench", Tools: []Tool{{"fio", "fio"}}, EstimatedSeconds: 90, RequiresAC: true, Run: runDiskBench, Preflight: benchPreflight},
 }
 
 // Lookup returns the test with id.

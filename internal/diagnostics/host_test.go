@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -13,14 +15,32 @@ import (
 //
 //	go test -c -o diag.test ./internal/diagnostics
 //	sudo VEGAD_HOST_DIAGNOSTICS_OUT=/tmp/diag.json ./diag.test -test.run TestHostDiagnostics -test.v
+//
+// VEGAD_HOST_DIAGNOSTICS_TESTS (comma-separated ids) and
+// VEGAD_HOST_DIAGNOSTICS_DURATION (stress seconds) narrow the run.
 func TestHostDiagnostics(t *testing.T) {
 	out := os.Getenv("VEGAD_HOST_DIAGNOSTICS_OUT")
 	if out == "" {
 		t.Skip("set VEGAD_HOST_DIAGNOSTICS_OUT to run the tests on this host")
 	}
 	env := HostEnv("pt-BR", 8)
+	if seconds, err := strconv.Atoi(os.Getenv("VEGAD_HOST_DIAGNOSTICS_DURATION")); err == nil {
+		env.DurationSeconds = seconds
+	}
+	env.Sample = func(s Sample) {
+		data, _ := json.Marshal(s)
+		t.Logf("sample %s", data)
+	}
+	only := os.Getenv("VEGAD_HOST_DIAGNOSTICS_TESTS")
 	var stages []StageResult
 	for _, test := range Tests {
+		if only != "" && !strings.Contains(","+only+",", ","+test.ID+",") {
+			continue
+		}
+		if err := test.Check(env); err != nil {
+			t.Logf("%s: recusado (%v)", test.ID, err)
+			continue
+		}
 		if ok, reason := test.Availability(env); !ok {
 			t.Logf("%s: indisponível (%s)", test.ID, reason)
 			continue

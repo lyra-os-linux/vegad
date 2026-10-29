@@ -40,6 +40,8 @@ Recommends:     bluez
 Recommends:     logrotate
 # Health diagnostics (vegad#98); a missing tool only marks its test unavailable.
 Recommends:     smartmontools
+Recommends:     stress-ng
+Recommends:     fio
 
 %description
 Daemon privilegiado do Vega para openSUSE Leap. Expõe operações de sistema

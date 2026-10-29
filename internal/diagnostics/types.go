@@ -8,6 +8,7 @@ package diagnostics
 import (
 	"context"
 	"strings"
+	"time"
 
 	vegai18n "github.com/lyraos/vegad/internal/i18n"
 )
@@ -62,11 +63,41 @@ type Progress func(percent uint32, message string)
 type Env struct {
 	Locale    string
 	BootsBack int
-	Run       Runner
-	ReadFile  func(string) ([]byte, error)
-	Glob      func(string) ([]string, error)
-	LookPath  func(string) (string, error)
+	// DurationSeconds and MemoryPercent tune cpu-stress and memory-stress.
+	DurationSeconds int
+	MemoryPercent   int
+	Run             Runner
+	ReadFile        func(string) ([]byte, error)
+	Glob            func(string) ([]string, error)
+	LookPath        func(string) (string, error)
+	// Statfs reports the size and the space available to root at path.
+	Statfs func(path string) (total, available uint64, err error)
+	NumCPU func() int
+	// WorkDir holds the disk benchmark file; removed after every run.
+	WorkDir string
+	// Sample receives live telemetry during load tests (may be nil).
+	Sample         func(Sample)
+	SampleInterval time.Duration
 }
+
+// Sample is one telemetry point; nil fields were not measured.
+type Sample struct {
+	PkgTempC       *int
+	MaxCoreTempC   *int
+	AvgMHz         *int
+	ThrottleEvents *int
+	NvmeTempC      *int
+	Load1          *float64
+}
+
+// PreflightError explains why a test cannot start right now. Kind is
+// "on-battery" or "insufficient-resources", mapped to the contract errors.
+type PreflightError struct {
+	Kind   string
+	Detail string
+}
+
+func (e *PreflightError) Error() string { return e.Kind + ": " + e.Detail }
 
 func (e *Env) t(key string, args ...string) string {
 	text := vegai18n.T(e.Locale, key)

@@ -323,7 +323,7 @@ func TestAvailabilityReasons(t *testing.T) {
 	cases := map[string]string{
 		"packages":    "",
 		"disk-health": "missing-tool:smartmontools",
-		"fs-scrub":    "not-implemented",
+		"fs-scrub":    "not-btrfs",
 		"platform":    "",
 	}
 	for id, want := range cases {
@@ -368,7 +368,9 @@ func TestEveryTextHasATranslation(t *testing.T) {
 		"smart.no-disks", "btrfs.device-errors", "logs.coredumps", "logs.failed-units", "logs.errors", "logs.noise.acpi-firmware",
 		"logs.noise.boot", "logs.noise.gdm-shutdown", "platform.hot-idle", "platform.battery-worn", "platform.firmware-updates",
 		"platform.ntp", "platform.secure-boot-off", "platform.kernel-tainted", "platform.kernel-tainted-modules",
-		"stage.timeout", "stage.tool-failed",
+		"stage.timeout", "stage.tool-failed", "thermal.abort", "power.abort", "memory.insufficient", "cpu.verify-failed",
+		"memory.verify-failed", "stress.incomplete", "cpu.throttled", "cpu.slow-under-load", "scrub.errors", "scrub.incomplete",
+		"bench.insufficient-space", "bench.failed", "bench.io-errors",
 	}
 	for _, locale := range []string{"en-US", "pt-BR", "es-ES"} {
 		env := &Env{Locale: locale}
