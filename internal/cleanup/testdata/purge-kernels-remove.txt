@@ -1,0 +1,20 @@
+Reading installed packages...
+
+Preparing to purge obsolete kernels...
+Configuration: running
+Running kernel release: 6.12.0-160100.7-default
+Running kernel arch: x86_64
+
+Resolving package dependencies...
+
+The following 3 packages are going to be REMOVED:
+  kernel-default-6.12.0-160100.8.1 kernel-default-extra kernel-default-optional
+
+3 packages to remove.
+
+Package install size change:
+              |         0 B    required by packages that will be installed
+  -177.7 MiB  |  -  177.7 MiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans --dry-run
+Continue? [y/n/v/...? shows all options] (y): y

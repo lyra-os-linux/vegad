@@ -1,0 +1,5 @@
+
+
+ 1.	   	org.gtk.Gtk3theme.Adwaita-dark	3.22	r
+
+Proceed with these changes to the user installation? [Y/n]: n

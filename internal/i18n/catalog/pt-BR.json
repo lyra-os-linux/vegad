@@ -115,6 +115,7 @@
   "diagnostics.progress.repair.restart": "Reiniciando {unit}",
   "diagnostics.progress.repair.ntp": "Ligando a sincronização de hora",
   "diagnostics.finding.platform.ntp-off": "A sincronização de hora pela rede está desligada; o relógio vai atrasar com o tempo",
+  "diagnostics.finding.storage.low-space": "Restam só {free} livres na partição do sistema ({percent}%); atualizações e snapshots podem falhar",
   "diagnostics.finding.security.firewall-off": "O firewall está desligado: todo serviço que escuta na rede fica acessível",
   "diagnostics.finding.security.exposed-port": "{program} aceita conexões da rede na porta {port}",
   "diagnostics.finding.security.exposed-expected": "{program} aceita conexões na porta {port}, como esperado num servidor",

@@ -46,7 +46,10 @@ var methodPolicies = map[string]methodPolicy{
 	"Bluetooth.Remove":            {administrative, ""},
 	"Bluetooth.SendFile":          {administrative, ""},
 	"Bluetooth.StartFileReceiver": {administrative, ""},
-	"DateTime.Status":             {queryPublic, ""},
+	// Scan only measures; Clean changes the system (storage.cleanup inside).
+	"Cleanup.Scan":    {privilegedRead, "org.lyraos.vega.storage.read-admin"},
+	"Cleanup.Clean":   {administrative, ""},
+	"DateTime.Status": {queryPublic, ""},
 	// Diagnostics keeps the running job in the broker: the reads must see it.
 	"Diagnostics.ListTests": {brokeredPublic, ""},
 	"Diagnostics.Current":   {brokeredPublic, ""},

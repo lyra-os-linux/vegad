@@ -115,6 +115,7 @@
   "diagnostics.progress.repair.restart": "Reiniciando {unit}",
   "diagnostics.progress.repair.ntp": "Activando la sincronización de hora",
   "diagnostics.finding.platform.ntp-off": "La sincronización de hora por red está desactivada; el reloj se desfasará con el tiempo",
+  "diagnostics.finding.storage.low-space": "Solo quedan {free} libres en la partición del sistema ({percent}%); las actualizaciones y las instantáneas pueden fallar",
   "diagnostics.finding.security.firewall-off": "El cortafuegos está desactivado: todo servicio que escucha en la red queda accesible",
   "diagnostics.finding.security.exposed-port": "{program} acepta conexiones de la red en el puerto {port}",
   "diagnostics.finding.security.exposed-expected": "{program} acepta conexiones en el puerto {port}, como se espera en un servidor",
