@@ -308,6 +308,35 @@ func TestPlatformFlagsFaults(t *testing.T) {
 	}
 }
 
+func TestPlatformFlagsLowSpaceOnTheRoot(t *testing.T) {
+	for _, tc := range []struct {
+		total, available uint64
+		low              bool
+	}{
+		{100 * gib, 3 * gib, true},   // 3%
+		{40 * gib, 4 * gib, true},    // 10%, but under 5 GiB
+		{1000 * gib, 90 * gib, true}, // 9%
+		{512 * gib, 400 * gib, false},
+		{100 * gib, 10 * gib, false}, // exactly 10% and 10 GiB
+	} {
+		env := fakeEnv(t, nil, nil)
+		env.Statfs = func(path string) (uint64, uint64, error) {
+			if path != "/" {
+				t.Fatalf("statfs %s", path)
+			}
+			return tc.total, tc.available, nil
+		}
+		result := runPlatform(context.Background(), env, noProgress)
+		f, found := findingCodes(result.Findings)["storage.low-space"]
+		if found != tc.low || (found && (f.Severity != SeverityAttention || f.Remedy != "")) {
+			t.Fatalf("%d/%d: %+v", tc.available, tc.total, f)
+		}
+		if result.Metrics["rootFreeBytes"] != tc.available {
+			t.Fatalf("metric %v", result.Metrics["rootFreeBytes"])
+		}
+	}
+}
+
 func TestCancellationEndsTheStage(t *testing.T) {
 	env := fakeEnv(t, map[string]call{"rpm -Va": {err: context.Canceled}}, nil, "rpm")
 	if result := runPackages(context.Background(), env, noProgress); result.Verdict != Cancelled {

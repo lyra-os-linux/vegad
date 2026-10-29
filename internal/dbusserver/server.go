@@ -235,6 +235,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	cleanupService := newCleanupService(s.activity, s.conn)
+	if err := s.export(cleanupService, BusName+".Cleanup"); err != nil {
+		return err
+	}
+
 	// A crash or kill -9 during disk-bench must not leave gigabytes behind.
 	if err := diagnostics.CleanupWorkDir(diagnostics.WorkDir); err != nil {
 		log.Printf("vegad: limpar %s: %v", diagnostics.WorkDir, err)
@@ -335,6 +340,25 @@ func (s *Server) Export() error {
 			{Name: BusName + ".Network", Methods: introspect.Methods(network)},
 			{Name: BusName + ".Storage", Methods: introspect.Methods(storage)},
 			{Name: BusName + ".Monitor", Methods: introspect.Methods(monitor)},
+			{Name: BusName + ".Cleanup", Methods: introspect.Methods(cleanupService), Signals: []introspect.Signal{
+				{Name: "Progress", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "id", Type: "s", Direction: "out"},
+					{Name: "percent", Type: "u", Direction: "out"},
+					{Name: "message", Type: "s", Direction: "out"},
+				}},
+				{Name: "CategoryFinished", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "id", Type: "s", Direction: "out"},
+					{Name: "result", Type: "s", Direction: "out"},
+					{Name: "freedBytes", Type: "t", Direction: "out"},
+				}},
+				{Name: "Finished", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "result", Type: "s", Direction: "out"},
+					{Name: "freedBytes", Type: "t", Direction: "out"},
+				}},
+			}},
 			{Name: BusName + ".Diagnostics", Methods: introspect.Methods(diagnosticsService), Signals: []introspect.Signal{
 				{Name: "Progress", Args: []introspect.Arg{
 					{Name: "jobId", Type: "u", Direction: "out"},

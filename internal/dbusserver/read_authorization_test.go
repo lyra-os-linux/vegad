@@ -33,6 +33,9 @@ func TestReadOnlyRoutingNeverPrompts(t *testing.T) {
 			if iface == "Backup" {
 				service = &BackupService{activity: s.activity}
 			}
+			if iface == "Cleanup" {
+				service = newCleanupService(s.activity, nil)
+			}
 			methods, err := s.routedMethods(service, BusName+"."+iface)
 			if err != nil {
 				t.Fatal(err)
@@ -61,8 +64,8 @@ func TestReadOnlyRoutingNeverPrompts(t *testing.T) {
 			}
 		})
 	}
-	if count != 11 {
-		t.Fatalf("expected eleven brokered reads, got %d", count)
+	if count != 12 {
+		t.Fatalf("expected twelve brokered reads, got %d", count)
 	}
 	if requirePolkit(":1.42", "org.lyraos.vega.software.install") == nil {
 		t.Fatal("denied administration authorized")
@@ -108,7 +111,7 @@ func TestDesktopReadPolicyDoesNotAuthorizeMutations(t *testing.T) {
 			t.Errorf("administrative authorization was weakened: %s", action.ID)
 		}
 	}
-	if seen != 4 {
+	if seen != 5 {
 		t.Fatalf("missing desktop read actions: %d", seen)
 	}
 }

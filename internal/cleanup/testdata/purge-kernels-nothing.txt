@@ -1,0 +1,9 @@
+Reading installed packages...
+
+Preparing to purge obsolete kernels...
+Configuration: latest,latest-1,running
+Running kernel release: 6.12.0-160100.7-default
+Running kernel arch: x86_64
+
+Resolving package dependencies...
+Nothing to do.

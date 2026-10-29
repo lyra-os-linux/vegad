@@ -39,6 +39,35 @@ func TestDiagnosticExcludesTransactionsBothWays(t *testing.T) {
 	}
 }
 
+func TestCleanupExcludesDiagnosticsAndTransactions(t *testing.T) {
+	gate := newTestGate(false)
+	release, err := gate.beginCleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gate.beginTransaction(); err == nil || err.Name != BusName+".Error.Busy" {
+		t.Fatalf("transaction during a cleanup: %v", err)
+	}
+	if _, err := gate.beginDiagnostic(); err == nil {
+		t.Fatal("diagnostic during a cleanup")
+	}
+	if _, err := gate.beginCleanup(); err == nil {
+		t.Fatal("two cleanups at once")
+	}
+	release()
+	releaseTx, err := gate.beginTransaction()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gate.beginCleanup(); err == nil || err.Name != BusName+".Error.Busy" {
+		t.Fatalf("cleanup during an UpdateAll: %v", err)
+	}
+	releaseTx()
+	if _, err := newTestGate(true).beginCleanup(); err == nil {
+		t.Fatal("cleanup with zypper locked elsewhere")
+	}
+}
+
 func TestTransactionsDoNotExcludeEachOther(t *testing.T) {
 	gate := newTestGate(false)
 	first, err := gate.beginTransaction()

@@ -217,6 +217,20 @@ func runPlatform(ctx context.Context, env *Env, progress Progress) StageResult {
 			findings = append(findings, env.finding(Info, "platform.kernel-tainted-modules", raw+" ("+flags+")", "flags", flags))
 		}
 	}
+	if env.Statfs != nil {
+		if total, available, err := env.Statfs("/"); err == nil && total > 0 {
+			percent := available * 100 / total
+			result.Metrics["rootFreeBytes"] = available
+			// Below 10% or 5 GiB, updates and snapshots start to fail. The
+			// frontend links the finding to the space cleanup.
+			if percent < 10 || available < 5*gib {
+				free := fmt.Sprintf("%.1f GiB", float64(available)/float64(gib))
+				findings = append(findings, env.finding(SeverityAttention, "storage.low-space",
+					fmt.Sprintf("%d de %d bytes livres (%d%%)", available, total, percent),
+					"free", free, "percent", strconv.FormatUint(percent, 10)))
+			}
+		}
+	}
 	if enforce := readTrimmed(env, "/sys/fs/selinux/enforce"); enforce != "" {
 		mode := map[string]string{"1": "enforcing", "0": "permissive"}[enforce]
 		result.Metrics["selinux"] = mode

@@ -9,15 +9,18 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// operationGate keeps a health diagnostic and system transactions (Zypper,
-// Flatpak, snapshots, backup, kernel) mutually exclusive in both directions:
-// a stress test must not compete with an update, and an update must not
-// change the system under a package or filesystem check. Transactions do not
-// exclude each other here; their own locks still apply.
+// operationGate keeps an exclusive operation (a health diagnostic or a space
+// cleanup) and system transactions (Zypper, Flatpak, snapshots, backup,
+// kernel) mutually exclusive in both directions: a stress test must not
+// compete with an update, an update must not change the system under a
+// package or filesystem check, and a cleanup must not remove a cache or a
+// kernel a transaction is using. Transactions do not exclude each other here;
+// their own locks still apply.
 type operationGate struct {
 	mu           sync.Mutex
 	transactions int
-	diagnostic   bool
+	// exclusive names the running exclusive operation ("" when none).
+	exclusive string
 	// zypperLocked reports an external Zypper (timer, first update, shell)
 	// that vegad did not start. Replaced in tests.
 	zypperLocked func() bool
@@ -38,8 +41,11 @@ func busyError(detail string) *dbus.Error {
 func (g *operationGate) beginTransaction() (func(), *dbus.Error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.diagnostic {
+	switch g.exclusive {
+	case exclusiveDiagnostic:
 		return nil, busyError("um diagnóstico de saúde está em andamento")
+	case exclusiveCleanup:
+		return nil, busyError("uma limpeza de espaço está em andamento")
 	}
 	g.transactions++
 	var once sync.Once
@@ -52,25 +58,41 @@ func (g *operationGate) beginTransaction() (func(), *dbus.Error) {
 	}, nil
 }
 
+const (
+	exclusiveDiagnostic = "diagnostic"
+	exclusiveCleanup    = "cleanup"
+)
+
 // beginDiagnostic admits one diagnostic at a time, and only while no
-// transaction runs inside or outside vegad.
+// transaction or cleanup runs inside or outside vegad.
 func (g *operationGate) beginDiagnostic() (func(), *dbus.Error) {
+	return g.beginExclusive(exclusiveDiagnostic)
+}
+
+// beginCleanup admits a space cleanup under the same rules.
+func (g *operationGate) beginCleanup() (func(), *dbus.Error) {
+	return g.beginExclusive(exclusiveCleanup)
+}
+
+func (g *operationGate) beginExclusive(kind string) (func(), *dbus.Error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	switch {
-	case g.diagnostic:
-		return nil, busyError("outro diagnóstico já está em andamento")
+	case g.exclusive == exclusiveDiagnostic:
+		return nil, busyError("um diagnóstico de saúde está em andamento")
+	case g.exclusive == exclusiveCleanup:
+		return nil, busyError("uma limpeza de espaço está em andamento")
 	case g.transactions > 0:
 		return nil, busyError("uma operação de software, snapshot ou backup está em andamento")
 	case g.zypperLocked != nil && g.zypperLocked():
 		return nil, busyError("o Zypper está em uso por outro processo")
 	}
-	g.diagnostic = true
+	g.exclusive = kind
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			g.mu.Lock()
-			g.diagnostic = false
+			g.exclusive = ""
 			g.mu.Unlock()
 		})
 	}, nil

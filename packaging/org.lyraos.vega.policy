@@ -222,6 +222,30 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.storage.read-admin">
+    <description>Measure the space the system can free</description>
+    <description xml:lang="pt_BR">Medir o espaço que o sistema pode liberar</description>
+    <description xml:lang="es">Medir el espacio que el sistema puede liberar</description>
+    <message>Access to storage information is not allowed for this session</message>
+    <message xml:lang="pt_BR">Esta sessão não tem acesso às informações de armazenamento</message>
+    <message xml:lang="es">Esta sesión no tiene acceso a la información de almacenamiento</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+
+  <action id="org.lyraos.vega.storage.cleanup">
+    <description>Free disk space</description>
+    <description xml:lang="pt_BR">Liberar espaço em disco</description>
+    <description xml:lang="es">Liberar espacio en disco</description>
+    <message>Authentication is required to remove core dumps, old logs, caches, unused runtimes or old kernels</message>
+    <message xml:lang="pt_BR">É necessário autenticar para apagar core dumps, logs antigos, caches, runtimes sem uso ou kernels antigos</message>
+    <message xml:lang="es">Es necesario autenticarse para borrar volcados de memoria, registros antiguos, cachés, runtimes sin uso o kernels antiguos</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.lyraos.vega.monitor.kill">
     <description>Encerrar processos</description>
     <message>Autenticação é necessária para encerrar processos do sistema</message>
