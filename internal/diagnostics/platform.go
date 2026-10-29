@@ -181,14 +181,18 @@ func runPlatform(ctx context.Context, env *Env, progress Progress) StageResult {
 		values := parseKeyValues(string(out))
 		synced := values["NTPSynchronized"] == "yes"
 		result.Metrics["ntpSynchronized"] = synced
-		if !synced {
-			ntp := env.finding(SeverityAttention, "platform.ntp", "NTP="+values["NTP"]+" NTPSynchronized="+values["NTPSynchronized"])
-			// Turning synchronization on helps only when it is off; an
-			// enabled but unsynchronized clock points at the network.
-			if values["NTP"] != "yes" {
-				ntp.Remedy = "enable-ntp"
-			}
-			findings = append(findings, ntp)
+		result.Metrics["ntpEnabled"] = values["NTP"] == "yes"
+		raw := "NTP=" + values["NTP"] + " NTPSynchronized=" + values["NTPSynchronized"]
+		switch {
+		case values["NTP"] != "yes":
+			// Off: the clock is right today and drifts from now on. Turning
+			// synchronization on is the fix.
+			off := env.finding(SeverityAttention, "platform.ntp-off", raw)
+			off.Remedy = "enable-ntp"
+			findings = append(findings, off)
+		case !synced:
+			// On but unanswered: the network, not a setting, is the cause.
+			findings = append(findings, env.finding(SeverityAttention, "platform.ntp", raw))
 		}
 	}
 	if have("mokutil") {
