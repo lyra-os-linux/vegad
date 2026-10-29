@@ -31,6 +31,7 @@ type SoftwareService struct {
 	updatesMu       sync.Mutex
 	updatesAt       time.Time
 	updatesScope    string
+	updatesStamp    string
 	updates         []PackageRef
 	updateCheckMu   sync.Mutex
 	updateChecking  bool
@@ -364,9 +365,14 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 	// instead of shelling out to zypper and flatpak each time. The lookup
 	// happens inside the lock, so callers arriving during a refresh wait for
 	// it and then read its result rather than starting a second one.
+	home := ""
+	if u != nil {
+		home = u.HomeDir
+	}
+	stamp := flatpakStamp(home)
 	s.updatesMu.Lock()
 	defer s.updatesMu.Unlock()
-	if !s.updatesAt.IsZero() && s.updatesScope == scope &&
+	if !s.updatesAt.IsZero() && s.updatesScope == scope && s.updatesStamp == stamp &&
 		time.Since(s.updatesAt) < nativeUpdateCacheTTL {
 		return append([]PackageRef(nil), s.updates...), nil
 	}
@@ -406,6 +412,7 @@ func (s *SoftwareService) ListUpdates(sender dbus.Sender) ([]PackageRef, *dbus.E
 	s.updates = append([]PackageRef(nil), results...)
 	s.updatesAt = time.Now()
 	s.updatesScope = scope
+	s.updatesStamp = stamp
 	return results, nil
 }
 
