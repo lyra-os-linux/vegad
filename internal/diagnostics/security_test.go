@@ -19,12 +19,12 @@ func securityCalls(t *testing.T, ss string, firewallActive bool, extra map[strin
 		state = "active\n"
 	}
 	calls := map[string]call{
-		"ss -H -tulpn":                                                     {out: []byte(ss)},
-		"ip -o addr show":                                                  {out: []byte("3: wlp0s20f3    inet 192.168.15.5/24 brd 192.168.15.255 scope global\n4: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\n")},
-		"systemctl is-active firewalld":                                    {out: []byte(state)},
-		"firewall-cmd --list-all-zones":                                    {out: fixture(t, "firewall-zones.txt")},
-		"firewall-cmd --info-service=ssh":                                  {out: fixture(t, "firewall-service-ssh.txt")},
-		"firewall-cmd --info-service=dhcpv6-client":                        {out: fixture(t, "firewall-service-dhcpv6-client.txt")},
+		"ss -H -tulpn":                              {out: []byte(ss)},
+		"ip -o addr show":                           {out: []byte("3: wlp0s20f3    inet 192.168.15.5/24 brd 192.168.15.255 scope global\n4: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\n")},
+		"systemctl is-active firewalld":             {out: []byte(state)},
+		"firewall-cmd --list-all-zones":             {out: fixture(t, "firewall-zones.txt")},
+		"firewall-cmd --info-service=ssh":           {out: fixture(t, "firewall-service-ssh.txt")},
+		"firewall-cmd --info-service=dhcpv6-client": {out: fixture(t, "firewall-service-dhcpv6-client.txt")},
 		"zypper -n --no-refresh --xmlout list-patches --category security": {out: fixture(t, "patches-security-none.xml")},
 		"systemctl is-enabled sshd":                                        {out: []byte("disabled\n"), code: 1},
 		"systemctl is-active sshd":                                         {out: []byte("inactive\n"), code: 3},
