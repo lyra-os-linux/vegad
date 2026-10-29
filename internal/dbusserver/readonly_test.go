@@ -124,40 +124,40 @@ func TestQueryCacheIsolationInvalidationAndBounds(t *testing.T) {
 	var c queryCache
 	key := queryCacheKey{1001, "ListUpdates"}
 	reply := queryResponse{Values: []json.RawMessage{json.RawMessage(`[]`)}}
-	_, _, gen := c.get(key)
-	c.put(key, gen, reply)
-	if _, ok, _ := c.get(key); !ok {
+	_, _, gen := c.get(key, "")
+	c.put(key, gen, "", reply)
+	if _, ok, _ := c.get(key, ""); !ok {
 		t.Fatal("successful response not cached")
 	}
-	if _, ok, _ := c.get(queryCacheKey{1002, "ListUpdates"}); ok {
+	if _, ok, _ := c.get(queryCacheKey{1002, "ListUpdates"}, ""); ok {
 		t.Fatal("other user's response leaked")
 	}
 	c.invalidate()
-	c.put(key, gen, reply)
-	if _, ok, _ := c.get(key); ok {
+	c.put(key, gen, "", reply)
+	if _, ok, _ := c.get(key, ""); ok {
 		t.Fatal("old in-flight query repopulated cache")
 	}
-	_, _, gen = c.get(key)
-	c.put(key, gen, queryResponse{Error: dbus.MakeFailedError(os.ErrPermission)})
-	if _, ok, _ := c.get(key); ok {
+	_, _, gen = c.get(key, "")
+	c.put(key, gen, "", queryResponse{Error: dbus.MakeFailedError(os.ErrPermission)})
+	if _, ok, _ := c.get(key, ""); ok {
 		t.Fatal("failure cached as valid update list")
 	}
-	c.put(key, gen, reply)
+	c.put(key, gen, "", reply)
 	e := c.entries[key]
 	e.at = time.Now().Add(-nativeUpdateCacheTTL - time.Second)
 	c.entries[key] = e
-	if _, ok, _ := c.get(key); ok {
+	if _, ok, _ := c.get(key, ""); ok {
 		t.Fatal("expired result served")
 	}
 	for uid := uint32(1001); uid < 1100; uid++ {
-		c.put(queryCacheKey{uid, "ListUpdates"}, gen, reply)
+		c.put(queryCacheKey{uid, "ListUpdates"}, gen, "", reply)
 	}
 	if len(c.entries) > 16 {
 		t.Fatal("unbounded cache")
 	}
 	key.uid = 5000
-	c.put(key, gen, queryResponse{Values: []json.RawMessage{make([]byte, 2*1024*1024+1)}})
-	if _, ok, _ := c.get(key); ok {
+	c.put(key, gen, "", queryResponse{Values: []json.RawMessage{make([]byte, 2*1024*1024+1)}})
+	if _, ok, _ := c.get(key, ""); ok {
 		t.Fatal("oversized response cached")
 	}
 }
