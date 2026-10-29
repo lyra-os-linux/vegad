@@ -113,5 +113,6 @@
   "diagnostics.summary.repair.ntp": "Network time synchronization turned on",
   "diagnostics.progress.repair.reinstall": "Reinstalling {packages}",
   "diagnostics.progress.repair.restart": "Restarting {unit}",
-  "diagnostics.progress.repair.ntp": "Turning on time synchronization"
+  "diagnostics.progress.repair.ntp": "Turning on time synchronization",
+  "diagnostics.finding.platform.ntp-off": "Network time synchronization is off; the clock will drift over time"
 }

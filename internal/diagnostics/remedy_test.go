@@ -34,11 +34,25 @@ func TestOnlyUnitsAndDisabledNTPGetRemedies(t *testing.T) {
 	if f := findingCodes(result.Findings)["logs.coredumps"]; f.Remedy != "" {
 		t.Fatal("crashes have no automatic fix")
 	}
-	for ntp, want := range map[string]string{"no": "enable-ntp", "yes": ""} {
-		env := fakeEnv(t, map[string]call{"timedatectl show": {out: []byte("NTP=" + ntp + "\nNTPSynchronized=no\n")}}, platformFiles(), "timedatectl")
-		f := findingCodes(runPlatform(context.Background(), env, noProgress).Findings)["platform.ntp"]
-		if f.Remedy != want {
-			t.Errorf("NTP=%s: remedy %q", ntp, f.Remedy)
+	cases := []struct{ ntp, synced, code, remedy string }{
+		{"no", "yes", "platform.ntp-off", "enable-ntp"}, // off but still right: drifts from now on
+		{"no", "no", "platform.ntp-off", "enable-ntp"},
+		{"yes", "no", "platform.ntp", ""}, // on but unanswered: network
+		{"yes", "yes", "", ""},
+	}
+	for _, c := range cases {
+		env := fakeEnv(t, map[string]call{"timedatectl show": {out: []byte("NTP=" + c.ntp + "\nNTPSynchronized=" + c.synced + "\n")}}, platformFiles(), "timedatectl")
+		codes := findingCodes(runPlatform(context.Background(), env, noProgress).Findings)
+		_, off := codes["platform.ntp-off"]
+		_, unsynced := codes["platform.ntp"]
+		got := ""
+		if off {
+			got = "platform.ntp-off"
+		} else if unsynced {
+			got = "platform.ntp"
+		}
+		if got != c.code || codes[c.code].Remedy != c.remedy {
+			t.Errorf("NTP=%s synced=%s: %q remedy %q", c.ntp, c.synced, got, codes[c.code].Remedy)
 		}
 	}
 }

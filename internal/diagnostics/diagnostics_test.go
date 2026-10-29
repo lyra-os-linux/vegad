@@ -368,7 +368,7 @@ func TestEveryTextHasATranslation(t *testing.T) {
 		"smart.media-errors", "smart.error-log", "smart.self-test-errors", "smart.sectors", "smart.hot", "smart.poh-unreliable",
 		"smart.no-disks", "btrfs.device-errors", "logs.coredumps", "logs.failed-units", "logs.errors", "logs.noise.acpi-firmware",
 		"logs.noise.boot", "logs.noise.gdm-shutdown", "platform.hot-idle", "platform.battery-worn", "platform.firmware-updates",
-		"platform.ntp", "platform.secure-boot-off", "platform.kernel-tainted", "platform.kernel-tainted-modules",
+		"platform.ntp", "platform.ntp-off", "platform.secure-boot-off", "platform.kernel-tainted", "platform.kernel-tainted-modules",
 		"stage.timeout", "stage.tool-failed", "thermal.abort", "power.abort", "memory.insufficient", "cpu.verify-failed",
 		"memory.verify-failed", "stress.incomplete", "cpu.throttled", "cpu.slow-under-load", "scrub.errors", "scrub.incomplete",
 		"bench.insufficient-space", "bench.failed", "bench.io-errors",

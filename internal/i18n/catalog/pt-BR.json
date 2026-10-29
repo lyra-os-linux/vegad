@@ -113,5 +113,6 @@
   "diagnostics.summary.repair.ntp": "Sincronização de hora pela rede ligada",
   "diagnostics.progress.repair.reinstall": "Reinstalando {packages}",
   "diagnostics.progress.repair.restart": "Reiniciando {unit}",
-  "diagnostics.progress.repair.ntp": "Ligando a sincronização de hora"
+  "diagnostics.progress.repair.ntp": "Ligando a sincronização de hora",
+  "diagnostics.finding.platform.ntp-off": "A sincronização de hora pela rede está desligada; o relógio vai atrasar com o tempo"
 }

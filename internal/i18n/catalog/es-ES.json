@@ -113,5 +113,6 @@
   "diagnostics.summary.repair.ntp": "Sincronización de hora por red activada",
   "diagnostics.progress.repair.reinstall": "Reinstalando {packages}",
   "diagnostics.progress.repair.restart": "Reiniciando {unit}",
-  "diagnostics.progress.repair.ntp": "Activando la sincronización de hora"
+  "diagnostics.progress.repair.ntp": "Activando la sincronización de hora",
+  "diagnostics.finding.platform.ntp-off": "La sincronización de hora por red está desactivada; el reloj se desfasará con el tiempo"
 }
