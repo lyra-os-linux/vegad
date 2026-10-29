@@ -1,0 +1,88 @@
+{"MESSAGE": "virt/tdx: TDX not supported by the host platform", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI BIOS Error (bug): Failure creating named object [\\_SB.PC00.XHCI.RHUB.HS14._UPC], AE_ALREADY_EXISTS (20250807/dswload2-326)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: AE_ALREADY_EXISTS, During name lookup/catalog (20250807/psobject-220)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI BIOS Error (bug): Failure creating named object [\\_SB.PC00.XHCI.RHUB.HS14._PLD], AE_ALREADY_EXISTS (20250807/dswload2-326)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: AE_ALREADY_EXISTS, During name lookup/catalog (20250807/psobject-220)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Method execution failed \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/uteval-68)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "integrity: Problem loading X.509 certificate -65", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "integrity: Problem loading X.509 certificate -65", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@467.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "gkr-pam: unable to locate daemon control file", "SYSLOG_IDENTIFIER": "gdm-password]", "_SYSTEMD_UNIT": "gdm.service", "PRIORITY": "3"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Failed to start Application launched by gnome-session-binary.", "SYSLOG_IDENTIFIER": "systemd", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "be02cf6855d2428ba40df7e9d022f03d"}
+{"MESSAGE": " user : a password is required ; PWD=/home/user/Git/LyraOs ; USER=root ; COMMAND=/usr/bin/true", "SYSLOG_IDENTIFIER": "sudo", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "1"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@0-28512-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@1-35190-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@2-37061-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@3-37589-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@4-38177-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@5-38758-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@6-40291-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": "pam_unix(polkit-1:auth): conversation failed", "SYSLOG_IDENTIFIER": "polkit-agent-helper-1", "_SYSTEMD_UNIT": "polkit-agent-helper@13-2117-1001.service", "PRIORITY": "3"}
+{"MESSAGE": "pam_unix(polkit-1:auth): auth could not identify password for [user]", "SYSLOG_IDENTIFIER": "polkit-agent-helper-1", "_SYSTEMD_UNIT": "polkit-agent-helper@13-2117-1001.service", "PRIORITY": "2"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@7-42335-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@8-42848-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@9-43382-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@10-43900-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@11-46427-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@12-47495-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@13-48036-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@14-49148-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@15-50197-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@16-50746-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@17-51403-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@18-51976-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@19-54505-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@20-55021-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@21-57046-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@22-57571-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@23-58089-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@24-58610-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@25-78875-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@26-79928-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@27-80440-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@28-81472-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@29-83085-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@30-83621-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@31-84639-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@32-85668-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@33-87278-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": "End of file while reading data: Input/output error", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3"}
+{"MESSAGE": "End of file while reading data: Input/output error", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@34-88275-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@35-90280-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@36-90882-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": null, "SYSLOG_IDENTIFIER": "systemd-coredump", "_SYSTEMD_UNIT": "systemd-coredump@37-92566-0.service", "PRIORITY": "2", "MESSAGE_ID": "fc2e22bc6ee647b6b90729ab34a250b1"}
+{"MESSAGE": "GLib: Source ID 100 was not found when attempting to remove it", "SYSLOG_IDENTIFIER": "gdm", "_SYSTEMD_UNIT": "gdm.service", "PRIORITY": "3"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Gdm: Failed to list cached users: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable", "SYSLOG_IDENTIFIER": "gdm", "_SYSTEMD_UNIT": "gdm.service", "PRIORITY": "3"}
+{"MESSAGE": "Failed to start autovt@tty1.service: Transaction for getty@tty1.service/start is destructive (shutdown.target has 'start' job queued, but 'stop' is included in transaction).", "SYSLOG_IDENTIFIER": "systemd-logind", "_SYSTEMD_UNIT": "systemd-logind.service", "PRIORITY": "3"}
+{"MESSAGE": "Activation request for 'org.freedesktop.nm_dispatcher' failed.", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "dbus-broker.service", "PRIORITY": "3"}
+{"MESSAGE": "Activation request for 'org.freedesktop.nm_dispatcher' failed.", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "dbus-broker.service", "PRIORITY": "3"}

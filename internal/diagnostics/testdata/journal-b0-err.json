@@ -1,0 +1,41 @@
+{"MESSAGE": "virt/tdx: TDX not supported by the host platform", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI BIOS Error (bug): Failure creating named object [\\_SB.PC00.XHCI.RHUB.HS14._UPC], AE_ALREADY_EXISTS (20250807/dswload2-326)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: AE_ALREADY_EXISTS, During name lookup/catalog (20250807/psobject-220)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI BIOS Error (bug): Failure creating named object [\\_SB.PC00.XHCI.RHUB.HS14._PLD], AE_ALREADY_EXISTS (20250807/dswload2-326)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: AE_ALREADY_EXISTS, During name lookup/catalog (20250807/psobject-220)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Method execution failed \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/uteval-68)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "integrity: Problem loading X.509 certificate -65", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "integrity: Problem loading X.509 certificate -65", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Field [AFU0] Base+Offset+Width 512+0+1 is beyond end of region [COMP] (length 512) (20250807/exfldio-163)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "ACPI Error: Aborting method \\AFUB._STA due to previous error (AE_AML_REGION_LIMIT) (20250807/psparse-529)", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "", "SYSLOG_IDENTIFIER": "kernel", "PRIORITY": "3"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@467.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "gkr-pam: unable to locate daemon control file", "SYSLOG_IDENTIFIER": "gdm-password]", "_SYSTEMD_UNIT": "gdm.service", "PRIORITY": "3"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": " user : a password is required ; PWD=/home/user/Git/LyraOs/lyraos-desktop ; USER=root ; COMMAND=/usr/bin/true", "SYSLOG_IDENTIFIER": "sudo", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "1"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@0.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "Ignoring duplicate name 'org.gnome.Shell.Screencast' in service file '/usr/share/dbus-1/services/org.gnome.Shell.Screencast.service'", "SYSLOG_IDENTIFIER": "dbus-broker-launch", "_SYSTEMD_UNIT": "user@1001.service", "PRIORITY": "3", "MESSAGE_ID": "24dc708d9e6a4226a3efe2033bb744de"}
+{"MESSAGE": "pam_wtmpdb(login:session): Cannot create/open database (/var/lib/wtmpdb/wtmp.db): unable to open database file", "SYSLOG_IDENTIFIER": "(sd-pam)", "_SYSTEMD_UNIT": "session-7.scope", "PRIORITY": "3"}
+{"MESSAGE": "gkr-pam: the password for the login keyring was invalid.", "SYSLOG_IDENTIFIER": "gdm-password]", "_SYSTEMD_UNIT": "session-2.scope", "PRIORITY": "3"}
+{"MESSAGE": "gkr-pam: the password for the login keyring was invalid.", "SYSLOG_IDENTIFIER": "gdm-password]", "_SYSTEMD_UNIT": "session-2.scope", "PRIORITY": "3"}
