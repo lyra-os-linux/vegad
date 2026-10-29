@@ -72,6 +72,7 @@ var methodPolicies = map[string]methodPolicy{
 	"Firewall.ListPorts":                {privilegedRead, "org.lyraos.vega.firewall.read-admin"},
 	"Firewall.AddPort":                  {administrative, ""},
 	"Firewall.RemovePort":               {administrative, ""},
+	"Firewall.ListListening":            {privilegedRead, "org.lyraos.vega.firewall.read-admin"},
 	"Software.NonFreeFirmwareStatus":    {queryPublic, ""},
 	"Software.InstallNonFreeFirmware":   {disabledOperation, ""},
 	"Hardware.Inventory":                {queryPublic, ""},

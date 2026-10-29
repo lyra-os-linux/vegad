@@ -61,8 +61,8 @@ func TestReadOnlyRoutingNeverPrompts(t *testing.T) {
 			}
 		})
 	}
-	if count != 10 {
-		t.Fatalf("expected ten brokered reads, got %d", count)
+	if count != 11 {
+		t.Fatalf("expected eleven brokered reads, got %d", count)
 	}
 	if requirePolkit(":1.42", "org.lyraos.vega.software.install") == nil {
 		t.Fatal("denied administration authorized")

@@ -372,6 +372,10 @@ func TestEveryTextHasATranslation(t *testing.T) {
 		"stage.timeout", "stage.tool-failed", "thermal.abort", "power.abort", "memory.insufficient", "cpu.verify-failed",
 		"memory.verify-failed", "stress.incomplete", "cpu.throttled", "cpu.slow-under-load", "scrub.errors", "scrub.incomplete",
 		"bench.insufficient-space", "bench.failed", "bench.io-errors",
+		"security.firewall-off", "security.exposed-port", "security.exposed-expected", "security.patches-pending",
+		"security.ssh-unreadable", "security.ssh-root-password", "security.ssh-password", "security.selinux",
+		"security.secure-boot-off", "security.disk-unencrypted", "security.empty-password", "security.sudo-open",
+		"repair.restart-needed",
 	}
 	for _, locale := range []string{"en-US", "pt-BR", "es-ES"} {
 		env := &Env{Locale: locale}

@@ -98,6 +98,8 @@ func HostEnv(locale string, bootsBack int) *Env {
 		ReadFile:        os.ReadFile,
 		Glob:            filepath.Glob,
 		LookPath:        exec.LookPath,
+		Readlink:        os.Readlink,
+		Profile:         "desktop",
 		Statfs:          statfs,
 		NumCPU:          runtime.NumCPU,
 		WorkDir:         WorkDir,
