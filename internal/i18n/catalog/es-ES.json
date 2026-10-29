@@ -73,5 +73,10 @@
   "diagnostics.progress.platform.sensors": "Leyendo las temperaturas",
   "diagnostics.progress.platform.battery": "Verificando la batería",
   "diagnostics.progress.platform.firmware": "Verificando actualizaciones de firmware",
-  "diagnostics.progress.platform.state": "Verificando reloj, Secure Boot y kernel"
+  "diagnostics.progress.platform.state": "Verificando reloj, Secure Boot y kernel",
+  "diagnostics.result.ok": "No se encontraron problemas",
+  "diagnostics.result.attention": "Algunos elementos requieren atención",
+  "diagnostics.result.fail": "Se encontraron problemas",
+  "diagnostics.result.cancelled": "Diagnóstico cancelado",
+  "diagnostics.result.aborted": "Diagnóstico detenido por una salvaguarda"
 }

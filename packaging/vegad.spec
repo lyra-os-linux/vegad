@@ -38,6 +38,8 @@ Recommends:     firewalld
 Recommends:     fwupd
 Recommends:     bluez
 Recommends:     logrotate
+# Health diagnostics (vegad#98); a missing tool only marks its test unavailable.
+Recommends:     smartmontools
 
 %description
 Daemon privilegiado do Vega para openSUSE Leap. Expõe operações de sistema

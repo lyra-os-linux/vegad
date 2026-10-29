@@ -51,7 +51,8 @@ Em sessões remotas (SSH, vega-web), a regra polkit
 ações administrativas e libera em silêncio as leituras `*.read-admin`; ver
 `privilege-boundaries.md`.
 
-Desktop e Server anunciam `nvidia-official-v1` e `nvidia-recovery-v1`.
+Desktop e Server anunciam `nvidia-official-v1`, `nvidia-recovery-v1` e
+`diagnostics-v1` (testes de saúde, vegad#98).
 Consultas continuam públicas. A instalação exige confirmação e recuperação
 verificada: Snapper no Btrfs; Restic e restauração offline no layout Server/ext4
 simples. Outros layouts são recusados. Ver [NVIDIA](nvidia.md).

@@ -1,0 +1,299 @@
+package dbusserver
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/diagnostics"
+)
+
+// fakeDiagnostics wires a service to scripted tests and a temporary store.
+func fakeDiagnostics(t *testing.T, tests map[string]diagnostics.TestFunc) *DiagnosticsService {
+	t.Helper()
+	saved := operations
+	operations = newTestGate(false)
+	t.Cleanup(func() { operations = saved })
+	s := newDiagnosticsService(&Activity{last: time.Now()}, nil)
+	s.store = &diagnosticStore{dir: t.TempDir(), keep: 10}
+	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
+		return &diagnostics.Env{
+			Locale: locale, BootsBack: bootsBack,
+			ReadFile: func(path string) ([]byte, error) {
+				if path == "/sys/class/dmi/id/product_name" {
+					return []byte("Nitro AN515-57\n"), nil
+				}
+				return nil, os.ErrNotExist
+			},
+			LookPath: func(string) (string, error) { return "/usr/bin/tool", nil },
+		}
+	}
+	s.lookup = func(id string) (diagnostics.Test, bool) {
+		run, ok := tests[id]
+		if !ok {
+			return diagnostics.Test{}, false
+		}
+		return diagnostics.Test{ID: id, EstimatedSeconds: 1, Run: run}, true
+	}
+	return s
+}
+
+func okStage(id string, findings ...diagnostics.Finding) diagnostics.TestFunc {
+	return func(ctx context.Context, env *diagnostics.Env, progress diagnostics.Progress) diagnostics.StageResult {
+		progress(50, "halfway")
+		return diagnostics.StageResult{ID: id, Verdict: diagnostics.Ok, Summary: "fine", Findings: findings}
+	}
+}
+
+func waitIdle(t *testing.T, s *DiagnosticsService) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if job, _ := s.Current(); job.JobId == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("diagnostic never finished")
+}
+
+func loadReport(t *testing.T, s *DiagnosticsService, id uint32, redact bool) map[string]any {
+	t.Helper()
+	raw, err := s.report(id, redact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func TestDiagnosticJobRunsStagesInOrderAndKeepsTheReport(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{
+		"packages": okStage("packages"),
+		"logs": func(ctx context.Context, env *diagnostics.Env, progress diagnostics.Progress) diagnostics.StageResult {
+			return diagnostics.StageResult{Verdict: diagnostics.Attention, Summary: "crashes", Findings: []diagnostics.Finding{{Severity: diagnostics.SeverityAttention, Code: "logs.coredumps"}}}
+		},
+	})
+	id, err := s.start([]string{"packages", "logs"}, map[string]dbus.Variant{"locale": dbus.MakeVariant("pt_BR")})
+	if err != nil || id != 1 {
+		t.Fatalf("id = %d, err = %v", id, err)
+	}
+	waitIdle(t, s)
+	report := loadReport(t, s, 0, false)
+	stages := report["stages"].([]any)
+	if report["schema"] != float64(1) || report["result"] != "attention" || len(stages) != 2 {
+		t.Fatalf("report %+v", report)
+	}
+	if stages[0].(map[string]any)["id"] != "packages" || stages[1].(map[string]any)["id"] != "logs" {
+		t.Fatal("stages out of order")
+	}
+	if host := report["host"].(map[string]any); host["product"] != "Nitro AN515-57" {
+		t.Fatalf("host %+v", host)
+	}
+	if _, ok := report["sensitive"]; ok {
+		t.Fatal("the sensitive list must never leave the daemon")
+	}
+	info, statErr := os.Stat(filepath.Join(s.store.dir, "1.json"))
+	if statErr != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("report file: %v %v", info, statErr)
+	}
+}
+
+func TestDiagnosticStartValidatesTestsAndOptions(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{"packages": okStage("packages")})
+	cases := []struct {
+		tests   []string
+		options map[string]dbus.Variant
+	}{
+		{nil, nil},
+		{[]string{"gpu"}, nil},
+		{[]string{"packages", "packages"}, nil},
+		{[]string{"packages"}, map[string]dbus.Variant{"durationSeconds": dbus.MakeVariant(uint32(5))}},
+		{[]string{"packages"}, map[string]dbus.Variant{"memoryPercent": dbus.MakeVariant(uint32(80))}},
+		{[]string{"packages"}, map[string]dbus.Variant{"bootsBack": dbus.MakeVariant("8")}},
+		{[]string{"packages"}, map[string]dbus.Variant{"locale": dbus.MakeVariant(uint32(1))}},
+	}
+	for _, c := range cases {
+		if _, err := s.start(c.tests, c.options); err == nil || err.Name != BusName+".Error.NotSupported" {
+			t.Errorf("tests %v options %v: err = %v", c.tests, c.options, err)
+		}
+	}
+	opts, err := parseDiagnosticOptions(map[string]dbus.Variant{"bootsBack": dbus.MakeVariant(uint32(3)), "future": dbus.MakeVariant(true)})
+	if err != nil || opts.bootsBack != 3 || opts.durationSeconds != 240 || opts.memoryPercent != 70 {
+		t.Fatalf("opts %+v err %v", opts, err)
+	}
+}
+
+func TestDiagnosticCancelStopsTheJobAndKeepsAPartialReport(t *testing.T) {
+	started := make(chan struct{})
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{
+		"packages": okStage("packages"),
+		"cpu-stress": func(ctx context.Context, env *diagnostics.Env, progress diagnostics.Progress) diagnostics.StageResult {
+			close(started)
+			<-ctx.Done()
+			return diagnostics.StageResult{Verdict: diagnostics.Cancelled}
+		},
+		"logs": okStage("logs"),
+	})
+	id, err := s.start([]string{"packages", "cpu-stress", "logs"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	job, _ := s.Current()
+	if job.JobId != id || job.Stage != "cpu-stress" || len(job.Tests) != 3 {
+		t.Fatalf("current %+v", job)
+	}
+	if _, busy := s.start([]string{"packages"}, nil); busy == nil || busy.Name != BusName+".Error.Busy" {
+		t.Fatalf("second job: %v", busy)
+	}
+	if _, busy := operations.beginTransaction(); busy == nil {
+		t.Fatal("transaction allowed during a diagnostic")
+	}
+	s.cancel(id + 1) // another job id: ignored
+	s.cancel(id)
+	waitIdle(t, s)
+	report := loadReport(t, s, id, false)
+	stages := report["stages"].([]any)
+	verdicts := []string{}
+	for _, stage := range stages {
+		verdicts = append(verdicts, stage.(map[string]any)["verdict"].(string))
+	}
+	if report["result"] != "cancelled" || strings.Join(verdicts, ",") != "ok,cancelled,cancelled" {
+		t.Fatalf("result %v verdicts %v", report["result"], verdicts)
+	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		t.Fatal("gate not released after the job")
+	}
+	release()
+}
+
+func TestDiagnosticStageTimeoutComesFromTheEstimate(t *testing.T) {
+	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 10}); got != time.Minute {
+		t.Errorf("short test: %s", got)
+	}
+	if got := stageTimeout(diagnostics.Test{EstimatedSeconds: 240}); got != 8*time.Minute {
+		t.Errorf("stress test: %s", got)
+	}
+}
+
+func TestUnavailableTestsBecomeUnavailableStages(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{"packages": okStage("packages")})
+	s.lookup = func(id string) (diagnostics.Test, bool) {
+		if id == "fs-scrub" {
+			return diagnostics.Test{ID: id}, true // Run nil: not implemented
+		}
+		return diagnostics.Test{ID: id, EstimatedSeconds: 1, Run: okStage(id)}, id == "packages"
+	}
+	id, err := s.start([]string{"packages", "fs-scrub"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, s)
+	report := loadReport(t, s, id, false)
+	scrub := report["stages"].([]any)[1].(map[string]any)
+	if scrub["verdict"] != "unavailable" || scrub["metrics"].(map[string]any)["reason"] != "not-implemented" || report["result"] != "ok" {
+		t.Fatalf("report %+v", report)
+	}
+}
+
+func TestReportRedactsSerialsHostnameAndMACs(t *testing.T) {
+	s := fakeDiagnostics(t, nil)
+	report := &diagnosticReport{
+		Schema: 1, JobID: 4, Started: "now",
+		Host:      map[string]string{"hostname": "rodrigo-nitro", "product": "Nitro"},
+		Sensitive: []string{"rodrigo-nitro", "KN34291K6QHL"},
+		Stages: []diagnostics.StageResult{{ID: "disk-health", Verdict: diagnostics.Ok, Findings: []diagnostics.Finding{
+			{Code: "logs.errors", Raw: "r8169 eth0: RTL8168h, 9c:2d:cd:a1:b2:c3, IRQ 140\nconnected to SSID 'CasaRodrigo'\nserial KN34291K6QHL"},
+		}}},
+	}
+	if err := s.store.save(report); err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := s.report(4, false)
+	if !strings.Contains(plain, "KN34291K6QHL") || strings.Contains(plain, "sensitive") {
+		t.Fatalf("unredacted report: %s", plain)
+	}
+	masked, _ := s.report(4, true)
+	for _, secret := range []string{"KN34291K6QHL", "rodrigo-nitro", "9c:2d:cd", "CasaRodrigo"} {
+		if strings.Contains(masked, secret) {
+			t.Errorf("%s leaked: %s", secret, masked)
+		}
+	}
+	if !strings.Contains(masked, "Nitro") {
+		t.Fatal("redaction removed non-sensitive data")
+	}
+}
+
+func TestReportStoreKeepsTheLastTenAndContinuesIds(t *testing.T) {
+	dir := t.TempDir()
+	store := &diagnosticStore{dir: dir, keep: 10}
+	for i := 0; i < 12; i++ {
+		id, err := store.nextID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.save(&diagnosticReport{Schema: 1, JobID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids, _ := store.ids()
+	if len(ids) != 10 || ids[0] != 3 || ids[9] != 12 {
+		t.Fatalf("ids %v", ids)
+	}
+	// A new daemon instance (idle exit) continues after the newest report.
+	fresh := &diagnosticStore{dir: dir, keep: 10}
+	if id, _ := fresh.nextID(); id != 13 {
+		t.Fatalf("next id %d", id)
+	}
+	if _, err := fresh.load(99, false); err == nil {
+		t.Fatal("unknown report")
+	}
+	if _, err := (&diagnosticStore{dir: filepath.Join(dir, "absent")}).load(0, false); err == nil {
+		t.Fatal("no reports yet")
+	}
+}
+
+func TestListTestsReportsEveryContractTest(t *testing.T) {
+	s := newDiagnosticsService(&Activity{last: time.Now()}, nil)
+	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
+		return &diagnostics.Env{
+			ReadFile: func(string) ([]byte, error) { return nil, os.ErrNotExist },
+			LookPath: func(name string) (string, error) {
+				if name == "rpm" {
+					return "/usr/bin/rpm", nil
+				}
+				return "", errors.New("absent")
+			},
+		}
+	}
+	tests, err := s.ListTests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]DiagnosticTest{}
+	for _, test := range tests {
+		got[test.Id] = test
+	}
+	want := []string{"packages", "disk-health", "fs-scrub", "cpu-stress", "memory-stress", "disk-bench", "logs", "platform"}
+	if len(got) != len(want) {
+		t.Fatalf("tests %+v", tests)
+	}
+	for _, id := range want {
+		if _, ok := got[id]; !ok {
+			t.Errorf("missing %s", id)
+		}
+	}
+	if !got["packages"].Available || got["disk-health"].Reason != "missing-tool:smartmontools" || !got["cpu-stress"].RequiresAc {
+		t.Fatalf("rows %+v", got)
+	}
+}
