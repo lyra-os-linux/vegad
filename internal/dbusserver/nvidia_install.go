@@ -38,14 +38,14 @@ func (s *SoftwareService) InstallNvidia(sender dbus.Sender, confirmed bool) (uin
 		return 0, dbus.MakeFailedError(errors.New("NVIDIA installation already running"))
 	}
 	s.activity.Touch()
-	id := s.startTransaction("Lyra NVIDIA", func(report progressFunc, _ packageProgressFunc) error {
+	id, err := s.startTransaction("Lyra NVIDIA", func(report progressFunc, _ packageProgressFunc) error {
 		defer nvidiaInstallMu.Unlock()
 		return newNvidiaManager().install(s.profile, report)
 	})
-	if id == 0 {
+	if err != nil {
 		nvidiaInstallMu.Unlock()
 	}
-	return id, nil
+	return id, err
 }
 
 func nvidiaInstallable(status NvidiaStatus) bool {

@@ -109,13 +109,13 @@ func TestTransactionsHoldActivityBeforeReturningID(t *testing.T) {
 			var id uint32
 			switch kind {
 			case "software":
-				id = s.startTransaction("fixture", func(progressFunc, packageProgressFunc) error { return work() })
+				id, _ = s.startTransaction("fixture", func(progressFunc, packageProgressFunc) error { return work() })
 			case "repository":
-				id = s.startTransactionWithID("fixture", func(uint32, progressFunc) error { return work() })
+				id, _ = s.startTransactionWithID("fixture", func(uint32, progressFunc) error { return work() })
 			case "backup":
 				b := &BackupService{activity: a}
 				emit := func(uint32, uint32, string) error { return nil }
-				id = b.startTransaction("fixture", emit, func(uint32, bool, string) error { return nil }, func(progressFunc) error { return work() })
+				id, _ = b.startTransaction("fixture", emit, func(uint32, bool, string) error { return nil }, func(progressFunc) error { return work() })
 			}
 			ageActivity(a)
 			stopped := a.stopIfIdle(IdleTimeout)

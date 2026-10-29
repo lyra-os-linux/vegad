@@ -54,6 +54,11 @@ func (s *SnapshotsService) CreateSnapshot(sender dbus.Sender, description string
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.create"); err != nil {
 		return 0, err
 	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
+	defer release()
 	var id uint32
 	var err error
 	if snapperInstalled() {
@@ -100,6 +105,11 @@ func (s *SnapshotsService) Rollback(sender dbus.Sender, snapshotID uint32) *dbus
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.rollback"); err != nil {
 		return err
 	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return busy
+	}
+	defer release()
 	var rollbackErr error
 	if snapperInstalled() {
 		rollbackErr = rollbackSnapperSnapshot(snapshotID)
@@ -119,6 +129,11 @@ func (s *SnapshotsService) DeleteSnapshot(sender dbus.Sender, snapshotID uint32)
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
 		return err
 	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return busy
+	}
+	defer release()
 	var deleteErr error
 	if snapperInstalled() {
 		deleteErr = deleteSnapperSnapshot(snapshotID)
@@ -141,6 +156,11 @@ func (s *SnapshotsService) ClearSnapshots(sender dbus.Sender) (uint32, *dbus.Err
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
 		return 0, err
 	}
+	release, busy := operations.beginTransaction()
+	if busy != nil {
+		return 0, busy
+	}
+	defer release()
 
 	var snapshots []SnapshotInfo
 	var listErr error
