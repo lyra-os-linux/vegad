@@ -24,6 +24,9 @@ var Remedies = []Remedy{
 	{ID: "verify-dependencies", Retest: "packages", Run: verifyDependencies},
 	{ID: "restart-units", Retest: "logs", Run: restartUnits},
 	{ID: "enable-ntp", Retest: "platform", Run: enableNTP},
+	{ID: "enable-firewall", Retest: "security", Run: enableFirewall},
+	{ID: "close-port", Retest: "security", Run: closePorts},
+	{ID: "apply-security-patches", Retest: "security", Run: applySecurityPatches},
 }
 
 // LookupRemedy returns the remedy with id.
@@ -37,6 +40,9 @@ func LookupRemedy(id string) (Remedy, bool) {
 }
 
 var (
+	zonePattern        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	servicePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	portSpecPattern    = regexp.MustCompile(`^[0-9]{1,5}(-[0-9]{1,5})?/(tcp|udp|sctp|dccp)$`)
 	packageNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]*$`)
 	unitNamePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@._:\\-]*\.(service|socket|timer|mount|path|target)$`)
 )
@@ -141,6 +147,96 @@ func enableNTP(ctx context.Context, env *Env, _ []string, progress Progress) Sta
 	result = finishRemedy(env, result, "timedatectl", out, code, err, start)
 	if result.Verdict == Ok {
 		result.Summary = env.t("diagnostics.summary.repair.ntp")
+	}
+	return result
+}
+
+func enableFirewall(ctx context.Context, env *Env, _ []string, progress Progress) StageResult {
+	start := time.Now()
+	result := remedyStage("enable-firewall")
+	progress(10, env.t("diagnostics.progress.repair.firewall"))
+	out, code, err := env.Run(ctx, "systemctl", "enable", "--now", "firewalld")
+	result = finishRemedy(env, result, "systemctl", out, code, err, start)
+	if result.Verdict == Ok {
+		result.Summary = env.t("diagnostics.summary.repair.firewall")
+	}
+	return result
+}
+
+// closeTarget is one "zone|service:name" or "zone|port:8000/tcp" argument.
+type closeTarget struct {
+	zone, kind, value string
+}
+
+func parseCloseTarget(arg string) (closeTarget, bool) {
+	zone, allow, ok := strings.Cut(arg, "|")
+	if !ok || !zonePattern.MatchString(zone) {
+		return closeTarget{}, false
+	}
+	kind, value, ok := strings.Cut(allow, ":")
+	switch {
+	case !ok:
+		return closeTarget{}, false
+	case kind == "service" && servicePattern.MatchString(value):
+	case kind == "port" && portSpecPattern.MatchString(value):
+	default:
+		return closeTarget{}, false
+	}
+	return closeTarget{zone, kind, value}, true
+}
+
+// closePorts removes services or ports from their zones, permanently and in
+// the running configuration. Each argument is validated again here: the
+// stored report is trusted only as far as the patterns.
+func closePorts(ctx context.Context, env *Env, args []string, progress Progress) StageResult {
+	start := time.Now()
+	result := remedyStage("close-port")
+	var closed []string
+	for i, arg := range args {
+		target, ok := parseCloseTarget(arg)
+		if !ok {
+			continue
+		}
+		progress(uint32(10+80*i/max(1, len(args))), env.t("diagnostics.progress.repair.close", "item", target.value, "zone", target.zone))
+		flag := "--remove-" + target.kind + "=" + target.value
+		for _, extra := range [][]string{{"--permanent"}, nil} {
+			cmd := append([]string{"--zone=" + target.zone, flag}, extra...)
+			out, code, err := env.Run(ctx, "firewall-cmd", cmd...)
+			if err != nil {
+				return failedToRun(env, result, "firewall-cmd", err, start)
+			}
+			if code != 0 {
+				result.Findings = append(result.Findings, env.finding(SeverityFail, "repair.failed", lastLines(string(out), 12), "tool", "firewall-cmd", "code", strconv.Itoa(code)))
+			}
+		}
+		closed = append(closed, target.zone+": "+target.value)
+	}
+	if len(closed) == 0 {
+		result.Verdict = Unavailable
+		result.Summary = env.t("diagnostics.summary.unavailable")
+		return result
+	}
+	result.Metrics["closed"] = closed
+	result.DurationSeconds = int(time.Since(start).Seconds())
+	result.Verdict = verdictFromFindings(result.Findings)
+	result.Summary = env.t("diagnostics.summary.repair.close", "items", strings.Join(closed, ", "))
+	return result
+}
+
+func applySecurityPatches(ctx context.Context, env *Env, _ []string, progress Progress) StageResult {
+	start := time.Now()
+	result := remedyStage("apply-security-patches")
+	progress(10, env.t("diagnostics.progress.repair.patches"))
+	out, code, err := env.Run(ctx, "zypper", "-n", "patch", "--category", "security", "--auto-agree-with-licenses")
+	// zypper patch exits 102 or 103 when a restart is needed: applied, with
+	// a restart left to the user.
+	if err == nil && (code == 102 || code == 103) {
+		code = 0
+		result.Findings = append(result.Findings, env.finding(Info, "repair.restart-needed", lastLines(string(out), 6)))
+	}
+	result = finishRemedy(env, result, "zypper", out, code, err, start)
+	if result.Verdict == Ok {
+		result.Summary = env.t("diagnostics.summary.repair.patches")
 	}
 	return result
 }

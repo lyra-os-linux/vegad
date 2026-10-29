@@ -51,6 +51,7 @@ var Tests = []Test{
 	{ID: "disk-health", Tools: []Tool{{"smartctl", "smartmontools"}}, EstimatedSeconds: 10, Run: runDiskHealth},
 	{ID: "logs", Tools: []Tool{{"journalctl", "systemd"}}, EstimatedSeconds: 20, Run: runLogs},
 	{ID: "platform", EstimatedSeconds: 30, Run: runPlatform},
+	{ID: "security", Tools: []Tool{{"ss", "iproute2"}}, EstimatedSeconds: 20, Run: runSecurity},
 	{ID: "fs-scrub", Tools: []Tool{{"btrfs", "btrfsprogs"}}, EstimatedSeconds: 120, NeedsBtrfs: true, Run: runScrub, Estimate: scrubEstimate},
 	{ID: "cpu-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runCPUStress, Estimate: stressEstimate},
 	{ID: "memory-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runMemoryStress, Estimate: stressEstimate, Preflight: memoryPreflight},

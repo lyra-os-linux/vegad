@@ -9,7 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"context"
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/diagnostics"
+	vegai18n "github.com/lyraos/vegad/internal/i18n"
+	"time"
 )
 
 // FirewallService backs org.lyraos.Vega1.Firewall: orchestrates firewalld,
@@ -330,4 +334,37 @@ func firstActiveZone(value string) string {
 		}
 	}
 	return zones[0].name
+}
+
+// ListeningSocketInfo is the (ssqsssss) row of Firewall.ListListening.
+type ListeningSocketInfo struct {
+	Protocol   string
+	Address    string
+	Port       uint16
+	Executable string
+	Unit       string
+	Reach      string
+	State      string
+	Zone       string
+}
+
+// listeningEnv is the host the listing reads; replaced in tests.
+var listeningEnv = func() *diagnostics.Env { return diagnostics.HostEnv(vegai18n.DefaultLocale, 1) }
+
+// ListListening reports what listens on the network and whether firewalld
+// lets it in (network-exposure-v1). A brokered read: only the root
+// coordinator sees the owner process of every socket.
+func (f *FirewallService) ListListening() ([]ListeningSocketInfo, *dbus.Error) {
+	f.activity.Touch()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	sockets, err := diagnostics.ListListening(ctx, listeningEnv())
+	if err != nil {
+		return nil, dbus.MakeFailedError(err)
+	}
+	rows := make([]ListeningSocketInfo, 0, len(sockets))
+	for _, s := range sockets {
+		rows = append(rows, ListeningSocketInfo{s.Protocol, s.Address, s.Port, s.Executable, s.Unit, s.Reach, s.State, s.Zone})
+	}
+	return rows, nil
 }

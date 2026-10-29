@@ -53,7 +53,9 @@ ações administrativas e libera em silêncio as leituras `*.read-admin`; ver
 
 Desktop e Server anunciam `nvidia-official-v1`, `nvidia-recovery-v1` e
 `diagnostics-v1` (testes de saúde, vegad#98) e `diagnostics-v2` (reparo dos
-achados consertáveis).
+achados consertáveis), `diagnostics-v3` (teste de segurança) e
+`network-exposure-v1` (`Firewall.ListListening`). No Server, SSH e a porta
+9090 são exposições esperadas.
 Consultas continuam públicas. A instalação exige confirmação e recuperação
 verificada: Snapper no Btrfs; Restic e restauração offline no layout Server/ext4
 simples. Outros layouts são recusados. Ver [NVIDIA](nvidia.md).

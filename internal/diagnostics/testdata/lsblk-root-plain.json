@@ -1,0 +1,14 @@
+{
+   "blockdevices": [
+      {
+         "name": "nvme0n1p2",
+         "type": "part",
+         "children": [
+            {
+               "name": "nvme0n1",
+               "type": "disk"
+            }
+         ]
+      }
+   ]
+}

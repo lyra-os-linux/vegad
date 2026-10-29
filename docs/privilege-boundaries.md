@@ -12,7 +12,7 @@ unclassified method, and its coverage is checked against every exported method.
 | Public queries | 49 | Caller UID; the dedicated `vegad-query` account for a root caller; no capabilities or elevation |
 | Brokered public reads | 3 | No Polkit; answered by the root coordinator because only it holds the state (`Firewall.Status`, `Diagnostics.ListTests`, `Diagnostics.Current`) |
 | Journal queries | 2 | Polkit `logs.read-admin`, then a non-root worker with the journal group |
-| Brokered reads | 10 | Noninteractive Polkit session check; active local desktop allowed without a password; root coordinator reads the required system files and protected firewall information |
+| Brokered reads | 11 | Noninteractive Polkit session check; active local desktop allowed without a password; root coordinator reads the required system files and protected firewall information |
 | Administrative operations | 59 | Existing per-operation Polkit and transaction handlers |
 | Metadata refresh | 1 | Existing rate-limited background maintenance; shared with the scheduled refresh |
 | Retired driver operations | 2 | Existing explicit unsupported-operation responses |
@@ -241,3 +241,10 @@ not retained). It applies only remedies the stored report proposes: the
 packages and units come from that report, filtered by strict name patterns,
 never from the caller. It runs inside a pre/post snapshot and under the same
 exclusion as a diagnostic.
+
+`Firewall.ListListening` (`network-exposure-v1`) is a brokered read under
+`firewall.read-admin`: only the root coordinator sees the owner process of
+every socket. It is silent for the active local session, like
+`ListServices`. The `security` diagnostic reads `/etc/shadow` as root and
+reports only account names, never password hashes; the names go to the
+redaction list.

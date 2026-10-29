@@ -1,0 +1,5 @@
+udp UNCONN 0      0      [fe80::9166:81e:8469:a309]%wlp0s20f3:546      [::]:* users:(("NetworkManager",pid=1162,fd=27))
+tcp LISTEN 0      1024                              127.0.0.1:42759 0.0.0.0:* users:(("aria2c",pid=82956,fd=5))        
+tcp LISTEN 0      4096                              127.0.0.1:631   0.0.0.0:* users:(("cupsd",pid=1213,fd=7))          
+tcp LISTEN 0      1024                                  [::1]:42759    [::]:* users:(("aria2c",pid=82956,fd=6))        
+tcp LISTEN 0      4096                                  [::1]:631      [::]:* users:(("cupsd",pid=1213,fd=6))          

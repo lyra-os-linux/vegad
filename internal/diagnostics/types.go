@@ -74,6 +74,9 @@ type Env struct {
 	ReadFile        func(string) ([]byte, error)
 	Glob            func(string) ([]string, error)
 	LookPath        func(string) (string, error)
+	Readlink        func(string) (string, error)
+	// Profile is the vegad profile ("desktop" or "server").
+	Profile string
 	// Statfs reports the size and the space available to root at path.
 	Statfs func(path string) (total, available uint64, err error)
 	NumCPU func() int

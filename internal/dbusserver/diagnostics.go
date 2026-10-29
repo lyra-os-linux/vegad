@@ -52,6 +52,8 @@ type DiagnosticsService struct {
 	newEnv func(locale string, bootsBack int) *diagnostics.Env
 	// lookup resolves a test id; replaced in tests.
 	lookup func(id string) (diagnostics.Test, bool)
+	// profile tunes the security test (SSH and 9090 expected on servers).
+	profile string
 	// snapshot wraps a repair in a pre/post snapshot; replaced in tests.
 	snapshot func(action string, work func() error) error
 
@@ -173,6 +175,9 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 		return 0, err
 	}
 	env := s.newEnv(opts.locale, int(opts.bootsBack))
+	if s.profile != "" {
+		env.Profile = s.profile
+	}
 	env.DurationSeconds = int(opts.durationSeconds)
 	env.MemoryPercent = int(opts.memoryPercent)
 	// Safeguards that refuse the whole job up front; a test that is merely
@@ -345,6 +350,9 @@ func (s *DiagnosticsService) repair(jobID uint32, remedies []string) (uint32, *d
 		locale = vegai18n.DefaultLocale
 	}
 	env := s.newEnv(locale, 8)
+	if s.profile != "" {
+		env.Profile = s.profile
+	}
 	go func() {
 		defer done()
 		defer release()

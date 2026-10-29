@@ -240,6 +240,7 @@ func (s *Server) Export() error {
 		log.Printf("vegad: limpar %s: %v", diagnostics.WorkDir, err)
 	}
 	diagnosticsService := newDiagnosticsService(s.activity, s.conn)
+	diagnosticsService.profile = string(s.profile)
 	if err := s.export(diagnosticsService, BusName+".Diagnostics"); err != nil {
 		return err
 	}
