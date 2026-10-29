@@ -108,8 +108,9 @@ func TestPackagesOnTheWorkstationAreHealthy(t *testing.T) {
 func TestPackagesFlagTamperedBinariesAndBrokenDependencies(t *testing.T) {
 	rpm := "S.5....T.    /usr/bin/sudo\nmissing     /usr/lib64/libfoo.so.1\nmissing   d /usr/share/doc/foo/README\n"
 	env := fakeEnv(t, map[string]call{
-		"rpm -Va":                    {out: []byte(rpm), code: 1},
-		"zypper -n verify --dry-run": {out: []byte("The following NEW package is going to be installed:\n  libbar1\n"), code: 0},
+		"rpm -Va": {out: []byte(rpm), code: 1},
+		"rpm -qf --qf %{NAME}\n /usr/bin/sudo /usr/lib64/libfoo.so.1": {out: []byte("sudo\nlibfoo1\n")},
+		"zypper -n verify --dry-run":                                  {out: []byte("The following NEW package is going to be installed:\n  libbar1\n"), code: 0},
 	}, nil, "rpm", "zypper")
 	result := runPackages(context.Background(), env, noProgress)
 	codes := findingCodes(result.Findings)

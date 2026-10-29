@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -354,4 +355,85 @@ func TestStartPassesDurationAndMemoryOptionsToTheTests(t *testing.T) {
 		t.Fatalf("options %v", options)
 	}
 	waitIdle(t, s)
+}
+
+// repairable stores job 7 with a changed binary and a failed unit, as the
+// packages and logs tests would report them.
+func repairable(t *testing.T, s *DiagnosticsService) {
+	t.Helper()
+	report := &diagnosticReport{Schema: 1, JobID: 7, Started: "now", Locale: "pt-BR", Host: map[string]string{}, Stages: []diagnostics.StageResult{
+		{ID: "packages", Verdict: diagnostics.Attention, Findings: []diagnostics.Finding{
+			{Severity: diagnostics.SeverityAttention, Code: "packages.binary-changed", Remedy: "reinstall-packages", RemedyArgs: []string{"vegad"}},
+		}},
+		{ID: "logs", Verdict: diagnostics.Attention, Findings: []diagnostics.Finding{
+			{Severity: diagnostics.SeverityAttention, Code: "logs.failed-units", Remedy: "restart-units", RemedyArgs: []string{"x.service"}},
+			{Severity: diagnostics.SeverityAttention, Code: "logs.coredumps"},
+		}},
+	}}
+	if err := s.store.save(report); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRepairRefusesWhatTheReportDoesNotPropose(t *testing.T) {
+	s := fakeDiagnostics(t, nil)
+	repairable(t, s)
+	for _, remedies := range [][]string{nil, {"format-disk"}, {"enable-ntp"}, {"restart-units", "restart-units"}} {
+		if _, err := s.repair(7, remedies); err == nil || err.Name != BusName+".Error.NotSupported" {
+			t.Errorf("%v: %v", remedies, err)
+		}
+	}
+	if _, err := s.repair(99, []string{"restart-units"}); err == nil {
+		t.Error("unknown job accepted")
+	}
+}
+
+func TestRepairUsesStoredArgumentsSnapshotsAndRetests(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{"packages": okStage("packages"), "logs": okStage("logs")})
+	repairable(t, s)
+	var mu sync.Mutex
+	var calls []string
+	snapshotted := false
+	s.snapshot = func(action string, work func() error) error {
+		mu.Lock()
+		snapshotted = strings.Contains(action, "7")
+		mu.Unlock()
+		return work()
+	}
+	base := s.newEnv
+	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
+		env := base(locale, bootsBack)
+		env.Run = func(ctx context.Context, name string, args ...string) ([]byte, int, error) {
+			mu.Lock()
+			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+			mu.Unlock()
+			return nil, 0, nil
+		}
+		return env
+	}
+	id, err := s.repair(7, []string{"restart-units", "reinstall-packages"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, s)
+	mu.Lock()
+	defer mu.Unlock()
+	joined := strings.Join(calls, "\n")
+	if !snapshotted || !strings.Contains(joined, "zypper -n --no-refresh install -f vegad") || !strings.Contains(joined, "systemctl restart -- x.service") {
+		t.Fatalf("snapshot %v calls %v", snapshotted, calls)
+	}
+	report := loadReport(t, s, id, false)
+	var ids []string
+	for _, stage := range report["stages"].([]any) {
+		ids = append(ids, stage.(map[string]any)["id"].(string))
+	}
+	// Packages before services (contract order), then the tests run again.
+	if strings.Join(ids, ",") != "repair:reinstall-packages,repair:restart-units,packages,logs" || report["repairOf"] != float64(7) || report["locale"] != "pt-BR" {
+		t.Fatalf("stages %v report %+v", ids, report)
+	}
+	if release, busy := operations.beginTransaction(); busy != nil {
+		t.Fatal("gate held after the repair")
+	} else {
+		release()
+	}
 }

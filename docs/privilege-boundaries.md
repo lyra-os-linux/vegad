@@ -13,7 +13,7 @@ unclassified method, and its coverage is checked against every exported method.
 | Brokered public reads | 3 | No Polkit; answered by the root coordinator because only it holds the state (`Firewall.Status`, `Diagnostics.ListTests`, `Diagnostics.Current`) |
 | Journal queries | 2 | Polkit `logs.read-admin`, then a non-root worker with the journal group |
 | Brokered reads | 10 | Noninteractive Polkit session check; active local desktop allowed without a password; root coordinator reads the required system files and protected firewall information |
-| Administrative operations | 58 | Existing per-operation Polkit and transaction handlers |
+| Administrative operations | 59 | Existing per-operation Polkit and transaction handlers |
 | Metadata refresh | 1 | Existing rate-limited background maintenance; shared with the scheduled refresh |
 | Retired driver operations | 2 | Existing explicit unsupported-operation responses |
 
@@ -235,3 +235,9 @@ because reports include journal excerpts. Disk serial numbers, MAC addresses,
 SSIDs and the hostname are masked when the caller asks for a redacted copy.
 A diagnostic and every system transaction (software, backup, snapshots,
 kernel) exclude each other; both sides answer `org.lyraos.Vega1.Error.Busy`.
+
+`Diagnostics.Repair` requires `org.lyraos.vega.hardware.repair` (`auth_admin`,
+not retained). It applies only remedies the stored report proposes: the
+packages and units come from that report, filtered by strict name patterns,
+never from the caller. It runs inside a pre/post snapshot and under the same
+exclusion as a diagnostic.

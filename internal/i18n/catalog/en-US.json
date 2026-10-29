@@ -103,5 +103,15 @@
   "diagnostics.progress.cpu-stress": "Loading the processor",
   "diagnostics.progress.memory-stress": "Loading the memory",
   "diagnostics.progress.fs-scrub": "Checking the file system",
-  "diagnostics.progress.disk-bench": "Measuring disk performance"
+  "diagnostics.progress.disk-bench": "Measuring disk performance",
+  "diagnostics.finding.repair.failed": "{tool} could not apply the fix (code {code})",
+  "diagnostics.finding.repair.unit-failed": "{unit} still fails after a restart; see its log",
+  "diagnostics.summary.repair-failed": "The fix was not applied",
+  "diagnostics.summary.repair.reinstall": "Reinstalled: {packages}",
+  "diagnostics.summary.repair.verify": "Missing dependencies installed",
+  "diagnostics.summary.repair.restart": "{ok} of {total} services running again",
+  "diagnostics.summary.repair.ntp": "Network time synchronization turned on",
+  "diagnostics.progress.repair.reinstall": "Reinstalling {packages}",
+  "diagnostics.progress.repair.restart": "Restarting {unit}",
+  "diagnostics.progress.repair.ntp": "Turning on time synchronization"
 }
