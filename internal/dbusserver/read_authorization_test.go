@@ -33,6 +33,9 @@ func TestReadOnlyRoutingNeverPrompts(t *testing.T) {
 			if iface == "Backup" {
 				service = &BackupService{activity: s.activity}
 			}
+			if iface == "Diagnostics" {
+				service = newDiagnosticsService(s.activity, nil)
+			}
 			if iface == "Cleanup" {
 				service = newCleanupService(s.activity, nil)
 			}
@@ -64,8 +67,8 @@ func TestReadOnlyRoutingNeverPrompts(t *testing.T) {
 			}
 		})
 	}
-	if count != 12 {
-		t.Fatalf("expected twelve brokered reads, got %d", count)
+	if count != 13 {
+		t.Fatalf("expected thirteen brokered reads, got %d", count)
 	}
 	if requirePolkit(":1.42", "org.lyraos.vega.software.install") == nil {
 		t.Fatal("denied administration authorized")
@@ -107,11 +110,17 @@ func TestDesktopReadPolicyDoesNotAuthorizeMutations(t *testing.T) {
 			if action.Defaults.Active != "yes" || action.Defaults.Any != "no" || action.Defaults.Inactive != "no" {
 				t.Errorf("desktop reads must be silent and limited to active sessions: %s", action.ID)
 			}
+		} else if action.ID == networkDiagnoseAction {
+			// Runs and reads only the network test, a read of NetworkManager's
+			// state; checked inside Diagnostics.Start/Cancel/Report.
+			if action.Defaults.Active != "yes" || action.Defaults.Any != "no" || action.Defaults.Inactive != "no" {
+				t.Errorf("the network check must be silent and limited to active sessions: %s", action.ID)
+			}
 		} else if action.Defaults.Active == "yes" || action.Defaults.Any == "yes" || action.Defaults.Inactive == "yes" {
 			t.Errorf("administrative authorization was weakened: %s", action.ID)
 		}
 	}
-	if seen != 5 {
+	if seen != 6 {
 		t.Fatalf("missing desktop read actions: %d", seen)
 	}
 }

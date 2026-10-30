@@ -56,6 +56,14 @@ type DiagnosticsService struct {
 	profile string
 	// snapshot wraps a repair in a pre/post snapshot; replaced in tests.
 	snapshot func(action string, work func() error) error
+	// seen is the "seen" cutoff of the logs test (MarkLogsSeen).
+	seen logsSeen
+	// periodicPath is the weekly check state; replaced in tests.
+	periodicPath string
+	// lowBattery postpones the weekly check; replaced in tests.
+	lowBattery func() bool
+	// backups feeds the backup check of the platform test; replaced in tests.
+	backups func(ctx context.Context) ([]diagnostics.BackupAge, error)
 
 	mu  sync.Mutex
 	job *runningDiagnostic
@@ -67,16 +75,22 @@ type runningDiagnostic struct {
 	stage   string
 	percent uint32
 	cancel  context.CancelFunc
+	// periodic: started by vegad-health-check.timer; compared at the end.
+	periodic bool
 }
 
 func newDiagnosticsService(activity *Activity, conn *dbus.Conn) *DiagnosticsService {
 	return &DiagnosticsService{
-		activity: activity,
-		conn:     conn,
-		store:    &diagnosticStore{dir: diagnosticsReportDir, keep: 10},
-		newEnv:   diagnostics.HostEnv,
-		lookup:   diagnostics.Lookup,
-		snapshot: withSnapshots,
+		activity:     activity,
+		conn:         conn,
+		store:        &diagnosticStore{dir: diagnosticsReportDir, keep: 10},
+		seen:         logsSeen{path: filepath.Join(diagnosticsReportDir, "logs-seen.json")},
+		newEnv:       diagnostics.HostEnv,
+		lookup:       diagnostics.Lookup,
+		snapshot:     withSnapshots,
+		backups:      backupAges,
+		periodicPath: periodicStatePath(),
+		lowBattery:   lowBattery,
 	}
 }
 
@@ -113,6 +127,7 @@ type diagnosticOptions struct {
 	memoryPercent   uint32
 	bootsBack       uint32
 	locale          string
+	periodic        bool
 }
 
 func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions, *dbus.Error) {
@@ -140,6 +155,12 @@ func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions,
 				return parsed, notSupported("locale deve ser s")
 			}
 			parsed.locale = vegai18n.Normalize(locale)
+		case "periodic":
+			periodic, ok := value.Value().(bool)
+			if !ok {
+				return parsed, notSupported("periodic deve ser b")
+			}
+			parsed.periodic = periodic
 		}
 		if err != nil {
 			return parsed, err
@@ -148,9 +169,46 @@ func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions,
 	return parsed, nil
 }
 
+// networkDiagnoseAction lets the active session run, cancel and read the
+// network test alone without a password ("Minha internet não funciona"):
+// it only reads NetworkManager's state. Fixing still needs hardware.repair.
+const networkDiagnoseAction = "org.lyraos.vega.network.diagnose"
+
+// networkOnly reports whether a job's stages are just the network test
+// (and, for a repair job, the network remedies).
+func networkOnly(stages []string) bool {
+	if len(stages) == 0 {
+		return false
+	}
+	for _, id := range stages {
+		switch id {
+		case "network", "repair:reconnect", "repair:renew-dhcp", "repair:temporary-dns":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func actionFor(stages []string) string {
+	if networkOnly(stages) {
+		return networkDiagnoseAction
+	}
+	return diagnosticsAction
+}
+
 func (s *DiagnosticsService) Start(sender dbus.Sender, tests []string, options map[string]dbus.Variant) (uint32, *dbus.Error) {
 	s.activity.Touch()
-	if err := requirePolkit(sender, diagnosticsAction); err != nil {
+	if periodic, _ := options["periodic"].Value().(bool); periodic {
+		// Only the timer (root) runs the weekly check: it skips polkit and
+		// feeds the comparison every frontend reads.
+		var uid uint32
+		if s.conn == nil || s.conn.BusObject().Call("org.freedesktop.DBus.GetConnectionUnixUser", 0, string(sender)).Store(&uid) != nil || uid != 0 {
+			return 0, dbus.NewError(BusName+".Error.AuthorizationFailed", []interface{}{"a verificação periódica só roda pelo timer do sistema"})
+		}
+		return s.start(tests, options)
+	}
+	if err := requirePolkit(sender, actionFor(tests)); err != nil {
 		return 0, err
 	}
 	return s.start(tests, options)
@@ -175,11 +233,26 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 		return 0, err
 	}
 	env := s.newEnv(opts.locale, int(opts.bootsBack))
+	env.LogsSeenUntil = s.seen.load()
+	env.Backups = s.backups
 	if s.profile != "" {
 		env.Profile = s.profile
 	}
 	env.DurationSeconds = int(opts.durationSeconds)
 	env.MemoryPercent = int(opts.memoryPercent)
+	if opts.periodic {
+		for _, id := range tests {
+			if !slices.Contains(periodicTests, id) {
+				return 0, notSupported("teste fora da verificação periódica: " + id)
+			}
+		}
+		// Postponed quietly: the next timer run tries again.
+		if s.lowBattery != nil && s.lowBattery() {
+			log.Printf("vegad: verificação periódica adiada: bateria abaixo de %d%%", lowBatteryLimit)
+			return 0, nil
+		}
+		env.Run = lowPriority(env.Run)
+	}
 	// Safeguards that refuse the whole job up front; a test that is merely
 	// unavailable still runs as an "unavailable" stage.
 	for _, id := range tests {
@@ -193,6 +266,10 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	}
 	release, busy := operations.beginDiagnostic()
 	if busy != nil {
+		if opts.periodic {
+			log.Printf("vegad: verificação periódica adiada: %v", busy.Body...)
+			return 0, nil
+		}
 		return 0, busy
 	}
 	done, ok := s.activity.begin()
@@ -207,7 +284,7 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 		return 0, dbus.MakeFailedError(storeErr)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &runningDiagnostic{id: id, tests: append([]string{}, tests...), stage: tests[0], cancel: cancel}
+	job := &runningDiagnostic{id: id, tests: append([]string{}, tests...), stage: tests[0], cancel: cancel, periodic: opts.periodic}
 	s.mu.Lock()
 	s.job = job
 	s.mu.Unlock()
@@ -223,7 +300,13 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 
 func (s *DiagnosticsService) Cancel(sender dbus.Sender, jobID uint32) *dbus.Error {
 	s.activity.Touch()
-	if err := requirePolkit(sender, diagnosticsAction); err != nil {
+	s.mu.Lock()
+	var stages []string
+	if s.job != nil && s.job.id == jobID {
+		stages = append(stages, s.job.tests...)
+	}
+	s.mu.Unlock()
+	if err := requirePolkit(sender, actionFor(stages)); err != nil {
 		return err
 	}
 	s.cancel(jobID)
@@ -240,7 +323,18 @@ func (s *DiagnosticsService) cancel(jobID uint32) {
 
 func (s *DiagnosticsService) Report(sender dbus.Sender, jobID uint32, redact bool) (string, *dbus.Error) {
 	s.activity.Touch()
-	if err := requirePolkit(sender, "org.lyraos.vega.logs.read-admin"); err != nil {
+	// A report of the network test alone holds no journal excerpt.
+	action := "org.lyraos.vega.logs.read-admin"
+	if source, err := s.store.loadReport(jobID); err == nil {
+		ids := make([]string, 0, len(source.Stages))
+		for _, stage := range source.Stages {
+			ids = append(ids, stage.ID)
+		}
+		if networkOnly(ids) {
+			action = networkDiagnoseAction
+		}
+	}
+	if err := requirePolkit(sender, action); err != nil {
 		return "", err
 	}
 	return s.report(jobID, redact)
@@ -320,6 +414,181 @@ func (s *DiagnosticsService) repair(jobID uint32, remedies []string) (uint32, *d
 			retests = append(retests, remedy.Retest)
 		}
 	}
+	return s.launchRepair(source, plan, retests)
+}
+
+// RemedyRef is the (sus) row of Diagnostics.Remedies.
+type RemedyRef struct {
+	Stage        string
+	FindingIndex uint32
+	Remedy       string
+}
+
+// FindingRef is the (su) element of Diagnostics.RepairFindings.
+type FindingRef struct {
+	Stage        string
+	FindingIndex uint32
+}
+
+// Remedies lists the findings with a remedy of a stored report: ids and
+// indexes only, so it is a public read like Current.
+func (s *DiagnosticsService) Remedies(jobID uint32) ([]RemedyRef, *dbus.Error) {
+	s.activity.Touch()
+	source, err := s.store.loadReport(jobID)
+	if err != nil {
+		return nil, notSupported(err.Error())
+	}
+	refs := []RemedyRef{}
+	for _, stage := range source.Stages {
+		for i, finding := range stage.Findings {
+			if _, ok := diagnostics.LookupRemedy(finding.Remedy); ok {
+				refs = append(refs, RemedyRef{stage.ID, uint32(i), finding.Remedy})
+			}
+		}
+	}
+	return refs, nil
+}
+
+func (s *DiagnosticsService) RepairFindings(sender dbus.Sender, jobID uint32, findings []FindingRef) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requirePolkit(sender, repairAction); err != nil {
+		return 0, err
+	}
+	return s.repairFindings(jobID, findings)
+}
+
+// repairFindings fixes only the chosen findings, each with its own
+// arguments from the stored report.
+func (s *DiagnosticsService) repairFindings(jobID uint32, findings []FindingRef) (uint32, *dbus.Error) {
+	if len(findings) == 0 {
+		return 0, notSupported("nenhum achado pedido")
+	}
+	source, err := s.store.loadReport(jobID)
+	if err != nil {
+		return 0, notSupported(err.Error())
+	}
+	argsOf := map[string][]string{}
+	seenArg := map[string]map[string]bool{}
+	seenRef := map[FindingRef]bool{}
+	for _, ref := range findings {
+		if seenRef[ref] {
+			return 0, notSupported(fmt.Sprintf("achado repetido: %s/%d", ref.Stage, ref.FindingIndex))
+		}
+		seenRef[ref] = true
+		var finding *diagnostics.Finding
+		for i := range source.Stages {
+			stage := &source.Stages[i]
+			if stage.ID == ref.Stage && int(ref.FindingIndex) < len(stage.Findings) {
+				finding = &stage.Findings[ref.FindingIndex]
+			}
+		}
+		if finding == nil {
+			return 0, notSupported(fmt.Sprintf("o relatório %d não tem o achado %s/%d", source.JobID, ref.Stage, ref.FindingIndex))
+		}
+		if _, ok := diagnostics.LookupRemedy(finding.Remedy); !ok {
+			return 0, notSupported(fmt.Sprintf("o achado %s/%d não tem conserto", ref.Stage, ref.FindingIndex))
+		}
+		if seenArg[finding.Remedy] == nil {
+			seenArg[finding.Remedy] = map[string]bool{}
+			argsOf[finding.Remedy] = []string{}
+		}
+		for _, arg := range finding.RemedyArgs {
+			if !seenArg[finding.Remedy][arg] {
+				seenArg[finding.Remedy][arg] = true
+				argsOf[finding.Remedy] = append(argsOf[finding.Remedy], arg)
+			}
+		}
+	}
+	var plan []plannedRemedy
+	var retests []string
+	// The catalog order, as in Repair: packages before services, and so on.
+	for _, remedy := range diagnostics.Remedies {
+		args, ok := argsOf[remedy.ID]
+		if !ok {
+			continue
+		}
+		plan = append(plan, plannedRemedy{remedy, args})
+		if !slices.Contains(retests, remedy.Retest) {
+			retests = append(retests, remedy.Retest)
+		}
+	}
+	return s.launchRepair(source, plan, retests)
+}
+
+func (s *DiagnosticsService) MarkLogsSeen(sender dbus.Sender, jobID uint32) *dbus.Error {
+	s.activity.Touch()
+	if err := requirePolkit(sender, diagnosticsAction); err != nil {
+		return err
+	}
+	return s.markLogsSeen(jobID)
+}
+
+// markLogsSeen stores, as the "seen" cutoff, what the logs stage of jobID
+// examined. Later logs tests ignore everything before it.
+func (s *DiagnosticsService) markLogsSeen(jobID uint32) *dbus.Error {
+	source, err := s.store.loadReport(jobID)
+	if err != nil {
+		return notSupported(err.Error())
+	}
+	for _, stage := range source.Stages {
+		if stage.ID != "logs" {
+			continue
+		}
+		// JSON numbers come back as float64; µs since 1970 fit exactly.
+		until, ok := stage.Metrics["examinedUntil"].(float64)
+		if !ok || until <= 0 {
+			break
+		}
+		if err := s.seen.save(time.UnixMicro(int64(until))); err != nil {
+			return dbus.MakeFailedError(err)
+		}
+		return nil
+	}
+	return notSupported(fmt.Sprintf("o relatório %d não tem a etapa logs concluída", source.JobID))
+}
+
+// logsSeen keeps the "seen" cutoff of the logs test in one small file, so
+// every frontend (and the periodic check) shares it.
+type logsSeen struct{ path string }
+
+type logsSeenFile struct {
+	SeenUntil int64 `json:"seenUntil"`
+}
+
+func (l logsSeen) load() time.Time {
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		return time.Time{}
+	}
+	var file logsSeenFile
+	if json.Unmarshal(data, &file) != nil || file.SeenUntil <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMicro(file.SeenUntil)
+}
+
+// save never moves the cutoff back: marking an older report as seen keeps
+// the newer cutoff.
+func (l logsSeen) save(until time.Time) error {
+	if current := l.load(); !current.IsZero() && current.After(until) {
+		return nil
+	}
+	data, err := json.Marshal(logsSeenFile{SeenUntil: until.UnixMicro()})
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
+		return err
+	}
+	tmp := l.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, l.path)
+}
+
+// launchRepair runs a planned repair as a job, like Start.
+func (s *DiagnosticsService) launchRepair(source *diagnosticReport, plan []plannedRemedy, retests []string) (uint32, *dbus.Error) {
 	release, busy := operations.beginDiagnostic()
 	if busy != nil {
 		return 0, busy
@@ -350,6 +619,8 @@ func (s *DiagnosticsService) repair(jobID uint32, remedies []string) (uint32, *d
 		locale = vegai18n.DefaultLocale
 	}
 	env := s.newEnv(locale, 8)
+	env.LogsSeenUntil = s.seen.load()
+	env.Backups = s.backups
 	if s.profile != "" {
 		env.Profile = s.profile
 	}
@@ -371,7 +642,7 @@ func (s *DiagnosticsService) runRepair(ctx context.Context, job *runningDiagnost
 	report := s.newReport(job, env)
 	report.RepairOf = of
 	s.save(report)
-	_ = s.snapshot(fmt.Sprintf("Vega: reparo do diagnóstico %d", of), func() error {
+	apply := func() error {
 		for _, p := range plan {
 			p := p
 			s.stage(ctx, job, env, report, "repair:"+p.remedy.ID, 15*time.Minute, true, "", func(ctx context.Context, progress diagnostics.Progress) diagnostics.StageResult {
@@ -379,7 +650,18 @@ func (s *DiagnosticsService) runRepair(ctx context.Context, job *runningDiagnost
 			})
 		}
 		return nil
-	})
+	}
+	// Network fixes change NetworkManager's runtime state, not files: a
+	// snapshot would restore nothing.
+	needsSnapshot := false
+	for _, p := range plan {
+		needsSnapshot = needsSnapshot || !p.remedy.NoSnapshot
+	}
+	if needsSnapshot {
+		_ = s.snapshot(fmt.Sprintf("Vega: reparo do diagnóstico %d", of), apply)
+	} else {
+		_ = apply()
+	}
 	// The tests run again to say whether the problems are gone.
 	for _, id := range retests {
 		s.testStage(ctx, job, env, report, id)
@@ -520,6 +802,9 @@ func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, en
 		s.testStage(ctx, job, env, report, id)
 	}
 	s.finish(job, env, report)
+	if job.periodic {
+		s.afterPeriodic(job, report)
+	}
 }
 
 func (s *DiagnosticsService) save(report *diagnosticReport) {

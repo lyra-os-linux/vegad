@@ -223,9 +223,35 @@ func parseFailedUnits(out []byte) []failedUnit {
 	return units
 }
 
+// sinceSeen is the journalctl --since argument for "seen until": whole
+// seconds rounded up, so nothing the user marked as seen comes back.
+func sinceSeen(seen time.Time) string {
+	seconds := seen.Unix()
+	if seen.Nanosecond() > 0 {
+		seconds++
+	}
+	return "--since=@" + strconv.FormatInt(seconds, 10)
+}
+
+// changedAfter reports whether a failed unit entered its state after the
+// "seen" cutoff. A unit whose time cannot be read still counts.
+func changedAfter(ctx context.Context, env *Env, unit string, seen time.Time) bool {
+	out, _, err := env.Run(ctx, "systemctl", "show", "--timestamp=unix", "-p", "StateChangeTimestamp", "--value", unit)
+	if err != nil {
+		return true
+	}
+	value := strings.TrimPrefix(strings.TrimSpace(string(out)), "@")
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return true
+	}
+	return seconds >= seen.Unix()
+}
+
 func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 	start := time.Now()
 	result := StageResult{ID: "logs"}
+	seen := env.LogsSeenUntil
 	progress(5, env.t("diagnostics.progress.logs.boots"))
 	out, _, err := env.Run(ctx, "journalctl", "--list-boots", "-o", "json", "--no-pager")
 	if err != nil {
@@ -240,7 +266,11 @@ func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 	entries := map[int][]journalEntry{}
 	for i, boot := range boots {
 		progress(uint32(10+60*i/max(1, len(boots))), env.t("diagnostics.progress.logs.journal", "boot", strconv.Itoa(boot.Index)))
-		out, _, err := env.Run(ctx, "journalctl", "-b", strconv.Itoa(boot.Index), "-p", "err", "-o", "json", "--no-pager", "-q")
+		args := []string{"-b", strconv.Itoa(boot.Index), "-p", "err", "-o", "json", "--no-pager", "-q"}
+		if !seen.IsZero() {
+			args = append(args, sinceSeen(seen))
+		}
+		out, _, err := env.Run(ctx, "journalctl", args...)
 		if err != nil {
 			return failedToRun(env, result, "journalctl", err, start)
 		}
@@ -249,7 +279,11 @@ func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 	classified := classifyJournal(entries)
 
 	progress(75, env.t("diagnostics.progress.logs.coredumps"))
-	out, _, err = env.Run(ctx, "journalctl", "MESSAGE_ID="+coredumpMessageID, "--since=-7d", "-o", "json", "--no-pager", "-q")
+	since := "--since=-7d"
+	if !seen.IsZero() && seen.After(start.Add(-7*24*time.Hour)) {
+		since = sinceSeen(seen)
+	}
+	out, _, err = env.Run(ctx, "journalctl", "MESSAGE_ID="+coredumpMessageID, since, "-o", "json", "--no-pager", "-q")
 	if err != nil {
 		return failedToRun(env, result, "journalctl", err, start)
 	}
@@ -261,6 +295,15 @@ func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 		return failedToRun(env, result, "systemctl", err, start)
 	}
 	failed := parseFailedUnits(out)
+	if !seen.IsZero() {
+		kept := failed[:0]
+		for _, unit := range failed {
+			if changedAfter(ctx, env, unit.Unit, seen) {
+				kept = append(kept, unit)
+			}
+		}
+		failed = kept
+	}
 
 	var findings []Finding
 	if n := countGroups(coredumps); n > 0 {
@@ -295,10 +338,15 @@ func runLogs(ctx context.Context, env *Env, progress Progress) StageResult {
 	}
 	result.Findings = findings
 	result.Metrics = map[string]any{
+		// What this run examined; "Já vi" (MarkLogsSeen) uses it as the cutoff.
+		"examinedUntil": start.UnixMicro(),
 		"errorsPerBoot": classified.perBoot,
 		"knownNoise":    noiseTotal,
 		"coredumps":     countGroups(coredumps),
 		"failedUnits":   len(failed),
+	}
+	if !seen.IsZero() {
+		result.Metrics["seenUntil"] = seen.Format(time.RFC3339)
 	}
 	result.Verdict = verdictFromFindings(findings)
 	result.Summary = env.t("diagnostics.summary.logs",

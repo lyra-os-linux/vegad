@@ -231,6 +231,12 @@ func runPlatform(ctx context.Context, env *Env, progress Progress) StageResult {
 			}
 		}
 	}
+	if env.Backups != nil {
+		progress(85, env.t("diagnostics.progress.platform.backup"))
+		if ages, err := env.Backups(ctx); err == nil {
+			findings = append(findings, backupFindings(env, ages, time.Now())...)
+		}
+	}
 	if enforce := readTrimmed(env, "/sys/fs/selinux/enforce"); enforce != "" {
 		mode := map[string]string{"1": "enforcing", "0": "permissive"}[enforce]
 		result.Metrics["selinux"] = mode
@@ -246,4 +252,39 @@ func runPlatform(ctx context.Context, env *Env, progress Progress) StageResult {
 	result.Summary = env.t("diagnostics.summary.platform", "count", strconv.Itoa(len(findings)))
 	result.DurationSeconds = int(time.Since(start).Seconds())
 	return result
+}
+
+// staleBackup is how old the newest backup may get before the warning.
+const staleBackup = 14 * 24 * time.Hour
+
+// backupFindings warns when no configuration backed up in two weeks, and
+// informs when there is no backup at all. The newest backup of any
+// configuration counts: one recent copy is enough.
+func backupFindings(env *Env, ages []BackupAge, now time.Time) []Finding {
+	if len(ages) == 0 {
+		return []Finding{env.finding(Info, "backup.none", "")}
+	}
+	newest := BackupAge{}
+	for _, age := range ages {
+		if age.Last.After(newest.Last) {
+			newest = age
+		}
+	}
+	if !newest.Last.IsZero() && now.Sub(newest.Last) <= staleBackup {
+		return nil
+	}
+	finding := Finding{Severity: SeverityAttention, Code: "backup.stale"}
+	switch {
+	case newest.Last.IsZero():
+		finding.Text = env.t("diagnostics.finding.backup.stale-never")
+	case newest.Disconnected:
+		days := int(now.Sub(newest.Last).Hours() / 24)
+		finding.Text = env.t("diagnostics.finding.backup.stale-disconnected", "days", strconv.Itoa(days))
+		finding.Raw = newest.ID + " " + newest.Last.Format(time.RFC3339)
+	default:
+		days := int(now.Sub(newest.Last).Hours() / 24)
+		finding.Text = env.t("diagnostics.finding.backup.stale", "days", strconv.Itoa(days))
+		finding.Raw = newest.ID + " " + newest.Last.Format(time.RFC3339)
+	}
+	return []Finding{finding}
 }

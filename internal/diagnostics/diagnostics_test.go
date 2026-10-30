@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Fixtures are real captures from an Acer Nitro AN515-57 (Intel + NVIDIA,
@@ -237,6 +238,45 @@ func TestLogsClassifyKnownNoiseAndGroupCrashesByApp(t *testing.T) {
 	}
 }
 
+func TestLogsSeenCutoffHidesWhatTheUserAlreadySaw(t *testing.T) {
+	seen := time.Unix(1793316162, 142129000) // fraction rounds the cutoff up
+	failed := `[{"unit":"old.service","description":"Old"},{"unit":"new.service","description":"New"}]`
+	env := fakeEnv(t, map[string]call{
+		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":-1},{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
+		"journalctl -b -1 -p err -o json --no-pager -q --since=@1793316163":                                {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                      {out: []byte(failed)},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value old.service":                      {out: []byte("@1793316000\n")},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value new.service":                      {out: []byte("@1793317000\n")},
+	}, nil, "journalctl")
+	env.LogsSeenUntil = seen
+	result := runLogs(context.Background(), env, noProgress)
+	units := findingCodes(result.Findings)["logs.failed-units"]
+	if !strings.Contains(units.Raw, "new.service") || strings.Contains(units.Raw, "old.service") {
+		t.Fatalf("units %+v", units)
+	}
+	if _, ok := findingCodes(result.Findings)["logs.coredumps"]; ok {
+		t.Fatal("seen core dumps came back")
+	}
+	if result.Metrics["seenUntil"] == nil || result.Metrics["examinedUntil"] == nil {
+		t.Fatalf("metrics %+v", result.Metrics)
+	}
+}
+
+func TestLogsWithEverythingSeenIsHealthy(t *testing.T) {
+	env := fakeEnv(t, map[string]call{
+		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                      {out: []byte("[]")},
+	}, nil, "journalctl")
+	env.LogsSeenUntil = time.Unix(1793316163, 0)
+	if result := runLogs(context.Background(), env, noProgress); result.Verdict != Ok {
+		t.Fatalf("verdict %s findings %+v", result.Verdict, result.Findings)
+	}
+}
+
 func TestLogsReportFailedUnits(t *testing.T) {
 	result := runLogs(context.Background(), logsEnv(t, `[{"unit":"vegad-trusted-keys.service","load":"loaded","active":"failed","sub":"failed","description":"Vega key maintenance"}]`), noProgress)
 	units := findingCodes(result.Findings)["logs.failed-units"]
@@ -414,5 +454,46 @@ func TestEveryTextHasATranslation(t *testing.T) {
 				t.Errorf("%s: no text for %s", locale, key)
 			}
 		}
+	}
+}
+
+func TestBackupAgeFindings(t *testing.T) {
+	env := fakeEnv(t, nil, nil)
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	cases := []struct {
+		name string
+		ages []BackupAge
+		code string
+		sev  Severity
+		text string
+	}{
+		{"none configured", nil, "backup.none", Info, ""},
+		{"recent", []BackupAge{{ID: "casa", Last: now.Add(-3 * day)}}, "", "", ""},
+		{"30 days", []BackupAge{{ID: "casa", Last: now.Add(-30 * day)}}, "backup.stale", SeverityAttention, "30 days ago"},
+		{"never ran", []BackupAge{{ID: "casa"}}, "backup.stale", SeverityAttention, "none has run"},
+		{"disconnected", []BackupAge{{ID: "usb", Last: now.Add(-20 * day), Disconnected: true}}, "backup.stale", SeverityAttention, "not connected"},
+		// One recent copy is enough, even with an old one elsewhere.
+		{"one recent of two", []BackupAge{{ID: "usb", Last: now.Add(-60 * day), Disconnected: true}, {ID: "nas", Last: now.Add(-1 * day)}}, "", "", ""},
+	}
+	for _, tc := range cases {
+		findings := backupFindings(env, tc.ages, now)
+		if tc.code == "" {
+			if len(findings) != 0 {
+				t.Errorf("%s: %+v", tc.name, findings)
+			}
+			continue
+		}
+		if len(findings) != 1 || findings[0].Code != tc.code || findings[0].Severity != tc.sev || !strings.Contains(findings[0].Text, tc.text) {
+			t.Errorf("%s: %+v", tc.name, findings)
+		}
+	}
+}
+
+func TestPlatformChecksBackupsWhenTheServiceProvidesThem(t *testing.T) {
+	env := fakeEnv(t, nil, nil)
+	env.Backups = func(context.Context) ([]BackupAge, error) { return nil, nil }
+	if _, ok := findingCodes(runPlatform(context.Background(), env, noProgress).Findings)["backup.none"]; !ok {
+		t.Fatal("backup.none missing")
 	}
 }

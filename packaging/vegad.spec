@@ -74,6 +74,12 @@ install -Dm644 packaging/vegad-update-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.service
 install -Dm644 packaging/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
+%{_prefix}/lib/systemd/system/vegad-health-check.service
+%{_prefix}/lib/systemd/system/vegad-health-check.timer
+install -Dm644 packaging/vegad-health-check.service \
+  %{buildroot}%{_prefix}/lib/systemd/system/vegad-health-check.service
+install -Dm644 packaging/vegad-health-check.timer \
+  %{buildroot}%{_prefix}/lib/systemd/system/vegad-health-check.timer
 install -Dm644 packaging/vegad-update-check-retry.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
 install -Dm644 packaging/vegad-first-update.service \
@@ -178,6 +184,13 @@ systemd-tmpfiles --create %{_prefix}/lib/tmpfiles.d/vega-log.conf 2>/dev/null ||
 systemctl daemon-reload
 systemctl reload dbus.service 2>/dev/null || true
 systemctl enable --now vegad-update-check.timer 2>/dev/null || true
+# Weekly health check (add-periodic-checks): enabled once, on the install or
+# upgrade that brings it, so a user who turned it off in Vega keeps it off.
+if [ ! -e %{_localstatedir}/lib/vega/health-check.enabled-once ]; then
+  systemctl enable --now vegad-health-check.timer 2>/dev/null || true
+  mkdir -p %{_localstatedir}/lib/vega
+  touch %{_localstatedir}/lib/vega/health-check.enabled-once
+fi
 systemctl enable --now vegad-log-export.timer 2>/dev/null || true
 # Queue key maintenance without blocking this scriptlet. The service starts
 # while this RPM transaction still holds the database lock and waits for it

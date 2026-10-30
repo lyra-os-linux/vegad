@@ -2,23 +2,27 @@ package dbusserver
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/lyraos/vegad/internal/diagnostics"
 )
 
 const (
@@ -295,7 +299,7 @@ func (b *BackupService) DeleteConfig(sender dbus.Sender, configID string) *dbus.
 	if err := os.Remove(backupPendingPath(configID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return dbus.MakeFailedError(err)
 	}
-	for _, path := range []string{backupMountTargetPath(configID), filepath.Join(backupConnectionDir(), configID+".last")} {
+	for _, path := range []string{backupMountTargetPath(configID), filepath.Join(backupConnectionDir(), configID+".last"), backupSuccessPath(configID)} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return dbus.MakeFailedError(err)
 		}
@@ -333,7 +337,66 @@ func runBackupConfig(cfg BackupConfig, report progressFunc) error {
 	}
 	args := []string{"backup"}
 	args = append(args, cfg.Paths...)
-	return runResticCommand(cfg, args, report, "Iniciando backup...", "Backup concluído")
+	if err := runResticCommand(cfg, args, report, "Iniciando backup...", "Backup concluído"); err != nil {
+		return err
+	}
+	if err := recordBackupSuccess(cfg.Id, time.Now()); err != nil {
+		log.Printf("vegad: registrar backup %s: %v", cfg.Id, err)
+	}
+	return nil
+}
+
+// backupSuccessPath keeps when a configuration last backed up successfully,
+// for when its destination is not connected (the diagnostics backup check).
+func backupSuccessPath(id string) string {
+	return filepath.Join(backupStateDir(), "last-success", id)
+}
+
+func recordBackupSuccess(id string, at time.Time) error {
+	path := backupSuccessPath(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return writeConfigAtomicallyWithMode(path, []byte(strconv.FormatInt(at.Unix(), 10)), 0o600)
+}
+
+func lastBackupSuccess(id string) time.Time {
+	data, err := os.ReadFile(backupSuccessPath(id))
+	if err != nil {
+		return time.Time{}
+	}
+	seconds, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil || seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0)
+}
+
+// backupAges is the diagnostics view of each configuration: the newest
+// restic snapshot, or, when the destination cannot be listed (disconnected
+// disk), the last success vegad recorded.
+func backupAges(ctx context.Context) ([]diagnostics.BackupAge, error) {
+	configs, err := readBackupConfigs()
+	if err != nil {
+		return nil, err
+	}
+	ages := make([]diagnostics.BackupAge, 0, len(configs))
+	for _, cfg := range configs {
+		age := diagnostics.BackupAge{ID: cfg.Id}
+		listCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		snapshots, err := resticSnapshotsContext(listCtx, cfg)
+		cancel()
+		if err == nil {
+			if len(snapshots) > 0 {
+				age.Last = time.Unix(snapshots[0].Timestamp, 0)
+			}
+		} else {
+			age.Disconnected = true
+			age.Last = lastBackupSuccess(cfg.Id)
+		}
+		ages = append(ages, age)
+	}
+	return ages, nil
 }
 
 func resticSnapshotPaths(cfg BackupConfig, snapshotID string) ([]string, error) {
@@ -812,11 +875,15 @@ func ensureResticRepository(cfg BackupConfig, report progressFunc) error {
 }
 
 func resticSnapshots(cfg BackupConfig) ([]BackupSnapshotInfo, error) {
+	return resticSnapshotsContext(context.Background(), cfg)
+}
+
+func resticSnapshotsContext(ctx context.Context, cfg BackupConfig) ([]BackupSnapshotInfo, error) {
 	destination, err := backupDestinationResolved(cfg)
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("restic", "-r", destination, "snapshots", "--json")
+	cmd := exec.CommandContext(ctx, "restic", "-r", destination, "snapshots", "--json")
 	cmd.Env = backupCommandEnv(cfg.Id)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
