@@ -177,5 +177,21 @@
   "diagnostics.finding.backup.none": "No backup is set up in Vega",
   "diagnostics.finding.backup.stale": "The last backup was {days} days ago",
   "diagnostics.finding.backup.stale-never": "Backup is set up, but none has run yet",
-  "diagnostics.finding.backup.stale-disconnected": "The last known backup was {days} days ago, and the backup disk is not connected"
+  "diagnostics.finding.backup.stale-disconnected": "The last known backup was {days} days ago, and the backup disk is not connected",
+  "diagnostics.progress.boot.time": "Reading the last boot time",
+  "diagnostics.progress.boot.blame": "Looking for the slowest services",
+  "diagnostics.progress.boot.chain": "Reading the chain to the login",
+  "diagnostics.progress.boot.devices": "Looking for disks that did not answer",
+  "diagnostics.progress.boot.services": "Checking who enabled each service",
+  "diagnostics.summary.boot": "Boot to login in {seconds} s",
+  "diagnostics.summary.boot.unfinished": "The boot has not finished yet; try again in a few minutes",
+  "diagnostics.finding.boot.slow": "The system took {seconds} s to start after the kernel",
+  "diagnostics.finding.boot.wait-online": "The boot waited {seconds} s for the network (NetworkManager-wait-online)",
+  "diagnostics.finding.boot.missing-device": "The boot waited for {count} disk(s) that no longer exist",
+  "diagnostics.finding.boot.slow-service": "{unit} took {seconds} s during boot",
+  "diagnostics.progress.repair.wait-online": "Turning off the wait for the network at boot",
+  "diagnostics.summary.repair.wait-online": "Wait for the network turned off. To undo: systemctl enable NetworkManager-wait-online.service",
+  "diagnostics.summary.repair.wait-online-needed": "Kept: {units} need(s) the network at boot",
+  "diagnostics.progress.repair.disable": "Disabling {unit}",
+  "diagnostics.summary.repair.disable": "Disabled: {units}. To undo: systemctl enable {units}"
 }

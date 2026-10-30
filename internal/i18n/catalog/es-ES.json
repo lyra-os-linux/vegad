@@ -177,5 +177,21 @@
   "diagnostics.finding.backup.none": "No hay ninguna copia de seguridad configurada en Vega",
   "diagnostics.finding.backup.stale": "La última copia de seguridad fue hace {days} días",
   "diagnostics.finding.backup.stale-never": "La copia de seguridad está configurada, pero aún no se hizo ninguna",
-  "diagnostics.finding.backup.stale-disconnected": "La última copia conocida fue hace {days} días, y el disco de copias no está conectado"
+  "diagnostics.finding.backup.stale-disconnected": "La última copia conocida fue hace {days} días, y el disco de copias no está conectado",
+  "diagnostics.progress.boot.time": "Leyendo el tiempo del último arranque",
+  "diagnostics.progress.boot.blame": "Buscando los servicios más lentos",
+  "diagnostics.progress.boot.chain": "Leyendo la cadena hasta el inicio de sesión",
+  "diagnostics.progress.boot.devices": "Buscando discos que no respondieron",
+  "diagnostics.progress.boot.services": "Comprobando quién habilitó cada servicio",
+  "diagnostics.summary.boot": "Arranque hasta el inicio de sesión en {seconds} s",
+  "diagnostics.summary.boot.unfinished": "El arranque aún no terminó; inténtelo de nuevo en unos minutos",
+  "diagnostics.finding.boot.slow": "El sistema tardó {seconds} s en iniciar después del kernel",
+  "diagnostics.finding.boot.wait-online": "El arranque esperó {seconds} s a la red (NetworkManager-wait-online)",
+  "diagnostics.finding.boot.missing-device": "El arranque esperó a {count} disco(s) que ya no existe(n)",
+  "diagnostics.finding.boot.slow-service": "{unit} tardó {seconds} s en el arranque",
+  "diagnostics.progress.repair.wait-online": "Desactivando la espera de la red en el arranque",
+  "diagnostics.summary.repair.wait-online": "Espera de la red desactivada. Para deshacer: systemctl enable NetworkManager-wait-online.service",
+  "diagnostics.summary.repair.wait-online-needed": "Mantenida: {units} necesita(n) la red en el arranque",
+  "diagnostics.progress.repair.disable": "Deshabilitando {unit}",
+  "diagnostics.summary.repair.disable": "Deshabilitado: {units}. Para deshacer: systemctl enable {units}"
 }

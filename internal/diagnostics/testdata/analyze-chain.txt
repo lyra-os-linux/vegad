@@ -1,0 +1,7 @@
+The time when unit became active or started is printed after the "@" character.
+The time the unit took to start is printed after the "+" character.
+
+graphical.target @3.971s
+`-multi-user.target @3.971s
+  `-cups.service @3.857s +87ms
+    `-nss-user-lookup.target @3.916s

@@ -30,6 +30,8 @@ var Remedies = []Remedy{
 	{ID: "enable-firewall", Retest: "security", Run: enableFirewall},
 	{ID: "close-port", Retest: "security", Run: closePorts},
 	{ID: "apply-security-patches", Retest: "security", Run: applySecurityPatches},
+	{ID: "disable-wait-online", Retest: "boot", Run: disableWaitOnline},
+	{ID: "disable-service", Retest: "boot", Run: disableService},
 	{ID: "reconnect", Retest: "network", Run: reconnect, NoSnapshot: true},
 	{ID: "renew-dhcp", Retest: "network", Run: renewDHCP, NoSnapshot: true},
 	{ID: "temporary-dns", Retest: "network", Run: temporaryDNSFix, NoSnapshot: true},

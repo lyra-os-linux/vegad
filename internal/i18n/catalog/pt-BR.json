@@ -177,5 +177,21 @@
   "diagnostics.finding.backup.none": "Nenhum backup configurado no Vega",
   "diagnostics.finding.backup.stale": "O último backup foi há {days} dias",
   "diagnostics.finding.backup.stale-never": "O backup está configurado, mas nenhum foi feito ainda",
-  "diagnostics.finding.backup.stale-disconnected": "O último backup conhecido foi há {days} dias, e o disco de backup não está conectado"
+  "diagnostics.finding.backup.stale-disconnected": "O último backup conhecido foi há {days} dias, e o disco de backup não está conectado",
+  "diagnostics.progress.boot.time": "Lendo o tempo do último boot",
+  "diagnostics.progress.boot.blame": "Procurando os serviços mais lentos",
+  "diagnostics.progress.boot.chain": "Lendo a cadeia até o login",
+  "diagnostics.progress.boot.devices": "Procurando discos que não responderam",
+  "diagnostics.progress.boot.services": "Conferindo quem habilitou cada serviço",
+  "diagnostics.summary.boot": "Boot até o login em {seconds} s",
+  "diagnostics.summary.boot.unfinished": "O boot ainda não terminou; tente de novo em alguns minutos",
+  "diagnostics.finding.boot.slow": "O sistema levou {seconds} s para iniciar depois do kernel",
+  "diagnostics.finding.boot.wait-online": "O boot esperou {seconds} s pela rede (NetworkManager-wait-online)",
+  "diagnostics.finding.boot.missing-device": "O boot esperou por {count} disco(s) que não existe(m) mais",
+  "diagnostics.finding.boot.slow-service": "{unit} levou {seconds} s no boot",
+  "diagnostics.progress.repair.wait-online": "Desligando a espera pela rede no boot",
+  "diagnostics.summary.repair.wait-online": "Espera pela rede desligada. Para desfazer: systemctl enable NetworkManager-wait-online.service",
+  "diagnostics.summary.repair.wait-online-needed": "Mantida: {units} precisa(m) da rede no boot",
+  "diagnostics.progress.repair.disable": "Desabilitando {unit}",
+  "diagnostics.summary.repair.disable": "Desabilitado: {units}. Para desfazer: systemctl enable {units}"
 }

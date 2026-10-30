@@ -287,7 +287,7 @@ func TestListTestsReportsEveryContractTest(t *testing.T) {
 	for _, test := range tests {
 		got[test.Id] = test
 	}
-	want := []string{"packages", "disk-health", "fs-scrub", "cpu-stress", "memory-stress", "disk-bench", "logs", "platform", "security", "network"}
+	want := []string{"packages", "disk-health", "fs-scrub", "cpu-stress", "memory-stress", "disk-bench", "logs", "platform", "security", "boot", "network"}
 	if len(got) != len(want) {
 		t.Fatalf("tests %+v", tests)
 	}
