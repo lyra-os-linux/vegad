@@ -58,6 +58,10 @@ type DiagnosticsService struct {
 	snapshot func(action string, work func() error) error
 	// seen is the "seen" cutoff of the logs test (MarkLogsSeen).
 	seen logsSeen
+	// periodicPath is the weekly check state; replaced in tests.
+	periodicPath string
+	// lowBattery postpones the weekly check; replaced in tests.
+	lowBattery func() bool
 	// backups feeds the backup check of the platform test; replaced in tests.
 	backups func(ctx context.Context) ([]diagnostics.BackupAge, error)
 
@@ -71,18 +75,22 @@ type runningDiagnostic struct {
 	stage   string
 	percent uint32
 	cancel  context.CancelFunc
+	// periodic: started by vegad-health-check.timer; compared at the end.
+	periodic bool
 }
 
 func newDiagnosticsService(activity *Activity, conn *dbus.Conn) *DiagnosticsService {
 	return &DiagnosticsService{
-		activity: activity,
-		conn:     conn,
-		store:    &diagnosticStore{dir: diagnosticsReportDir, keep: 10},
-		seen:     logsSeen{path: filepath.Join(diagnosticsReportDir, "logs-seen.json")},
-		newEnv:   diagnostics.HostEnv,
-		lookup:   diagnostics.Lookup,
-		snapshot: withSnapshots,
-		backups:  backupAges,
+		activity:     activity,
+		conn:         conn,
+		store:        &diagnosticStore{dir: diagnosticsReportDir, keep: 10},
+		seen:         logsSeen{path: filepath.Join(diagnosticsReportDir, "logs-seen.json")},
+		newEnv:       diagnostics.HostEnv,
+		lookup:       diagnostics.Lookup,
+		snapshot:     withSnapshots,
+		backups:      backupAges,
+		periodicPath: periodicStatePath(),
+		lowBattery:   lowBattery,
 	}
 }
 
@@ -119,6 +127,7 @@ type diagnosticOptions struct {
 	memoryPercent   uint32
 	bootsBack       uint32
 	locale          string
+	periodic        bool
 }
 
 func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions, *dbus.Error) {
@@ -146,6 +155,12 @@ func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions,
 				return parsed, notSupported("locale deve ser s")
 			}
 			parsed.locale = vegai18n.Normalize(locale)
+		case "periodic":
+			periodic, ok := value.Value().(bool)
+			if !ok {
+				return parsed, notSupported("periodic deve ser b")
+			}
+			parsed.periodic = periodic
 		}
 		if err != nil {
 			return parsed, err
@@ -184,6 +199,15 @@ func actionFor(stages []string) string {
 
 func (s *DiagnosticsService) Start(sender dbus.Sender, tests []string, options map[string]dbus.Variant) (uint32, *dbus.Error) {
 	s.activity.Touch()
+	if periodic, _ := options["periodic"].Value().(bool); periodic {
+		// Only the timer (root) runs the weekly check: it skips polkit and
+		// feeds the comparison every frontend reads.
+		var uid uint32
+		if s.conn == nil || s.conn.BusObject().Call("org.freedesktop.DBus.GetConnectionUnixUser", 0, string(sender)).Store(&uid) != nil || uid != 0 {
+			return 0, dbus.NewError(BusName+".Error.AuthorizationFailed", []interface{}{"a verificação periódica só roda pelo timer do sistema"})
+		}
+		return s.start(tests, options)
+	}
 	if err := requirePolkit(sender, actionFor(tests)); err != nil {
 		return 0, err
 	}
@@ -216,6 +240,19 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	}
 	env.DurationSeconds = int(opts.durationSeconds)
 	env.MemoryPercent = int(opts.memoryPercent)
+	if opts.periodic {
+		for _, id := range tests {
+			if !slices.Contains(periodicTests, id) {
+				return 0, notSupported("teste fora da verificação periódica: " + id)
+			}
+		}
+		// Postponed quietly: the next timer run tries again.
+		if s.lowBattery != nil && s.lowBattery() {
+			log.Printf("vegad: verificação periódica adiada: bateria abaixo de %d%%", lowBatteryLimit)
+			return 0, nil
+		}
+		env.Run = lowPriority(env.Run)
+	}
 	// Safeguards that refuse the whole job up front; a test that is merely
 	// unavailable still runs as an "unavailable" stage.
 	for _, id := range tests {
@@ -229,6 +266,10 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	}
 	release, busy := operations.beginDiagnostic()
 	if busy != nil {
+		if opts.periodic {
+			log.Printf("vegad: verificação periódica adiada: %v", busy.Body...)
+			return 0, nil
+		}
 		return 0, busy
 	}
 	done, ok := s.activity.begin()
@@ -243,7 +284,7 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 		return 0, dbus.MakeFailedError(storeErr)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &runningDiagnostic{id: id, tests: append([]string{}, tests...), stage: tests[0], cancel: cancel}
+	job := &runningDiagnostic{id: id, tests: append([]string{}, tests...), stage: tests[0], cancel: cancel, periodic: opts.periodic}
 	s.mu.Lock()
 	s.job = job
 	s.mu.Unlock()
@@ -761,6 +802,9 @@ func (s *DiagnosticsService) run(ctx context.Context, job *runningDiagnostic, en
 		s.testStage(ctx, job, env, report, id)
 	}
 	s.finish(job, env, report)
+	if job.periodic {
+		s.afterPeriodic(job, report)
+	}
 }
 
 func (s *DiagnosticsService) save(report *diagnosticReport) {

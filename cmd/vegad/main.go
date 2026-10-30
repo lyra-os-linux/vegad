@@ -92,6 +92,14 @@ func main() {
 		return
 	}
 
+	if len(os.Args) == 2 && os.Args[1] == "check-health" {
+		// Desktop and Server: the Server shows the result in vega-cli.
+		if err := dbusserver.RunHealthCheck(); err != nil {
+			log.Fatalf("vegad check-health failed: %v", err)
+		}
+		return
+	}
+
 	if len(os.Args) == 2 && os.Args[1] == "sync-trusted-keys" {
 		if err := dbusserver.RunTrustedKeysJob(activeProfile); err != nil {
 			log.Fatalf("vegad sync-trusted-keys failed: %v", err)

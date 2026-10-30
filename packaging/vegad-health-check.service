@@ -1,0 +1,17 @@
+[Unit]
+Description=Vega weekly health check
+Documentation=https://lyraos.com.br/docs/vega.html
+After=dbus.service
+
+[Service]
+Type=oneshot
+# Only asks vegad (bus-activated) to start the light, read-only tests; the
+# daemon runs them at low priority and compares with the previous run.
+ExecStart=/usr/lib/vega/vegad check-health
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+UMask=0077

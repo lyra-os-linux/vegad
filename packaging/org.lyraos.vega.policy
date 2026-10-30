@@ -279,6 +279,16 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.hardware.read-admin">
+    <description>Read the result of the weekly health check</description>
+    <description xml:lang="pt_BR">Ler o resultado da verificação semanal de saúde</description>
+    <description xml:lang="es">Leer el resultado de la comprobación semanal de salud</description>
+    <message>Access to the health check is not allowed for this session</message>
+    <message xml:lang="pt_BR">Esta sessão não tem acesso à verificação de saúde</message>
+    <message xml:lang="es">Esta sesión no tiene acceso a la comprobación de salud</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+
   <action id="org.lyraos.vega.network.diagnose">
     <description>Check why the internet connection does not work</description>
     <description xml:lang="pt_BR">Verificar por que a conexão com a internet não funciona</description>

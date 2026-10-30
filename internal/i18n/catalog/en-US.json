@@ -193,5 +193,6 @@
   "diagnostics.summary.repair.wait-online": "Wait for the network turned off. To undo: systemctl enable NetworkManager-wait-online.service",
   "diagnostics.summary.repair.wait-online-needed": "Kept: {units} need(s) the network at boot",
   "diagnostics.progress.repair.disable": "Disabling {unit}",
-  "diagnostics.summary.repair.disable": "Disabled: {units}. To undo: systemctl enable {units}"
+  "diagnostics.summary.repair.disable": "Disabled: {units}. To undo: systemctl enable {units}",
+  "diagnostics.periodic.wear": "Wear of the SSD {disk} rose from {from}% to {to}% in 30 days"
 }

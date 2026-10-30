@@ -360,6 +360,10 @@ func (s *Server) Export() error {
 				}},
 			}},
 			{Name: BusName + ".Diagnostics", Methods: introspect.Methods(diagnosticsService), Signals: []introspect.Signal{
+				{Name: "Novelties", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "count", Type: "u", Direction: "out"},
+				}},
 				{Name: "Progress", Args: []introspect.Arg{
 					{Name: "jobId", Type: "u", Direction: "out"},
 					{Name: "stage", Type: "s", Direction: "out"},

@@ -60,6 +60,11 @@ var methodPolicies = map[string]methodPolicy{
 	"Diagnostics.Remedies":       {brokeredPublic, ""},
 	"Diagnostics.RepairFindings": {administrative, ""},
 	"Diagnostics.MarkLogsSeen":   {administrative, ""},
+	// The weekly check: settings are a plain read, changing them and the
+	// last run's texts are checked as usual.
+	"Diagnostics.GetPeriodic":  {brokeredPublic, ""},
+	"Diagnostics.SetPeriodic":  {administrative, ""},
+	"Diagnostics.LastPeriodic": {privilegedRead, "org.lyraos.vega.hardware.read-admin"},
 	// Reports hold journal excerpts: the same interactive, retained
 	// logs.read-admin as the Logs page, checked inside Report.
 	"Diagnostics.Report":     {administrative, ""},

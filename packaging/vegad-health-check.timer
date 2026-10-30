@@ -1,0 +1,12 @@
+[Unit]
+Description=Vega weekly health check timer
+
+[Timer]
+# Vega → Preferências can switch to daily (drop-in in /etc).
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+Unit=vegad-health-check.service
+
+[Install]
+WantedBy=timers.target

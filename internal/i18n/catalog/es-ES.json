@@ -193,5 +193,6 @@
   "diagnostics.summary.repair.wait-online": "Espera de la red desactivada. Para deshacer: systemctl enable NetworkManager-wait-online.service",
   "diagnostics.summary.repair.wait-online-needed": "Mantenida: {units} necesita(n) la red en el arranque",
   "diagnostics.progress.repair.disable": "Deshabilitando {unit}",
-  "diagnostics.summary.repair.disable": "Deshabilitado: {units}. Para deshacer: systemctl enable {units}"
+  "diagnostics.summary.repair.disable": "Deshabilitado: {units}. Para deshacer: systemctl enable {units}",
+  "diagnostics.periodic.wear": "El desgaste del SSD {disk} subió de {from}% a {to}% en 30 días"
 }
