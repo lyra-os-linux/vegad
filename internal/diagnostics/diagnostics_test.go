@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Fixtures are real captures from an Acer Nitro AN515-57 (Intel + NVIDIA,
@@ -234,6 +235,45 @@ func TestLogsClassifyKnownNoiseAndGroupCrashesByApp(t *testing.T) {
 	perBoot := result.Metrics["errorsPerBoot"].(map[string]int)
 	if perBoot["0"] != 41 || perBoot["-1"] != 88 {
 		t.Fatalf("errors per boot %+v", perBoot)
+	}
+}
+
+func TestLogsSeenCutoffHidesWhatTheUserAlreadySaw(t *testing.T) {
+	seen := time.Unix(1793316162, 142129000) // fraction rounds the cutoff up
+	failed := `[{"unit":"old.service","description":"Old"},{"unit":"new.service","description":"New"}]`
+	env := fakeEnv(t, map[string]call{
+		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":-1},{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
+		"journalctl -b -1 -p err -o json --no-pager -q --since=@1793316163":                                {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                      {out: []byte(failed)},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value old.service":                      {out: []byte("@1793316000\n")},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value new.service":                      {out: []byte("@1793317000\n")},
+	}, nil, "journalctl")
+	env.LogsSeenUntil = seen
+	result := runLogs(context.Background(), env, noProgress)
+	units := findingCodes(result.Findings)["logs.failed-units"]
+	if !strings.Contains(units.Raw, "new.service") || strings.Contains(units.Raw, "old.service") {
+		t.Fatalf("units %+v", units)
+	}
+	if _, ok := findingCodes(result.Findings)["logs.coredumps"]; ok {
+		t.Fatal("seen core dumps came back")
+	}
+	if result.Metrics["seenUntil"] == nil || result.Metrics["examinedUntil"] == nil {
+		t.Fatalf("metrics %+v", result.Metrics)
+	}
+}
+
+func TestLogsWithEverythingSeenIsHealthy(t *testing.T) {
+	env := fakeEnv(t, map[string]call{
+		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                      {out: []byte("[]")},
+	}, nil, "journalctl")
+	env.LogsSeenUntil = time.Unix(1793316163, 0)
+	if result := runLogs(context.Background(), env, noProgress); result.Verdict != Ok {
+		t.Fatalf("verdict %s findings %+v", result.Verdict, result.Findings)
 	}
 }
 

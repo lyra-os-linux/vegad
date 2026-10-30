@@ -75,6 +75,8 @@ type Env struct {
 	Glob            func(string) ([]string, error)
 	LookPath        func(string) (string, error)
 	Readlink        func(string) (string, error)
+	// LogsSeenUntil is the "seen" cutoff of the logs test (zero: none).
+	LogsSeenUntil time.Time
 	// Profile is the vegad profile ("desktop" or "server").
 	Profile string
 	// Statfs reports the size and the space available to root at path.

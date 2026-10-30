@@ -23,6 +23,7 @@ func fakeDiagnostics(t *testing.T, tests map[string]diagnostics.TestFunc) *Diagn
 	t.Cleanup(func() { operations = saved })
 	s := newDiagnosticsService(&Activity{last: time.Now()}, nil)
 	s.store = &diagnosticStore{dir: t.TempDir(), keep: 10}
+	s.seen = logsSeen{path: filepath.Join(s.store.dir, "logs-seen.json")}
 	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
 		return &diagnostics.Env{
 			Locale: locale, BootsBack: bootsBack,
@@ -435,5 +436,97 @@ func TestRepairUsesStoredArgumentsSnapshotsAndRetests(t *testing.T) {
 		t.Fatal("gate held after the repair")
 	} else {
 		release()
+	}
+}
+
+// twoPorts stores job 8 with two exposed ports, each its own finding, and a
+// finding without remedy.
+func twoPorts(t *testing.T, s *DiagnosticsService) {
+	t.Helper()
+	report := &diagnosticReport{Schema: 1, JobID: 8, Started: "now", Host: map[string]string{}, Stages: []diagnostics.StageResult{
+		{ID: "security", Verdict: diagnostics.Attention, Findings: []diagnostics.Finding{
+			{Severity: diagnostics.SeverityAttention, Code: "security.exposed-port", Remedy: "close-port", RemedyArgs: []string{"public|port:8000/tcp"}},
+			{Severity: diagnostics.SeverityAttention, Code: "security.exposed-port", Remedy: "close-port", RemedyArgs: []string{"public|port:9000/tcp"}},
+			{Severity: diagnostics.Info, Code: "security.secure-boot-off"},
+		}},
+		{ID: "logs", Verdict: diagnostics.Attention, Metrics: map[string]any{"examinedUntil": float64(1793316162142129)}, Findings: []diagnostics.Finding{
+			{Severity: diagnostics.SeverityAttention, Code: "logs.coredumps"},
+		}},
+	}}
+	if err := s.store.save(report); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemediesListsFindingsWithAFixByIndex(t *testing.T) {
+	s := fakeDiagnostics(t, nil)
+	twoPorts(t, s)
+	refs, err := s.Remedies(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []RemedyRef{{"security", 0, "close-port"}, {"security", 1, "close-port"}}
+	if len(refs) != 2 || refs[0] != want[0] || refs[1] != want[1] {
+		t.Fatalf("%+v", refs)
+	}
+}
+
+func TestRepairFindingsFixesOnlyTheChosenPort(t *testing.T) {
+	s := fakeDiagnostics(t, map[string]diagnostics.TestFunc{"security": okStage("security")})
+	twoPorts(t, s)
+	var mu sync.Mutex
+	var calls []string
+	s.snapshot = func(_ string, work func() error) error { return work() }
+	base := s.newEnv
+	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
+		env := base(locale, bootsBack)
+		env.Run = func(ctx context.Context, name string, args ...string) ([]byte, int, error) {
+			mu.Lock()
+			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+			mu.Unlock()
+			return nil, 0, nil
+		}
+		return env
+	}
+	if _, err := s.repairFindings(8, []FindingRef{{"security", 0}}); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, s)
+	mu.Lock()
+	defer mu.Unlock()
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "8000/tcp") || strings.Contains(joined, "9000/tcp") {
+		t.Fatalf("calls %v", calls)
+	}
+}
+
+func TestRepairFindingsRefusesBadReferences(t *testing.T) {
+	s := fakeDiagnostics(t, nil)
+	twoPorts(t, s)
+	for _, refs := range [][]FindingRef{nil, {{"security", 99}}, {{"security", 2}}, {{"disk", 0}}, {{"security", 0}, {"security", 0}}} {
+		if _, err := s.repairFindings(8, refs); err == nil || err.Name != BusName+".Error.NotSupported" {
+			t.Errorf("%v: %v", refs, err)
+		}
+	}
+}
+
+func TestMarkLogsSeenStoresTheCutoffAndNeverMovesItBack(t *testing.T) {
+	s := fakeDiagnostics(t, nil)
+	twoPorts(t, s)
+	if err := s.markLogsSeen(8); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.seen.load().UnixMicro(); got != 1793316162142129 {
+		t.Fatalf("cutoff %d", got)
+	}
+	if err := s.seen.save(time.UnixMicro(1)); err != nil || s.seen.load().UnixMicro() != 1793316162142129 {
+		t.Fatalf("cutoff moved back: %v", err)
+	}
+	repairable(t, s) // job 7: logs stage without examinedUntil
+	if err := s.markLogsSeen(7); err == nil || err.Name != BusName+".Error.NotSupported" {
+		t.Fatalf("old report accepted: %v", err)
+	}
+	if ids, _ := s.store.ids(); len(ids) != 2 {
+		t.Fatalf("the cutoff file must not look like a report: %v", ids)
 	}
 }
