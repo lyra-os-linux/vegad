@@ -82,8 +82,6 @@ install -Dm644 packaging/vegad-update-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.service
 install -Dm644 packaging/vegad-update-check.timer \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-update-check.timer
-%{_prefix}/lib/systemd/system/vegad-health-check.service
-%{_prefix}/lib/systemd/system/vegad-health-check.timer
 install -Dm644 packaging/vegad-health-check.service \
   %{buildroot}%{_prefix}/lib/systemd/system/vegad-health-check.service
 install -Dm644 packaging/vegad-health-check.timer \
@@ -143,6 +141,8 @@ install -Dm644 packaging/selinux/vegad_bootloader.pp \
 %{_prefix}/lib/systemd/system/vegad-update-check.service
 %{_prefix}/lib/systemd/system/vegad-update-check.timer
 %{_prefix}/lib/systemd/system/vegad-update-check-retry.timer
+%{_prefix}/lib/systemd/system/vegad-health-check.service
+%{_prefix}/lib/systemd/system/vegad-health-check.timer
 %{_prefix}/lib/systemd/system/vegad-first-update.service
 %{_prefix}/lib/systemd/system/vegad-trusted-keys.service
 %dir %{_sysconfdir}/vega
