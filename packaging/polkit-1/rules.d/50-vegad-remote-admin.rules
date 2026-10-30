@@ -8,8 +8,10 @@
 // na sessão gráfica.
 //
 // Esta regra espelha, para um membro de wheel em sessão não local, o que o
-// desktop já concede ao usuário da sessão ativa: as quatro leituras
-// intermediadas (backup, kernel, snapshots, firewall) em silêncio; o journal
+// desktop já concede ao usuário da sessão ativa: as leituras intermediadas
+// (backup, kernel, snapshots, firewall, o resultado da verificação semanal em
+// hardware.read-admin, a medição de espaço em storage.read-admin e o teste de
+// rede em network.diagnose) em silêncio; o journal
 // (logs.read-admin) com a própria senha, retida como o auth_admin_keep do
 // desktop; e toda ação mutável com a própria senha (AUTH_SELF), sem retenção.
 // Nunca retorna YES para mutações e nunca aceita a conta de serviço vega-web:
@@ -26,7 +28,8 @@ polkit.addRule(function(action, subject) {
         return;
     if (subject.local && subject.active)
         return;
-    if (/^org\.lyraos\.vega\.(backup|kernel|snapshots|firewall)\.read-admin$/.test(action.id))
+    if (/^org\.lyraos\.vega\.(backup|kernel|snapshots|firewall|hardware|storage)\.read-admin$/.test(action.id) ||
+        action.id === "org.lyraos.vega.network.diagnose")
         return polkit.Result.YES;
     if (action.id === "org.lyraos.vega.logs.read-admin")
         return polkit.Result.AUTH_SELF_KEEP;

@@ -43,11 +43,23 @@ if grep -Eq 'AUTH_ADMIN_KEEP' "$rules" ||
   echo "a retained authorization is only allowed for logs.read-admin (desktop parity)" >&2
   exit 1
 fi
+# YES only for the silent reads the desktop session also has: the brokered
+# *.read-admin actions and the network check (add-cli-diagnostics).
+yes_condition="$(grep -B2 -F 'return polkit.Result.YES;' "$rules")"
 if [ "$(grep -c 'polkit.Result.YES' "$rules")" -ne 1 ] ||
-   ! grep -B1 -F 'return polkit.Result.YES;' "$rules" | grep -Fq '(backup|kernel|snapshots|firewall)\.read-admin'; then
-  echo "polkit.Result.YES is only allowed for the four brokered *.read-admin actions" >&2
+   ! printf '%s' "$yes_condition" | grep -Fq '(backup|kernel|snapshots|firewall|hardware|storage)\.read-admin$/.test(action.id) ||' ||
+   ! printf '%s' "$yes_condition" | grep -Fq 'action.id === "org.lyraos.vega.network.diagnose")'; then
+  echo "polkit.Result.YES is only allowed for the brokered *.read-admin actions and network.diagnose" >&2
   exit 1
 fi
+# Every action the rule lets through silently must be silent on the desktop
+# too (allow_active yes): the remote rule may not grant more than that.
+for action in hardware.read-admin storage.read-admin network.diagnose; do
+  awk -v id="org.lyraos.vega.$action" '$0 ~ "action id=\""id"\"" {found=1} found && /<allow_active>/ {print; exit}' packaging/org.lyraos.vega.policy | grep -Fq '<allow_active>yes</allow_active>' || {
+    echo "$action must be allow_active yes before the remote rule makes it silent" >&2
+    exit 1
+  }
+done
 grep -Fq 'polkit-1/rules.d/50-vegad-remote-admin.rules' packaging/vegad.spec
 grep -Fq 'polkit-1/rules.d/50-vegad-remote-admin.rules' packaging/vegad.obs.spec
 grep -Fx 'Name=org.lyraos.Vega1' packaging/org.lyraos.Vega1.service >/dev/null
