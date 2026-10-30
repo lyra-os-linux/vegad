@@ -75,6 +75,9 @@ type Env struct {
 	Glob            func(string) ([]string, error)
 	LookPath        func(string) (string, error)
 	Readlink        func(string) (string, error)
+	// Backups reports the age of each backup configuration (nil: not
+	// checked). Provided by the service, which owns the backup code.
+	Backups func(ctx context.Context) ([]BackupAge, error)
 	// LogsSeenUntil is the "seen" cutoff of the logs test (zero: none).
 	LogsSeenUntil time.Time
 	// Profile is the vegad profile ("desktop" or "server").
@@ -87,6 +90,15 @@ type Env struct {
 	// Sample receives live telemetry during load tests (may be nil).
 	Sample         func(Sample)
 	SampleInterval time.Duration
+}
+
+// BackupAge is the newest backup of one configuration. Last is zero when it
+// never backed up; Disconnected means the destination could not be listed
+// and Last is the last success vegad recorded.
+type BackupAge struct {
+	ID           string
+	Last         time.Time
+	Disconnected bool
 }
 
 // Sample is one telemetry point; nil fields were not measured.

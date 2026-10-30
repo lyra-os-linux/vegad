@@ -58,6 +58,8 @@ type DiagnosticsService struct {
 	snapshot func(action string, work func() error) error
 	// seen is the "seen" cutoff of the logs test (MarkLogsSeen).
 	seen logsSeen
+	// backups feeds the backup check of the platform test; replaced in tests.
+	backups func(ctx context.Context) ([]diagnostics.BackupAge, error)
 
 	mu  sync.Mutex
 	job *runningDiagnostic
@@ -80,6 +82,7 @@ func newDiagnosticsService(activity *Activity, conn *dbus.Conn) *DiagnosticsServ
 		newEnv:   diagnostics.HostEnv,
 		lookup:   diagnostics.Lookup,
 		snapshot: withSnapshots,
+		backups:  backupAges,
 	}
 }
 
@@ -207,6 +210,7 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 	}
 	env := s.newEnv(opts.locale, int(opts.bootsBack))
 	env.LogsSeenUntil = s.seen.load()
+	env.Backups = s.backups
 	if s.profile != "" {
 		env.Profile = s.profile
 	}
@@ -575,6 +579,7 @@ func (s *DiagnosticsService) launchRepair(source *diagnosticReport, plan []plann
 	}
 	env := s.newEnv(locale, 8)
 	env.LogsSeenUntil = s.seen.load()
+	env.Backups = s.backups
 	if s.profile != "" {
 		env.Profile = s.profile
 	}

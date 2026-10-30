@@ -172,5 +172,10 @@
   "diagnostics.progress.repair.dns": "Usando DNS público en {device}",
   "diagnostics.summary.repair.reconnect": "{device} reconectado",
   "diagnostics.summary.repair.dhcp": "Nueva dirección pedida en {device}",
-  "diagnostics.summary.repair.dns": "DNS público (1.1.1.1 y 9.9.9.9) solo en esta conexión de {device}"
+  "diagnostics.summary.repair.dns": "DNS público (1.1.1.1 y 9.9.9.9) solo en esta conexión de {device}",
+  "diagnostics.progress.platform.backup": "Comprobando la última copia de seguridad",
+  "diagnostics.finding.backup.none": "No hay ninguna copia de seguridad configurada en Vega",
+  "diagnostics.finding.backup.stale": "La última copia de seguridad fue hace {days} días",
+  "diagnostics.finding.backup.stale-never": "La copia de seguridad está configurada, pero aún no se hizo ninguna",
+  "diagnostics.finding.backup.stale-disconnected": "La última copia conocida fue hace {days} días, y el disco de copias no está conectado"
 }

@@ -24,6 +24,7 @@ func fakeDiagnostics(t *testing.T, tests map[string]diagnostics.TestFunc) *Diagn
 	s := newDiagnosticsService(&Activity{last: time.Now()}, nil)
 	s.store = &diagnosticStore{dir: t.TempDir(), keep: 10}
 	s.seen = logsSeen{path: filepath.Join(s.store.dir, "logs-seen.json")}
+	s.backups = nil
 	s.newEnv = func(locale string, bootsBack int) *diagnostics.Env {
 		return &diagnostics.Env{
 			Locale: locale, BootsBack: bootsBack,

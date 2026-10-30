@@ -172,5 +172,10 @@
   "diagnostics.progress.repair.dns": "Using public DNS on {device}",
   "diagnostics.summary.repair.reconnect": "{device} reconnected",
   "diagnostics.summary.repair.dhcp": "New address requested on {device}",
-  "diagnostics.summary.repair.dns": "Public DNS (1.1.1.1 and 9.9.9.9) for this connection of {device} only"
+  "diagnostics.summary.repair.dns": "Public DNS (1.1.1.1 and 9.9.9.9) for this connection of {device} only",
+  "diagnostics.progress.platform.backup": "Checking the last backup",
+  "diagnostics.finding.backup.none": "No backup is set up in Vega",
+  "diagnostics.finding.backup.stale": "The last backup was {days} days ago",
+  "diagnostics.finding.backup.stale-never": "Backup is set up, but none has run yet",
+  "diagnostics.finding.backup.stale-disconnected": "The last known backup was {days} days ago, and the backup disk is not connected"
 }
