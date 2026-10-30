@@ -279,6 +279,16 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.network.diagnose">
+    <description>Check why the internet connection does not work</description>
+    <description xml:lang="pt_BR">Verificar por que a conexão com a internet não funciona</description>
+    <description xml:lang="es">Comprobar por qué la conexión a internet no funciona</description>
+    <message>Checking the network is not allowed for this session</message>
+    <message xml:lang="pt_BR">Esta sessão não pode verificar a rede</message>
+    <message xml:lang="es">Esta sesión no puede comprobar la red</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+  </action>
+
   <action id="org.lyraos.vega.hardware.repair">
     <description>Repair problems found by the health diagnostics</description>
     <description xml:lang="pt_BR">Corrigir problemas encontrados pelo diagnóstico de saúde</description>

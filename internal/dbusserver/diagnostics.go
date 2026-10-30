@@ -151,9 +151,37 @@ func parseDiagnosticOptions(options map[string]dbus.Variant) (diagnosticOptions,
 	return parsed, nil
 }
 
+// networkDiagnoseAction lets the active session run, cancel and read the
+// network test alone without a password ("Minha internet não funciona"):
+// it only reads NetworkManager's state. Fixing still needs hardware.repair.
+const networkDiagnoseAction = "org.lyraos.vega.network.diagnose"
+
+// networkOnly reports whether a job's stages are just the network test
+// (and, for a repair job, the network remedies).
+func networkOnly(stages []string) bool {
+	if len(stages) == 0 {
+		return false
+	}
+	for _, id := range stages {
+		switch id {
+		case "network", "repair:reconnect", "repair:renew-dhcp", "repair:temporary-dns":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func actionFor(stages []string) string {
+	if networkOnly(stages) {
+		return networkDiagnoseAction
+	}
+	return diagnosticsAction
+}
+
 func (s *DiagnosticsService) Start(sender dbus.Sender, tests []string, options map[string]dbus.Variant) (uint32, *dbus.Error) {
 	s.activity.Touch()
-	if err := requirePolkit(sender, diagnosticsAction); err != nil {
+	if err := requirePolkit(sender, actionFor(tests)); err != nil {
 		return 0, err
 	}
 	return s.start(tests, options)
@@ -227,7 +255,13 @@ func (s *DiagnosticsService) start(tests []string, options map[string]dbus.Varia
 
 func (s *DiagnosticsService) Cancel(sender dbus.Sender, jobID uint32) *dbus.Error {
 	s.activity.Touch()
-	if err := requirePolkit(sender, diagnosticsAction); err != nil {
+	s.mu.Lock()
+	var stages []string
+	if s.job != nil && s.job.id == jobID {
+		stages = append(stages, s.job.tests...)
+	}
+	s.mu.Unlock()
+	if err := requirePolkit(sender, actionFor(stages)); err != nil {
 		return err
 	}
 	s.cancel(jobID)
@@ -244,7 +278,18 @@ func (s *DiagnosticsService) cancel(jobID uint32) {
 
 func (s *DiagnosticsService) Report(sender dbus.Sender, jobID uint32, redact bool) (string, *dbus.Error) {
 	s.activity.Touch()
-	if err := requirePolkit(sender, "org.lyraos.vega.logs.read-admin"); err != nil {
+	// A report of the network test alone holds no journal excerpt.
+	action := "org.lyraos.vega.logs.read-admin"
+	if source, err := s.store.loadReport(jobID); err == nil {
+		ids := make([]string, 0, len(source.Stages))
+		for _, stage := range source.Stages {
+			ids = append(ids, stage.ID)
+		}
+		if networkOnly(ids) {
+			action = networkDiagnoseAction
+		}
+	}
+	if err := requirePolkit(sender, action); err != nil {
 		return "", err
 	}
 	return s.report(jobID, redact)
@@ -551,7 +596,7 @@ func (s *DiagnosticsService) runRepair(ctx context.Context, job *runningDiagnost
 	report := s.newReport(job, env)
 	report.RepairOf = of
 	s.save(report)
-	_ = s.snapshot(fmt.Sprintf("Vega: reparo do diagnóstico %d", of), func() error {
+	apply := func() error {
 		for _, p := range plan {
 			p := p
 			s.stage(ctx, job, env, report, "repair:"+p.remedy.ID, 15*time.Minute, true, "", func(ctx context.Context, progress diagnostics.Progress) diagnostics.StageResult {
@@ -559,7 +604,18 @@ func (s *DiagnosticsService) runRepair(ctx context.Context, job *runningDiagnost
 			})
 		}
 		return nil
-	})
+	}
+	// Network fixes change NetworkManager's runtime state, not files: a
+	// snapshot would restore nothing.
+	needsSnapshot := false
+	for _, p := range plan {
+		needsSnapshot = needsSnapshot || !p.remedy.NoSnapshot
+	}
+	if needsSnapshot {
+		_ = s.snapshot(fmt.Sprintf("Vega: reparo do diagnóstico %d", of), apply)
+	} else {
+		_ = apply()
+	}
 	// The tests run again to say whether the problems are gone.
 	for _, id := range retests {
 		s.testStage(ctx, job, env, report, id)

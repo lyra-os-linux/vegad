@@ -15,6 +15,9 @@ type Remedy struct {
 	// Retest is the test that runs again to confirm the fix.
 	Retest string
 	Run    func(ctx context.Context, env *Env, args []string, progress Progress) StageResult
+	// NoSnapshot: the fix touches no file a snapshot could restore (network
+	// settings live in NetworkManager's runtime state).
+	NoSnapshot bool
 }
 
 // Remedies are the contract's remedy ids, in the order Repair applies them:
@@ -27,6 +30,9 @@ var Remedies = []Remedy{
 	{ID: "enable-firewall", Retest: "security", Run: enableFirewall},
 	{ID: "close-port", Retest: "security", Run: closePorts},
 	{ID: "apply-security-patches", Retest: "security", Run: applySecurityPatches},
+	{ID: "reconnect", Retest: "network", Run: reconnect, NoSnapshot: true},
+	{ID: "renew-dhcp", Retest: "network", Run: renewDHCP, NoSnapshot: true},
+	{ID: "temporary-dns", Retest: "network", Run: temporaryDNSFix, NoSnapshot: true},
 }
 
 // LookupRemedy returns the remedy with id.

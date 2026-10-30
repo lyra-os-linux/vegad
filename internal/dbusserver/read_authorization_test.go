@@ -107,6 +107,12 @@ func TestDesktopReadPolicyDoesNotAuthorizeMutations(t *testing.T) {
 			if action.Defaults.Active != "yes" || action.Defaults.Any != "no" || action.Defaults.Inactive != "no" {
 				t.Errorf("desktop reads must be silent and limited to active sessions: %s", action.ID)
 			}
+		} else if action.ID == networkDiagnoseAction {
+			// Runs and reads only the network test, a read of NetworkManager's
+			// state; checked inside Diagnostics.Start/Cancel/Report.
+			if action.Defaults.Active != "yes" || action.Defaults.Any != "no" || action.Defaults.Inactive != "no" {
+				t.Errorf("the network check must be silent and limited to active sessions: %s", action.ID)
+			}
 		} else if action.Defaults.Active == "yes" || action.Defaults.Any == "yes" || action.Defaults.Inactive == "yes" {
 			t.Errorf("administrative authorization was weakened: %s", action.ID)
 		}

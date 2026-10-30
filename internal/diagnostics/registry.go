@@ -52,6 +52,7 @@ var Tests = []Test{
 	{ID: "logs", Tools: []Tool{{"journalctl", "systemd"}}, EstimatedSeconds: 20, Run: runLogs},
 	{ID: "platform", EstimatedSeconds: 30, Run: runPlatform},
 	{ID: "security", Tools: []Tool{{"ss", "iproute2"}}, EstimatedSeconds: 20, Run: runSecurity},
+	{ID: "network", Tools: []Tool{{"nmcli", "NetworkManager"}, {"ip", "iproute2"}, {"getent", "glibc"}}, EstimatedSeconds: 15, Run: runNetwork},
 	{ID: "fs-scrub", Tools: []Tool{{"btrfs", "btrfsprogs"}}, EstimatedSeconds: 120, NeedsBtrfs: true, Run: runScrub, Estimate: scrubEstimate},
 	{ID: "cpu-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runCPUStress, Estimate: stressEstimate},
 	{ID: "memory-stress", Tools: []Tool{{"stress-ng", "stress-ng"}}, EstimatedSeconds: 240, RequiresAC: true, Run: runMemoryStress, Estimate: stressEstimate, Preflight: memoryPreflight},

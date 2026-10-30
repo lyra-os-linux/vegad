@@ -286,7 +286,7 @@ func TestListTestsReportsEveryContractTest(t *testing.T) {
 	for _, test := range tests {
 		got[test.Id] = test
 	}
-	want := []string{"packages", "disk-health", "fs-scrub", "cpu-stress", "memory-stress", "disk-bench", "logs", "platform", "security"}
+	want := []string{"packages", "disk-health", "fs-scrub", "cpu-stress", "memory-stress", "disk-bench", "logs", "platform", "security", "network"}
 	if len(got) != len(want) {
 		t.Fatalf("tests %+v", tests)
 	}
@@ -528,5 +528,23 @@ func TestMarkLogsSeenStoresTheCutoffAndNeverMovesItBack(t *testing.T) {
 	}
 	if ids, _ := s.store.ids(); len(ids) != 2 {
 		t.Fatalf("the cutoff file must not look like a report: %v", ids)
+	}
+}
+
+func TestNetworkTestAloneUsesTheSilentAction(t *testing.T) {
+	cases := map[string]struct {
+		stages []string
+		action string
+	}{
+		"network alone":     {[]string{"network"}, networkDiagnoseAction},
+		"network repair":    {[]string{"repair:temporary-dns", "network"}, networkDiagnoseAction},
+		"with another test": {[]string{"network", "logs"}, diagnosticsAction},
+		"another repair":    {[]string{"repair:close-port", "network"}, diagnosticsAction},
+		"nothing (no job)":  {nil, diagnosticsAction},
+	}
+	for name, tc := range cases {
+		if got := actionFor(tc.stages); got != tc.action {
+			t.Errorf("%s: %s", name, got)
+		}
 	}
 }
