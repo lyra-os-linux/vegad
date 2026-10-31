@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os/exec"
 	"path"
 	"sort"
 	"strconv"
@@ -112,6 +113,20 @@ func xmlAttr(t xml.StartElement, local string) string {
 // process's own exit code remains the authoritative success/failure
 // signal, checked by the caller after Wait()).
 func parseZypperXMLStream(r io.Reader, report ProgressFunc, pkgReport PackageProgressFunc) error {
+	return parseZypperXMLStreamMessages(r, report, pkgReport, nil)
+}
+
+// zypperXMLMessages keeps the <message type="error|warning"> texts of a
+// --xmlout stream. With --xmlout zypper writes its diagnostics there, not to
+// stderr, so they are the only explanation a failed transaction has.
+type zypperXMLMessages struct {
+	Errors   []string
+	Warnings []string
+}
+
+// parseZypperXMLStreamMessages is parseZypperXMLStream that also collects
+// error and warning messages into messages (when not nil).
+func parseZypperXMLStreamMessages(r io.Reader, report ProgressFunc, pkgReport PackageProgressFunc, messages *zypperXMLMessages) error {
 	if report == nil {
 		report = func(uint32, string) {}
 	}
@@ -122,6 +137,7 @@ func parseZypperXMLStream(r io.Reader, report ProgressFunc, pkgReport PackagePro
 	state := &xmlProgressState{}
 	dec := xml.NewDecoder(r)
 	inMessage := false
+	messageType := ""
 	var messageText strings.Builder
 
 	for {
@@ -150,6 +166,7 @@ func parseZypperXMLStream(r io.Reader, report ProgressFunc, pkgReport PackagePro
 				handleZypperProgress(t, state, report, pkgReport)
 			case "message":
 				inMessage = true
+				messageType = xmlAttr(t, "type")
 				messageText.Reset()
 			}
 		case xml.CharData:
@@ -162,6 +179,14 @@ func parseZypperXMLStream(r io.Reader, report ProgressFunc, pkgReport PackagePro
 				if text := strings.TrimSpace(messageText.String()); text != "" {
 					state.lastMessage = text
 					report(state.overall(), text)
+					if messages != nil {
+						switch messageType {
+						case "error":
+							messages.Errors = append(messages.Errors, text)
+						case "warning":
+							messages.Warnings = append(messages.Warnings, text)
+						}
+					}
 				}
 			}
 		}
@@ -212,6 +237,42 @@ func handleZypperProgress(t xml.StartElement, state *xmlProgressState, report Pr
 	}
 }
 
+// Informational zypper exit statuses for a transaction that did apply:
+// 102 (ZYPPER_EXIT_INF_REBOOT_NEEDED), 103 (ZYPPER_EXIT_INF_RESTART_NEEDED,
+// zypper updated itself) and 106 (ZYPPER_EXIT_INF_REPOS_SKIPPED: an enabled
+// repository could not be refreshed, for example one whose key was never
+// trusted, and the rest were used). Had the requested package lived only in
+// a skipped repository, zypper would exit 104 instead.
+var zypperTransactionInformational = map[int]string{
+	102:                    "reinicialização necessária",
+	103:                    "o zypper foi atualizado",
+	zypperExitReposSkipped: "repositórios ignorados",
+}
+
+// zypperTransactionError turns the zypper exit into the transaction error:
+// nil for success and the informational statuses (logged with zypper's
+// warnings), otherwise the exit status with zypper's own explanation —
+// stderr when present, else the <message type="error"> texts.
+func zypperTransactionError(waitErr error, stderr string, messages zypperXMLMessages) error {
+	if waitErr == nil {
+		return nil
+	}
+	if exit, ok := waitErr.(*exec.ExitError); ok {
+		if why, informational := zypperTransactionInformational[exit.ExitCode()]; informational {
+			zypperWarnf("vegad: zypper concluiu com status %d (%s): %s", exit.ExitCode(), why, strings.Join(messages.Warnings, " | "))
+			return nil
+		}
+	}
+	detail := strings.TrimSpace(stderr)
+	if detail == "" {
+		detail = strings.Join(messages.Errors, " | ")
+	}
+	if detail == "" {
+		return fmt.Errorf("falha ao processar pacotes: %w", waitErr)
+	}
+	return fmt.Errorf("falha ao processar pacotes: %w — %s", waitErr, detail)
+}
+
 // runZypperTransactionXML runs zypper --xmlout <args...>, streaming its
 // output through parseZypperXMLStream for real per-package progress
 // instead of runStreamingCommand's coarse per-line guess. Unlike
@@ -234,11 +295,12 @@ func runZypperTransactionXML(args []string, report ProgressFunc, pkgReport Packa
 		return err
 	}
 
-	parseErr := parseZypperXMLStream(stdout, report, pkgReport)
+	var messages zypperXMLMessages
+	parseErr := parseZypperXMLStreamMessages(stdout, report, pkgReport, &messages)
 	waitErr := cmd.Wait()
 
-	if waitErr != nil {
-		return fmt.Errorf("falha ao processar pacotes: %w — %s", waitErr, strings.TrimSpace(stderrBuf.String()))
+	if err := zypperTransactionError(waitErr, stderrBuf.String(), messages); err != nil {
+		return err
 	}
 	if parseErr != nil {
 		return fmt.Errorf("falha ao processar pacotes: %w", parseErr)

@@ -335,7 +335,9 @@ func (s *SoftwareService) Remove(sender dbus.Sender, origin, id string) (uint32,
 			scope = app.Scope
 		}
 		if scope == "system" {
-			if err := requirePolkit(sender, "org.lyraos.vega.software.remove"); err != nil {
+			// Ação própria (auth_admin_keep), como a app-uninstall do
+			// Flatpak; pacotes do sistema continuam em software.remove.
+			if err := requirePolkit(sender, "org.lyraos.vega.software.remove-flatpak"); err != nil {
 				return 0, err
 			}
 		}

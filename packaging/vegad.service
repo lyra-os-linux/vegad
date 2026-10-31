@@ -17,9 +17,13 @@ EnvironmentFile=-/etc/vega/vegad.conf
 # NoNewPrivileges to the query workers and log exporter, not the entire
 # coordinator. A root process can still change UID with NoNewPrivileges;
 # that setting alone is not a substitute for dropping UID and capabilities.
+# Sem ProtectKernelTunables: apps do Flathub com extra-data (Zoom, Spotify,
+# Slack, Dropbox, AnyDesk...) rodam o script apply_extra dentro do bwrap, que
+# escreve em /proc/sys/user/max_user_namespaces no próprio namespace (flatpak
+# --disable-userns). Com /proc/sys só leitura a instalação falha com "script
+# apply_extra falhou". ReadWritePaths não resolve: o bwrap monta outro /proc.
 PrivateTmp=true
 ProtectControlGroups=true
-ProtectKernelTunables=true
 ProtectKernelLogs=true
 ProtectClock=true
 ProtectHostname=true
