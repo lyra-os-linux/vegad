@@ -3,6 +3,7 @@ package profile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -86,5 +87,15 @@ func TestInvalidProfileFails(t *testing.T) {
 func TestCapabilities(t *testing.T) {
 	if !Desktop.Has("flatpak") || Server.Has("flatpak") || !Server.Has("packages-native") {
 		t.Fatal("profile capability matrix is inconsistent")
+	}
+}
+
+func TestCapabilitiesHaveNoNvidia(t *testing.T) {
+	for _, p := range []Profile{Desktop, Server} {
+		for _, capability := range p.Capabilities() {
+			if strings.HasPrefix(capability, "nvidia-") {
+				t.Fatalf("profile %s still announces %s", p, capability)
+			}
+		}
 	}
 }

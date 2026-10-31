@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -14,7 +13,6 @@ import (
 	"syscall"
 
 	"github.com/lyraos/vegad/internal/dbusserver"
-	"github.com/lyraos/vegad/internal/nvidiarecovery"
 	"github.com/lyraos/vegad/internal/profile"
 	"github.com/lyraos/vegad/internal/version"
 )
@@ -52,23 +50,6 @@ func ensureSystemPATH() {
 
 func main() {
 	ensureSystemPATH()
-	if len(os.Args) >= 2 && os.Args[1] == "nvidia-recover" {
-		flags := flag.NewFlagSet("nvidia-recover", flag.ExitOnError)
-		target := flags.String("target", "", "mounted original ext4 root in a rescue system")
-		reference := flags.String("reference", "", "recovery reference reported by Vega")
-		confirm := flags.Bool("confirm", false, "confirm offline OS restoration; service data and ESP are excluded")
-		if err := flags.Parse(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-		if flags.NArg() != 0 {
-			log.Fatal("unexpected recovery arguments")
-		}
-		if err := nvidiarecovery.RestoreOffline(*target, *reference, *confirm); err != nil {
-			log.Fatalf("NVIDIA recovery failed: %v", err)
-		}
-		log.Print("NVIDIA offline recovery verified; review the system before rebooting")
-		return
-	}
 	activeProfile, profileSource, err := profile.Load(profile.DefaultConfigPath)
 	if err != nil {
 		log.Fatalf("vegad: carregar perfil: %v", err)
@@ -143,11 +124,6 @@ func main() {
 	}
 
 	log.Printf("vegad %s starting", version.Version)
-	if os.Geteuid() == 0 {
-		if err := dbusserver.ReconcileNvidiaSuspendPolicy(); err != nil {
-			log.Printf("vegad: não foi possível reconciliar a política de suspensão NVIDIA: %v", err)
-		}
-	}
 
 	srv, err := dbusserver.New(activeProfile)
 	if err != nil {

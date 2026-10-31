@@ -46,6 +46,13 @@ func (systemFirmwareRunner) Output(name string, args ...string) (string, error) 
 	return text, nil
 }
 
+func outputSuffix(text string) string {
+	if text == "" {
+		return ""
+	}
+	return ": " + text
+}
+
 type firmwareManager struct{ run firmwareRunner }
 
 func newFirmwareManager() firmwareManager { return firmwareManager{run: systemFirmwareRunner{}} }

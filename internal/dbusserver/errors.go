@@ -10,6 +10,14 @@ func driverManagementRemoved() *dbus.Error {
 	})
 }
 
+// nvidiaIntegrationRemoved answers the retired NVIDIA methods; see
+// retired_nvidia_methods.go.
+func nvidiaIntegrationRemoved() *dbus.Error {
+	return dbus.NewError("org.freedesktop.DBus.Error.NotSupported", []interface{}{
+		"A integração NVIDIA foi removida do Vega; siga o procedimento oficial do openSUSE.",
+	})
+}
+
 // errNotImplemented marks a method that exists on the interface per the
 // spec but whose backend (libalpm/snapper/restic/etc. orchestration) isn't
 // wired up yet in this scaffold.

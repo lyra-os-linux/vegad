@@ -177,30 +177,25 @@ func TestNativeQueryNeverWritesSharedUpdateState(t *testing.T) {
 	}
 }
 
-func TestNvidiaWorkersCanReadModuleFilesWithoutModulePrivileges(t *testing.T) {
+func TestQueryWorkersAlwaysMaskKernelModules(t *testing.T) {
+	// The retired NVIDIA diagnostics were the only exception; no worker may
+	// see module files or lose the module syscall protection.
 	caller := &desktopUser{Uid: 1001, Gid: 1001, HomeDir: "/home/alice", RuntimeDir: "/run/user/1001"}
-	for _, tc := range []struct {
-		iface, method string
-		readModules   bool
-	}{
-		{"Software", "NvidiaStatus", true}, {"Software", "CheckNvidia", true},
-		{"Software", "ListInstalled", false}, {"Hardware", "Inventory", false}, {"Unknown", "NvidiaStatus", false},
+	for _, tc := range []struct{ iface, method string }{
+		{"Software", "NvidiaStatus"}, {"Software", "CheckNvidia"},
+		{"Software", "ListInstalled"}, {"Hardware", "Inventory"},
 	} {
 		cmd, err := queryCommand(context.Background(), caller, false, profile.Desktop, queryRequest{Interface: tc.iface, Method: tc.method})
 		if err != nil {
 			t.Fatal(err)
 		}
 		args := strings.Join(cmd.Args, "\n")
-		for _, required := range []string{"User=1001", "Group=1001", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "ProtectSystem=strict"} {
+		for _, required := range []string{"User=1001", "Group=1001", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "ProtectSystem=strict", "ProtectKernelModules=yes"} {
 			if !strings.Contains(args, required) {
-				t.Fatalf("lost %s", required)
+				t.Fatalf("%s.%s lost %s", tc.iface, tc.method, required)
 			}
 		}
-		if tc.readModules {
-			if !strings.Contains(args, "ProtectKernelModules=no") || !strings.Contains(args, "SystemCallFilter=~@module") || strings.Contains(args, "ProtectKernelModules=yes") {
-				t.Fatal(args)
-			}
-		} else if !strings.Contains(args, "ProtectKernelModules=yes") || strings.Contains(args, "ProtectKernelModules=no") {
+		if strings.Contains(args, "ProtectKernelModules=no") {
 			t.Fatal(args)
 		}
 	}
