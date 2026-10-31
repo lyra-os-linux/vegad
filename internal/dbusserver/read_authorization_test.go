@@ -153,6 +153,43 @@ func TestSoftwareInstallKeepsAdministratorAuthorization(t *testing.T) {
 	t.Fatal("software.install action not found")
 }
 
+// Removing a system-wide Flatpak keeps the password for a few minutes, like
+// Flatpak's own app-uninstall action, while removing system packages still
+// asks every time.
+func TestSoftwareRemoveFlatpakKeepsAuthorizationButPackagesDoNot(t *testing.T) {
+	data, err := os.ReadFile("../../packaging/org.lyraos.vega.policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Actions []struct {
+			ID     string `xml:"id,attr"`
+			Any    string `xml:"defaults>allow_any"`
+			Active string `xml:"defaults>allow_active"`
+		} `xml:"action"`
+	}
+	if err := xml.Unmarshal(data, &policy); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"org.lyraos.vega.software.remove":         "auth_admin",
+		"org.lyraos.vega.software.remove-flatpak": "auth_admin_keep",
+	}
+	for _, action := range policy.Actions {
+		expected, ok := want[action.ID]
+		if !ok {
+			continue
+		}
+		if action.Active != expected || action.Any != "no" {
+			t.Fatalf("%s must be allow_any=no, allow_active=%s; got %q, %q", action.ID, expected, action.Any, action.Active)
+		}
+		delete(want, action.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing actions: %v", want)
+	}
+}
+
 func TestWifiListingDoesNotRequestScanAuthorization(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)

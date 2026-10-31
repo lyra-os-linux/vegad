@@ -1,6 +1,9 @@
 package distro
 
 import (
+	"fmt"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -190,5 +193,61 @@ func TestParseZypperXMLStreamMalformedXMLReturnsError(t *testing.T) {
 	pkgReport := func(string, PackagePhase, uint32) {}
 	if err := parseZypperXMLStream(strings.NewReader(malformed), report, pkgReport); err == nil {
 		t.Fatalf("expected an error for malformed/truncated XML")
+	}
+}
+
+func exitWith(t *testing.T, code int) error {
+	t.Helper()
+	err := exec.Command("/bin/sh", "-c", "exit "+strconv.Itoa(code)).Run()
+	if err == nil {
+		t.Fatalf("exit %d did not fail", code)
+	}
+	return err
+}
+
+// A transaction that applied but skipped an untrusted repository (106), or
+// asks for a reboot (102) or a zypper restart (103), is a success; the
+// dotnet-sdk install that reported "falhou" with status 106 had installed.
+func TestZypperTransactionInformationalExitsSucceed(t *testing.T) {
+	warned := ""
+	previous := zypperWarnf
+	zypperWarnf = func(format string, args ...any) { warned = fmt.Sprintf(format, args...) }
+	defer func() { zypperWarnf = previous }()
+	for _, code := range []int{102, 103, 106} {
+		messages := zypperXMLMessages{Warnings: []string{"Skipping repository 'code' because of the above error."}}
+		if err := zypperTransactionError(exitWith(t, code), "", messages); err != nil {
+			t.Fatalf("status %d: %v", code, err)
+		}
+	}
+	if !strings.Contains(warned, "Skipping repository 'code'") {
+		t.Fatalf("skipped repositories were not logged: %q", warned)
+	}
+}
+
+// With --xmlout zypper explains failures in <message type="error">, not on
+// stderr; the error must carry that text instead of ending in an empty "—".
+func TestZypperTransactionErrorUsesXMLMessages(t *testing.T) {
+	stream := `<?xml version="1.0"?>
+<stream>
+<message type="info">Loading repository data...</message>
+<message type="error">Problem: the installed rust1.98 conflicts with 'rust+rustc' provided by rustup</message>
+<message type="warning">Skipping repository 'code' because of the above error.</message>
+</stream>`
+	var messages zypperXMLMessages
+	if err := parseZypperXMLStreamMessages(strings.NewReader(stream), nil, nil, &messages); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages.Errors) != 1 || len(messages.Warnings) != 1 {
+		t.Fatalf("messages = %+v", messages)
+	}
+	err := zypperTransactionError(exitWith(t, 4), "  ", messages)
+	if err == nil || !strings.Contains(err.Error(), "conflicts with 'rust+rustc'") {
+		t.Fatalf("error = %v", err)
+	}
+	if err := zypperTransactionError(exitWith(t, 4), "lock held by PID 42", messages); err == nil || !strings.Contains(err.Error(), "lock held") {
+		t.Fatalf("stderr must win when present: %v", err)
+	}
+	if err := zypperTransactionError(exitWith(t, 104), "", zypperXMLMessages{}); err == nil {
+		t.Fatal("104 (package not found) must stay a failure")
 	}
 }

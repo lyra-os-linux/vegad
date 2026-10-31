@@ -32,6 +32,19 @@
     </defaults>
   </action>
 
+  <!-- Flatpak do sistema: como a regra do próprio Flatpak (app-uninstall),
+       a senha fica retida por alguns minutos para remover vários apps em
+       seguida. Pacotes do sistema seguem em software.remove (auth_admin). -->
+  <action id="org.lyraos.vega.software.remove-flatpak">
+    <description>Remover aplicativos Flatpak do sistema</description>
+    <message>Autenticação é necessária para remover aplicativos Flatpak</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.lyraos.vega.software.update">
     <description>Atualizar todos os pacotes</description>
     <message>Autenticação é necessária para atualizar o sistema</message>
