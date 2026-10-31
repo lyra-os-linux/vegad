@@ -51,11 +51,34 @@ Em sessões remotas (SSH, vega-web), a regra polkit
 ações administrativas e libera em silêncio as leituras `*.read-admin`; ver
 `privilege-boundaries.md`.
 
-Desktop e Server anunciam `nvidia-official-v1`, `nvidia-recovery-v1` e
-`diagnostics-v1` (testes de saúde, vegad#98) e `diagnostics-v2` (reparo dos
-achados consertáveis), `diagnostics-v3` (teste de segurança) e
-`network-exposure-v1` (`Firewall.ListListening`). No Server, SSH e a porta
-9090 são exposições esperadas.
-Consultas continuam públicas. A instalação exige confirmação e recuperação
-verificada: Snapper no Btrfs; Restic e restauração offline no layout Server/ext4
-simples. Outros layouts são recusados. Ver [NVIDIA](nvidia.md).
+Desktop e Server anunciam `diagnostics-v1` (testes de saúde, vegad#98) e
+`diagnostics-v2` (reparo dos achados consertáveis), `diagnostics-v3` (teste de
+segurança) e `network-exposure-v1` (`Firewall.ListListening`). No Server, SSH e
+a porta 9090 são exposições esperadas.
+
+## NVIDIA (removida na 5.7.0)
+
+O Vega não instala, diagnostica nem recupera mais o driver NVIDIA
+(lyra-ecosystem#50). `InstallNvidia`, `NvidiaStatus`, `NvidiaRecovery`,
+`CheckNvidia` e `SwitchNvidiaDriver` continuam no barramento só por
+compatibilidade e respondem `org.freedesktop.DBus.Error.NotSupported`; nenhum
+perfil anuncia `nvidia-official-v1` nem `nvidia-recovery-v1`. Para instalar o
+driver, siga o procedimento oficial do openSUSE.
+
+A atualização não apaga nada do que versões anteriores criaram. Esses arquivos
+passam a ser do administrador, que pode removê-los se quiser:
+
+- `/etc/systemd/sleep.conf.d/90-lyra-nvidia-quarantine.conf`: quarentena de
+  suspensão (só em notebook híbrido com a 580.159.03). Começa com
+  `# Managed by Vega`. Para liberar a suspensão:
+  `sudo rm /etc/systemd/sleep.conf.d/90-lyra-nvidia-quarantine.conf && sudo systemctl daemon-reload`.
+- `/var/lib/vegad-nvidia/`: registro da recuperação (`recovery`,
+  `recovery.json`) e, no Server/ext4, os pontos Restic em `points/REFERÊNCIA`
+  (repositório, chave e manifesto). Um ponto ainda pode ser restaurado à mão
+  com o `restic`; quando não precisar mais, `sudo rm -rf /var/lib/vegad-nvidia`.
+  No Btrfs, o ponto é um snapshot do Snapper (`Before Lyra NVIDIA
+  installation`), removível pelo Vega ou com `snapper delete`.
+- `/etc/zypp/repos.d/lyra-nvidia.repo`: repositório OBS da integração. O
+  canal oficial `lyra-nvidia-upstream.repo` e
+  `/usr/lib/modprobe.d/60-lyra-nvidia-pm.conf` pertencem ao pacote
+  `lyra-nvidia`, que tem a própria versão de transição.

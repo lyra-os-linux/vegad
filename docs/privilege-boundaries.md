@@ -220,9 +220,10 @@ that the complete Vega domain is enforcing or that a new ISO has been tested.
 References: [Zypper return codes](https://manpages.opensuse.org/Tumbleweed/zypper/zypper.8.en.html),
 [systemd execution properties](https://github.com/systemd/systemd/blob/v257/man/systemd.exec.xml).
 
-`Software.InstallNvidia` is an explicitly confirmed administrative operation
-under `software.install`; see [NVIDIA integration](nvidia.md). Status and checks
-remain public worker queries and never reconcile suspend policy.
+The retired NVIDIA methods (`Software.InstallNvidia`, `NvidiaStatus`,
+`NvidiaRecovery`, `CheckNvidia` and `Hardware.SwitchNvidiaDriver`) are disabled
+operations: they answer `NotSupported` before Polkit or a query worker. No query
+worker is exempt from `ProtectKernelModules=yes`.
 
 ## Health diagnostics
 

@@ -21,8 +21,9 @@ inicial dos repositórios (chaves fixadas e `zypper refresh`) feita uma vez no
 primeiro boot do Lyra OS Desktop instalado, além da manutenção independente
 das chaves autorizadas no boot e após upgrades do vegad.
 
-A integração opcional do driver NVIDIA oficial está documentada em
-[`docs/nvidia.md`](docs/nvidia.md).
+A integração NVIDIA saiu do Vega na 5.7.0; os métodos antigos respondem
+`NotSupported`. O que fica nas máquinas que já a usaram está em
+[`docs/vegad-profiles.md`](docs/vegad-profiles.md#nvidia-removida-na-570).
 
 ## Build
 
