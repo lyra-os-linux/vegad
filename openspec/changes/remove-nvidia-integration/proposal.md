@@ -20,7 +20,8 @@ Este repositório deixa de instalar, diagnosticar e recuperar a pilha NVIDIA:
 
 Ficam: o uso da GPU pelo `nvidia-smi` no monitor, a menção a módulos NVIDIA
 como esperados no teste `platform`, a detecção genérica da GPU no inventário e
-`packaging/lyra-nvidia/` (versão de transição tratada à parte, tarefa 5.1).
+`packaging/lyra-nvidia/` até a decisão sobre o pacote; ele foi descontinuado e
+removido em 31/10/2026 (migração manual na Discussion #234).
 
 A atualização não apaga os arquivos que versões anteriores criaram; a lista e
 como removê-los estão em `docs/vegad-profiles.md`.
