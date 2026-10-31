@@ -79,6 +79,7 @@ passam a ser do administrador, que pode removê-los se quiser:
   No Btrfs, o ponto é um snapshot do Snapper (`Before Lyra NVIDIA
   installation`), removível pelo Vega ou com `snapper delete`.
 - `/etc/zypp/repos.d/lyra-nvidia.repo`: repositório OBS da integração. O
-  canal oficial `lyra-nvidia-upstream.repo` e
-  `/usr/lib/modprobe.d/60-lyra-nvidia-pm.conf` pertencem ao pacote
-  `lyra-nvidia`, que tem a própria versão de transição.
+  pacote `lyra-nvidia` e o projeto OBS `home:rodrigosbrito:nvidia` foram
+  descontinuados; a migração para os pacotes oficiais (que remove esse
+  repositório, o pacote e o canal CUDA `lyra-nvidia-upstream.repo`) está na
+  [Discussion #234](https://github.com/lyra-os-linux/lyraos-desktop/discussions/234).
