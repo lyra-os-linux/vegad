@@ -854,18 +854,29 @@ func (s *SoftwareService) AddRepo(sender dbus.Sender, name, url string) (uint32,
 	}
 	return s.startTransactionWithID("Adicionar repositório: "+name, func(txID uint32, report progressFunc) error {
 		err := s.provider.Package().AddRepo(name, url, report)
-		var keyErr *distro.UntrustedKeyError
-		if errors.As(err, &keyErr) {
-			if emitErr := s.emitRepoKeyPending(txID, keyErr.Repo, keyErr.KeyId, keyErr.Fingerprint, keyErr.UserId); emitErr != nil {
-				log.Printf("vegad: emit RepoKeyPending: %v", emitErr)
-			}
-		}
+		s.signalPendingKey(txID, err)
 		return err
 	})
 }
 
+// signalPendingKey fires RepoKeyPending when err says the repository is
+// signed by a key the backend does not trust yet, so the UI can show the
+// fingerprint and ask the user before calling TrustRepoKey.
+func (s *SoftwareService) signalPendingKey(txID uint32, err error) {
+	var keyErr *distro.UntrustedKeyError
+	if errors.As(err, &keyErr) {
+		if emitErr := s.emitRepoKeyPending(txID, keyErr.Repo, keyErr.KeyId, keyErr.Fingerprint, keyErr.UserId); emitErr != nil {
+			log.Printf("vegad: emit RepoKeyPending: %v", emitErr)
+		}
+	}
+}
+
 // TrustRepoKey imports/trusts keyId (as previously reported via a
 // RepoKeyPending signal for repo) and retries refreshing the repository.
+// Without a matching pending approval (a repository registered by a package,
+// such as vscode-repo or cursor-repo, or a daemon restart) the backend
+// proposes the repository's key again; that also fires RepoKeyPending, so
+// the UI can show the fingerprint and call TrustRepoKey once more.
 func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (uint32, *dbus.Error) {
 	s.activity.Touch()
 	if err := requireFirstUpdateIdle(); err != nil {
@@ -874,7 +885,9 @@ func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (
 	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
 		return 0, err
 	}
-	return s.startTransaction("Confiar em chave de repositório: "+repo, func(report progressFunc, _ packageProgressFunc) error {
-		return s.provider.Package().TrustRepoKey(repo, keyId, report)
+	return s.startTransactionWithID("Confiar em chave de repositório: "+repo, func(txID uint32, report progressFunc) error {
+		err := s.provider.Package().TrustRepoKey(repo, keyId, report)
+		s.signalPendingKey(txID, err)
+		return err
 	})
 }
