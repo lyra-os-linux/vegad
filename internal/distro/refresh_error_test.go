@@ -2,6 +2,7 @@ package distro
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -23,5 +24,22 @@ func TestRepositoryRefreshFailureClassification(t *testing.T) {
 	var key *UntrustedKeyError
 	if !errors.As(err, &key) {
 		t.Fatalf("untrusted key not distinguished: %v", err)
+	}
+}
+
+// The Kind preparation relies on survives the user-facing explanation.
+func TestRepositoryRefreshFailureIsExplained(t *testing.T) {
+	previous := zypperWarnf
+	zypperWarnf = func(string, ...any) {}
+	defer func() { zypperWarnf = previous }()
+	cause := errors.New("exit failure")
+	err := repositoryRefreshError("Repository 'microsoft-prod' is invalid.\nDownload (curl) error for 'https://packages.microsoft.com/opensuse/16/prod/repodata/repomd.xml':\nError message: Could not resolve host: packages.microsoft.com", cause)
+	var refresh *RepositoryRefreshError
+	var friendly *ZypperError
+	if !errors.As(err, &refresh) || refresh.Kind != "network" || !errors.As(err, &friendly) || friendly.Kind != "repository" || !errors.Is(err, cause) {
+		t.Fatalf("error = %#v", err)
+	}
+	if want := "Não foi possível acessar o repositório microsoft-prod"; !strings.HasPrefix(err.Error(), want) {
+		t.Fatalf("message = %q, want prefix %q", err.Error(), want)
 	}
 }

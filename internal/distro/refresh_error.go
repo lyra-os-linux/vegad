@@ -27,5 +27,5 @@ func repositoryRefreshError(output string, cause error) error {
 			break
 		}
 	}
-	return &RepositoryRefreshError{Kind: kind, Err: fmt.Errorf("zypper refresh: %w — %s", cause, output)}
+	return &RepositoryRefreshError{Kind: kind, Err: explainZypperError(fmt.Errorf("zypper refresh: %w — %s", cause, output), output)}
 }
