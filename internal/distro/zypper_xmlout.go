@@ -267,6 +267,9 @@ func zypperTransactionError(waitErr error, stderr string, messages zypperXMLMess
 	if detail == "" {
 		detail = strings.Join(messages.Errors, " | ")
 	}
+	if friendly := explainZypperError(waitErr, detail); friendly != waitErr {
+		return friendly
+	}
 	if detail == "" {
 		return fmt.Errorf("falha ao processar pacotes: %w", waitErr)
 	}

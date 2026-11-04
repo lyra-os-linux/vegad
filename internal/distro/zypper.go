@@ -569,8 +569,10 @@ func (z *zypperBackend) UpdatePackage(pkg string, report ProgressFunc, pkgReport
 }
 
 func (z *zypperBackend) ClearCache(report ProgressFunc) error {
-	return runStreamingCommand("zypper", []string{"clean", "--all"}, report,
-		"Limpando cache...", "Cache limpo")
+	cmd := packageCommand("zypper", "clean", "--all")
+	cmd.Env = commandEnvC()
+	err := runStreamingCmd(cmd, report, "Limpando cache...", "Cache limpo")
+	return explainZypperStreamError(err)
 }
 
 func (z *zypperBackend) ListRepos() ([]RepositoryRef, error) {
@@ -611,9 +613,9 @@ func (z *zypperBackend) SetRepoEnabled(repo string, enabled bool) error {
 	if enabled {
 		flag = "--enable"
 	}
-	out, err := runCommandOutput("zypper", "--non-interactive", "modifyrepo", flag, "--", repo)
+	out, err := zypperOutputC("--non-interactive", "modifyrepo", flag, "--", repo)
 	if err != nil {
-		return fmt.Errorf("zypper modifyrepo %s: %w — %s", repo, err, out)
+		return explainZypperError(fmt.Errorf("zypper modifyrepo %s: %w — %s", repo, err, out), out)
 	}
 	return nil
 }
@@ -655,9 +657,9 @@ func (z *zypperBackend) AddRepo(name, url string, report ProgressFunc) error {
 	z.keyMu.Lock()
 	defer z.keyMu.Unlock()
 	report(0, "Adicionando repositório...")
-	out, err := runCommandOutput("zypper", "--non-interactive", "addrepo", "--refresh", "--", url, name)
+	out, err := zypperOutputC("--non-interactive", "addrepo", "--refresh", "--", url, name)
 	if err != nil {
-		return fmt.Errorf("zypper addrepo %s: %w — %s", name, err, out)
+		return explainZypperError(fmt.Errorf("zypper addrepo %s: %w — %s", name, err, out), out)
 	}
 
 	report(50, "Atualizando metadados do repositório...")
