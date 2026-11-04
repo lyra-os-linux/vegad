@@ -106,7 +106,7 @@ func (z *zypperBackend) proposeRepoKey(repo string) error {
 	}
 	key, ok := parseZypperUntrustedKey(repo, out)
 	if !ok {
-		return fmt.Errorf("atualizar repositório: %w — %s", refreshErr, strings.TrimSpace(out))
+		return explainZypperError(fmt.Errorf("atualizar repositório: %w — %s", refreshErr, strings.TrimSpace(out)), out)
 	}
 	after, err := z.readRepoKeyIdentity(repo)
 	if err != nil || before != after {
@@ -269,7 +269,7 @@ func runApprovedKeyRefresh(cmd *exec.Cmd, repo string, approval repoKeyApproval,
 		return parseErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("Zypper recusou a atualização após conferir a chave: %w", waitErr)
+		return explainZypperError(fmt.Errorf("Zypper recusou a atualização após conferir a chave: %w", waitErr), "")
 	}
 	return nil
 }

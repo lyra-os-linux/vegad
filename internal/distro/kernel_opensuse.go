@@ -56,14 +56,15 @@ func (k *openSUSEKernelBackend) RunningKernelMatches(name string) bool {
 }
 
 func (k *openSUSEKernelBackend) Install(name string, report ProgressFunc) error {
-	return runStreamingCommand("zypper", []string{"--non-interactive", "install", "-y", "--", name}, report,
-		"Iniciando instalação...", "Instalação concluída")
+	cmd := packageCommand("zypper", "--non-interactive", "install", "-y", "--", name)
+	cmd.Env = commandEnvC()
+	return explainZypperStreamError(runStreamingCmd(cmd, report, "Iniciando instalação...", "Instalação concluída"))
 }
 
 func (k *openSUSEKernelBackend) Remove(name string) error {
-	out, err := runCommandOutput("zypper", "--non-interactive", "remove", "-y", "--", name)
+	out, err := zypperOutputC("--non-interactive", "remove", "-y", "--", name)
 	if err != nil {
-		return fmt.Errorf("zypper remove %s: %w — %s", name, err, out)
+		return explainZypperError(fmt.Errorf("zypper remove %s: %w — %s", name, err, out), out)
 	}
 	return nil
 }
