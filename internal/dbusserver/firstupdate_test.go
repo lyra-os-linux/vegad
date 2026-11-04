@@ -139,6 +139,7 @@ func TestSoftwareTransactionsRefusedDuringFirstUpdate(t *testing.T) {
 		"AddRepo":          func() *dbus.Error { _, err := s.AddRepo(":1.1", "x", "https://example.invalid"); return err },
 		"TrustRepoKey":     func() *dbus.Error { _, err := s.TrustRepoKey(":1.1", "x", "ABCD"); return err },
 		"SetRepoEnabled":   func() *dbus.Error { return s.SetRepoEnabled(":1.1", "x", true) },
+		"RefreshRepos":     func() *dbus.Error { _, err := s.RefreshRepos(":1.1"); return err },
 	}
 	for name, call := range calls {
 		if err := call(); err == nil || err.Name != want {

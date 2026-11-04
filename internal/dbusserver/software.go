@@ -891,3 +891,51 @@ func (s *SoftwareService) TrustRepoKey(sender dbus.Sender, repo, keyId string) (
 		return err
 	})
 }
+
+// RefreshRepos refreshes the metadata of every enabled repository now
+// (zypper refresh), whatever the age of the last update check, so a user
+// who just fixed the network or a repository does not wait for the next
+// check. The update status is then recomputed in the background.
+func (s *SoftwareService) RefreshRepos(sender dbus.Sender) (uint32, *dbus.Error) {
+	s.activity.Touch()
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
+	if err := requirePolkit(sender, "org.lyraos.vega.software.manage-repos"); err != nil {
+		return 0, err
+	}
+	return s.startTransaction("Atualizar repositórios", func(report progressFunc, _ packageProgressFunc) error {
+		report(0, "Atualizando repositórios...")
+		if err := s.provider.Package().SyncDatabase(); err != nil {
+			return refreshReposError(err)
+		}
+		report(100, "Repositórios atualizados")
+		s.startUpdateRecheck()
+		return nil
+	})
+}
+
+// refreshReposError explains a RefreshRepos failure. zypper refreshes the
+// other repositories when one fails, so the message says which kind of
+// repository was left behind. A key still to be approved is approved where
+// the repository was added; the refresh never trusts it.
+func refreshReposError(err error) error {
+	var key *distro.UntrustedKeyError
+	if errors.As(err, &key) {
+		log.Printf("vegad: atualizar repositórios: %v", err)
+		return errors.New("Um dos repositórios usa uma chave de assinatura que ainda não foi aprovada e não pôde ser atualizado; os demais foram atualizados. Aprove a chave ao instalar o aplicativo desse repositório.")
+	}
+	return err
+}
+
+// startUpdateRecheck recomputes the update status in the background unless
+// a check is already running.
+func (s *SoftwareService) startUpdateRecheck() {
+	s.updateCheckMu.Lock()
+	start := !s.updateChecking
+	s.updateChecking = true
+	s.updateCheckMu.Unlock()
+	if start {
+		go s.refreshUpdateStatus()
+	}
+}

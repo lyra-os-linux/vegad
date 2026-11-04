@@ -156,6 +156,7 @@ var methodPolicies = map[string]methodPolicy{
 	"Software.ClearNativeCache":         {administrative, ""},
 	"Software.AddRepo":                  {administrative, ""},
 	"Software.TrustRepoKey":             {administrative, ""},
+	"Software.RefreshRepos":             {administrative, ""},
 	"Storage.ListVolumes":               {queryPublic, ""},
 	"Storage.Mount":                     {administrative, ""},
 	"Storage.Unmount":                   {administrative, ""},
