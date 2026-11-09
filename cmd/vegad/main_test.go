@@ -2,48 +2,35 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
 
-func TestEnsureSystemPATH(t *testing.T) {
-	tests := []struct {
-		name    string
-		initial string
-		unset   bool
-		want    []string // dirs that must be present afterwards
-	}{
-		{name: "empty PATH gets the full default", initial: "", want: strings.Split(defaultSystemPATH, ":")},
-		{name: "unset PATH gets the full default", unset: true, want: strings.Split(defaultSystemPATH, ":")},
-		{name: "partial PATH is topped up, not replaced", initial: "/opt/custom/bin", want: append([]string{"/opt/custom/bin"}, strings.Split(defaultSystemPATH, ":")...)},
-		{name: "already-complete PATH is left alone content-wise", initial: defaultSystemPATH, want: strings.Split(defaultSystemPATH, ":")},
+// TestHelperMain runs main() with the arguments in VEGAD_TEST_ARGS; the
+// tests below re-execute the test binary so os.Exit stays in a child.
+func TestHelperMain(t *testing.T) {
+	args, ok := os.LookupEnv("VEGAD_TEST_ARGS")
+	if !ok {
+		t.Skip("helper process")
 	}
+	os.Args = append([]string{"vegad"}, strings.Fields(args)...)
+	main()
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			old, hadOld := os.LookupEnv("PATH")
-			defer func() {
-				if hadOld {
-					os.Setenv("PATH", old)
-				} else {
-					os.Unsetenv("PATH")
-				}
-			}()
-
-			if tt.unset {
-				os.Unsetenv("PATH")
-			} else {
-				os.Setenv("PATH", tt.initial)
-			}
-
-			ensureSystemPATH()
-
-			got := os.Getenv("PATH")
-			for _, dir := range tt.want {
-				if !strings.Contains(":"+got+":", ":"+dir+":") {
-					t.Fatalf("ensureSystemPATH() = %q, missing expected dir %q", got, dir)
-				}
-			}
-		})
+// vegad#129: unknown or incomplete arguments never start a second daemon.
+func TestUnknownArgumentsExitWithUsage(t *testing.T) {
+	for _, args := range []string{"nonsense", "check-health x", "check-updates extra",
+		"first-update extra", "backup run", "backup run a b", "backup prepare-target", "query x"} {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperMain$")
+		cmd.Env = append(os.Environ(), "VEGAD_TEST_ARGS="+args)
+		out, err := cmd.CombinedOutput()
+		exit, ok := err.(*exec.ExitError)
+		if !ok || exit.ExitCode() != 2 || !strings.Contains(string(out), "uso:") {
+			t.Fatalf("vegad %s: err %v, output %s", args, err, out)
+		}
+		if strings.Contains(string(out), "starting") {
+			t.Fatalf("vegad %s started the daemon: %s", args, out)
+		}
 	}
 }

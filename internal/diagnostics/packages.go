@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strconv"
@@ -137,6 +138,10 @@ func classifyRPMChanges(env *Env, changes []rpmChange) ([]Finding, map[string]an
 	return findings, metrics
 }
 
+// zypperExitLocked is ZYPPER_EXIT_ZYPP_LOCKED: another process holds the
+// zypp lock (a timer, the first update, a shell), so nothing was verified.
+const zypperExitLocked = 7
+
 // zypperDependenciesOK reads `zypper -n verify --dry-run` in the C locale.
 func zypperDependenciesOK(out string) bool {
 	return strings.Contains(out, "Dependencies of all installed packages are satisfied")
@@ -171,16 +176,20 @@ func runPackages(ctx context.Context, env *Env, progress Progress) StageResult {
 	progress(80, env.t("diagnostics.progress.packages.zypper"))
 	if _, err := env.LookPath("zypper"); err == nil {
 		out, code, err := env.Run(ctx, "zypper", "-n", "verify", "--dry-run")
-		if err != nil {
-			if ctx.Err() != nil {
-				return failedToRun(env, result, "zypper", err, start)
-			}
-		} else if code != 0 || !zypperDependenciesOK(string(out)) {
+		switch {
+		case err != nil && ctx.Err() != nil:
+			return failedToRun(env, result, "zypper", err, start)
+		case err != nil, code == zypperExitLocked, code != 0 && len(bytes.TrimSpace(out)) == 0:
+			// Zypper did not run, was locked, or failed without saying
+			// anything: the dependencies were not checked, so there is
+			// nothing to report or repair.
+			metrics["dependenciesChecked"] = false
+		case code != 0 || !zypperDependenciesOK(string(out)):
 			broken := env.finding(SeverityAttention, "packages.broken-deps", strings.TrimSpace(string(out)))
 			broken.Remedy = "verify-dependencies"
 			findings = append(findings, broken)
 			metrics["dependenciesSatisfied"] = false
-		} else {
+		default:
 			metrics["dependenciesSatisfied"] = true
 		}
 	}
