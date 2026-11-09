@@ -52,6 +52,7 @@
   "diagnostics.finding.platform.kernel-tainted-modules": "Kernel marked by external modules ({flags}), as expected with the NVIDIA driver",
   "diagnostics.finding.stage.timeout": "The test exceeded its time limit",
   "diagnostics.finding.stage.tool-failed": "{tool} could not run",
+  "diagnostics.finding.stage.output-truncated": "The output of {tools} passed 32 MiB and was cut: this stage's result may be incomplete",
   "diagnostics.summary.packages": "{binaries} program files changed, {configs} configurations customized",
   "diagnostics.summary.disk-health": "{passed} of {total} disks healthy",
   "diagnostics.summary.logs": "{errors} errors in {boots} boots ({noise} known noise), {coredumps} crashes, {units} failed services",

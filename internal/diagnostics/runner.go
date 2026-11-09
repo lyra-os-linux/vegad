@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -19,39 +21,51 @@ type Runner func(ctx context.Context, name string, args ...string) (stdout []byt
 
 const outputLimit = 32 << 20
 
+// limitedBuffer keeps at most outputLimit bytes. The buffer is a named
+// field, not embedded: an embedded bytes.Buffer brings its ReadFrom, and
+// io.Copy (used by os/exec) would call it and skip this Write and its limit.
 type limitedBuffer struct {
-	bytes.Buffer
+	buf       bytes.Buffer
 	truncated bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if room := outputLimit - b.Len(); room < len(p) {
+	if room := outputLimit - b.buf.Len(); room < len(p) {
 		if room > 0 {
-			b.Buffer.Write(p[:room])
+			b.buf.Write(p[:room])
 		}
 		b.truncated = true
 		return len(p), nil
 	}
-	return b.Buffer.Write(p)
+	return b.buf.Write(p)
 }
+
+func (b *limitedBuffer) Bytes() []byte { return b.buf.Bytes() }
 
 // ExecRunner runs tools in their own process group with the C locale, so a
 // cancel kills every child (stress-ng workers, fio jobs) and parsers always
 // see untranslated output.
 func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, int, error) {
+	out, code, err, _ := execRun(ctx, name, args...)
+	return out, code, err
+}
+
+// execRun is ExecRunner that also says whether the output passed
+// outputLimit and was cut.
+func execRun(ctx context.Context, name string, args ...string) ([]byte, int, error, bool) {
 	cmd := exec.Command(name, args...)
 	cmd.Env = []string{"LC_ALL=C", "LANG=C", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var stdout limitedBuffer
 	cmd.Stdout = &stdout
 	if err := cmd.Start(); err != nil {
-		return nil, -1, err
+		return nil, -1, err, false
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
-		return stdout.Bytes(), exitCode(err), waitError(err)
+		return stdout.Bytes(), exitCode(err), waitError(err), stdout.truncated
 	case <-ctx.Done():
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 		select {
@@ -60,8 +74,48 @@ func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, int, 
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			<-done
 		}
-		return stdout.Bytes(), -1, ctx.Err()
+		return stdout.Bytes(), -1, ctx.Err(), stdout.truncated
 	}
+}
+
+// truncatedTools records the tools whose output was cut during a stage.
+type truncatedTools struct {
+	mu    sync.Mutex
+	tools []string
+}
+
+func (e *Env) noteTruncated(tool string) {
+	if e.truncated == nil {
+		return
+	}
+	e.truncated.mu.Lock()
+	defer e.truncated.mu.Unlock()
+	for _, known := range e.truncated.tools {
+		if known == tool {
+			return
+		}
+	}
+	e.truncated.tools = append(e.truncated.tools, tool)
+}
+
+// TakeTruncated returns and clears the tools whose output passed
+// outputLimit since the last call. The service calls it around every stage.
+func (e *Env) TakeTruncated() []string {
+	if e.truncated == nil {
+		return nil
+	}
+	e.truncated.mu.Lock()
+	defer e.truncated.mu.Unlock()
+	tools := e.truncated.tools
+	e.truncated.tools = nil
+	return tools
+}
+
+// TruncationFinding warns that a stage read only the first outputLimit
+// bytes of some tools, so its result may be incomplete.
+func (e *Env) TruncationFinding(tools []string) Finding {
+	list := strings.Join(tools, ", ")
+	return e.finding(Info, "stage.output-truncated", list, "tools", list)
 }
 
 func exitCode(err error) int {
@@ -89,7 +143,7 @@ const WorkDir = "/var/tmp/vega-diagnostics"
 
 // HostEnv is the real system, with the contract's default options.
 func HostEnv(locale string, bootsBack int) *Env {
-	return &Env{
+	env := &Env{
 		Locale:          locale,
 		BootsBack:       bootsBack,
 		DurationSeconds: 240,
@@ -104,7 +158,16 @@ func HostEnv(locale string, bootsBack int) *Env {
 		NumCPU:          runtime.NumCPU,
 		WorkDir:         WorkDir,
 		SampleInterval:  5 * time.Second,
+		truncated:       &truncatedTools{},
 	}
+	env.Run = func(ctx context.Context, name string, args ...string) ([]byte, int, error) {
+		out, code, err, cut := execRun(ctx, name, args...)
+		if cut {
+			env.noteTruncated(name)
+		}
+		return out, code, err
+	}
+	return env
 }
 
 func statfs(path string) (uint64, uint64, error) {
