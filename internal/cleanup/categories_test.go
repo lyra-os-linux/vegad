@@ -126,6 +126,28 @@ func TestFlatpakUnusedComesFromFlatpakAndAnswersNo(t *testing.T) {
 	}
 }
 
+// vegad#127: Clean of flatpak-unused runs the non-interactive uninstall and
+// reports what the measurement found as freed.
+func TestFlatpakUnusedCleanUninstallsAndReportsFreedBytes(t *testing.T) {
+	h := newHost(t)
+	runtime := h.write(flatpakSystemDir+"/runtime/org.gtk.Gtk3theme.Adwaita-dark/x86_64/3.22/active/files/gtk.css", 12<<10)
+	h.replies["flatpak uninstall --unused --system"] = reply{out: fixture(t, "flatpak-unused.txt"), code: 1}
+	h.replies["flatpak uninstall --unused --system --noninteractive -y"] = reply{effect: func() {
+		_ = os.RemoveAll(h.env.path(flatpakSystemDir + "/runtime"))
+		h.replies["flatpak uninstall --unused --system"] = reply{out: fixture(t, "flatpak-unused-nothing.txt")}
+	}}
+	freed, result, err := Clean(context.Background(), h.env, "flatpak-unused")
+	if err != nil || result != ResultOK || freed < 12<<10 {
+		t.Fatalf("freed %d, result %s, err %v", freed, result, err)
+	}
+	if !h.ran("flatpak uninstall --unused --system --noninteractive -y") {
+		t.Fatal("the unused runtimes were not uninstalled")
+	}
+	if _, err := os.Stat(runtime); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("runtime still on disk: %v", err)
+	}
+}
+
 func TestPurgeKernelsDryRunParsesTheRealOutput(t *testing.T) {
 	plan, err := parsePurgeKernels([]byte(fixture(t, "purge-kernels-remove.txt")))
 	if err != nil {
