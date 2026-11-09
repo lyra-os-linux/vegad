@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -239,16 +240,20 @@ func TestLogsClassifyKnownNoiseAndGroupCrashesByApp(t *testing.T) {
 }
 
 func TestLogsSeenCutoffHidesWhatTheUserAlreadySaw(t *testing.T) {
-	seen := time.Unix(1793316162, 142129000) // fraction rounds the cutoff up
+	// The cutoff is only honoured within the last seven days, so it must be
+	// relative to now: a fixed date made this test fail a week later.
+	base := time.Now().Add(-24 * time.Hour).Unix()
+	seen := time.Unix(base, 142129000) // fraction rounds the cutoff up
+	since := fmt.Sprintf("--since=@%d", base+1)
 	failed := `[{"unit":"old.service","description":"Old"},{"unit":"new.service","description":"New"}]`
 	env := fakeEnv(t, map[string]call{
-		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":-1},{"index":0}]`)},
-		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
-		"journalctl -b -1 -p err -o json --no-pager -q --since=@1793316163":                                {out: []byte("")},
-		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
-		"systemctl --failed --output=json --no-pager":                                                      {out: []byte(failed)},
-		"systemctl show --timestamp=unix -p StateChangeTimestamp --value old.service":                      {out: []byte("@1793316000\n")},
-		"systemctl show --timestamp=unix -p StateChangeTimestamp --value new.service":                      {out: []byte("@1793317000\n")},
+		"journalctl --list-boots -o json --no-pager":                                                 {out: []byte(`[{"index":-1},{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q " + since:                                      {out: []byte("")},
+		"journalctl -b -1 -p err -o json --no-pager -q " + since:                                     {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 " + since + " -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                {out: []byte(failed)},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value old.service":                {out: []byte(fmt.Sprintf("@%d\n", base-162))},
+		"systemctl show --timestamp=unix -p StateChangeTimestamp --value new.service":                {out: []byte(fmt.Sprintf("@%d\n", base+838))},
 	}, nil, "journalctl")
 	env.LogsSeenUntil = seen
 	result := runLogs(context.Background(), env, noProgress)
@@ -265,13 +270,15 @@ func TestLogsSeenCutoffHidesWhatTheUserAlreadySaw(t *testing.T) {
 }
 
 func TestLogsWithEverythingSeenIsHealthy(t *testing.T) {
+	cutoff := time.Now().Add(-24 * time.Hour).Unix()
+	since := fmt.Sprintf("--since=@%d", cutoff)
 	env := fakeEnv(t, map[string]call{
-		"journalctl --list-boots -o json --no-pager":                                                       {out: []byte(`[{"index":0}]`)},
-		"journalctl -b 0 -p err -o json --no-pager -q --since=@1793316163":                                 {out: []byte("")},
-		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 --since=@1793316163 -o json --no-pager -q": {out: []byte("")},
-		"systemctl --failed --output=json --no-pager":                                                      {out: []byte("[]")},
+		"journalctl --list-boots -o json --no-pager":                                                 {out: []byte(`[{"index":0}]`)},
+		"journalctl -b 0 -p err -o json --no-pager -q " + since:                                      {out: []byte("")},
+		"journalctl MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1 " + since + " -o json --no-pager -q": {out: []byte("")},
+		"systemctl --failed --output=json --no-pager":                                                {out: []byte("[]")},
 	}, nil, "journalctl")
-	env.LogsSeenUntil = time.Unix(1793316163, 0)
+	env.LogsSeenUntil = time.Unix(cutoff, 0)
 	if result := runLogs(context.Background(), env, noProgress); result.Verdict != Ok {
 		t.Fatalf("verdict %s findings %+v", result.Verdict, result.Findings)
 	}
