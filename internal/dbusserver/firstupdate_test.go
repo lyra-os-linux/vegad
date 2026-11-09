@@ -148,6 +148,24 @@ func TestSoftwareTransactionsRefusedDuringFirstUpdate(t *testing.T) {
 	}
 }
 
+// vegad#131: kernel changes also wait for the first-boot update, which holds
+// the zypp lock and regenerates the boot artifacts.
+func TestKernelChangesRefusedDuringFirstUpdate(t *testing.T) {
+	stubFirstUpdateRunning(t, true)
+	k := &KernelService{activity: &Activity{}}
+	want := BusName + ".Error.FirstUpdateInProgress"
+	calls := map[string]func() *dbus.Error{
+		"Install":         func() *dbus.Error { _, err := k.Install(":1.1", "kernel-default"); return err },
+		"Remove":          func() *dbus.Error { return k.Remove(":1.1", "kernel-default-6.12.0") },
+		"ApplyBootConfig": func() *dbus.Error { return k.ApplyBootConfig(":1.1", "", 5, "") },
+	}
+	for name, call := range calls {
+		if err := call(); err == nil || err.Name != want {
+			t.Errorf("%s: got %v, want %s before Polkit or a transaction", name, err, want)
+		}
+	}
+}
+
 // Embedding the real interface makes any accidental install/update call panic:
 // preparation only supplies refresh and read operations.
 type preparationBackend struct {

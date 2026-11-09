@@ -54,6 +54,10 @@ func (k *KernelService) AvailablePackages() ([]string, *dbus.Error) {
 
 func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbus.Error) {
 	k.activity.Touch()
+	// The first-boot update holds the zypp lock and rebuilds the initrd.
+	if err := requireFirstUpdateIdle(); err != nil {
+		return 0, err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
 		return 0, err
 	}
@@ -90,6 +94,10 @@ func (k *KernelService) Install(sender dbus.Sender, kernel string) (uint32, *dbu
 
 func (k *KernelService) Remove(sender dbus.Sender, kernel string) *dbus.Error {
 	k.activity.Touch()
+	// The first-boot update holds the zypp lock and rebuilds the initrd.
+	if err := requireFirstUpdateIdle(); err != nil {
+		return err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
 		return err
 	}
@@ -181,6 +189,9 @@ func (k *KernelService) ApplyBootConfig(sender dbus.Sender, defaultEntry string,
 	k.activity.Touch()
 	if err := validateBootValues(defaultEntry, cmdline); err != nil {
 		return dbus.MakeFailedError(err)
+	}
+	if err := requireFirstUpdateIdle(); err != nil {
+		return err
 	}
 	if err := requirePolkit(sender, "org.lyraos.vega.kernel.switch"); err != nil {
 		return err
