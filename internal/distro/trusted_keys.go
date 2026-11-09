@@ -143,6 +143,12 @@ func importRPMKeys(ctx context.Context, path string) error {
 		if err == nil {
 			return nil
 		}
+		// A deadline that expires while waiting for the lock kills the
+		// running rpmkeys, whose output is then empty: it is still the busy
+		// database, not a new failure.
+		if waiting && ctx.Err() != nil {
+			return rpmLockTimeout(ctx)
+		}
 		if !rpmLockBusy(out) {
 			return fmt.Errorf("importar chaves confiáveis no RPM: %w — %s", err, out)
 		}
