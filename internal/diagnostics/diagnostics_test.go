@@ -127,6 +127,30 @@ func TestPackagesFlagTamperedBinariesAndBrokenDependencies(t *testing.T) {
 	}
 }
 
+// A locked zypp (exit 7) or a failure without output says nothing about the
+// dependencies: no broken-deps finding and no repair (vegad#114).
+func TestPackagesZypperLockedOrSilentIsNotBroken(t *testing.T) {
+	for name, reply := range map[string]call{
+		"locked": {out: []byte("System management is locked by the application with pid 1234 (zypper).\n"), code: 7},
+		"silent": {code: 1},
+	} {
+		env := fakeEnv(t, map[string]call{
+			"rpm -Va":                    {},
+			"zypper -n verify --dry-run": reply,
+		}, nil, "rpm", "zypper")
+		result := runPackages(context.Background(), env, noProgress)
+		if _, ok := findingCodes(result.Findings)["packages.broken-deps"]; ok {
+			t.Fatalf("%s: zypper that did not verify reported as broken dependencies", name)
+		}
+		if result.Metrics["dependenciesChecked"] != false || result.Metrics["dependenciesSatisfied"] != nil {
+			t.Fatalf("%s: metrics %+v", name, result.Metrics)
+		}
+		if result.Verdict != Ok {
+			t.Fatalf("%s: verdict %s", name, result.Verdict)
+		}
+	}
+}
+
 func TestDiskHealthOnTheWorkstation(t *testing.T) {
 	env := fakeEnv(t, map[string]call{
 		"lsblk -J -d -o NAME,TYPE,TRAN": {out: fixture(t, "lsblk.json")},
