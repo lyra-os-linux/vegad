@@ -71,18 +71,19 @@ func (k *openSUSEKernelBackend) Remove(name string) error {
 
 const openSUSEGrubConfigPath = "/boot/grub2/grub.cfg"
 
+// rebuildOpenSUSEBootArtifacts regenerates the initrd and the GRUB menu. A
+// missing tool is an error, checked before running either: reporting
+// success without them would leave a kernel change that may not boot.
 func rebuildOpenSUSEBootArtifacts() error {
-	if commandAvailable("dracut") {
-		if err := runCommand("dracut", "--regenerate-all", "--force"); err != nil {
-			return err
+	for _, tool := range []string{"dracut", "grub2-mkconfig"} {
+		if !commandAvailable(tool) {
+			return fmt.Errorf("%s não encontrado: o initrd e o menu de boot não foram atualizados", tool)
 		}
 	}
-	if commandAvailable("grub2-mkconfig") {
-		if err := runCommand("grub2-mkconfig", "-o", openSUSEGrubConfigPath); err != nil {
-			return err
-		}
+	if err := runCommand("dracut", "--regenerate-all", "--force"); err != nil {
+		return err
 	}
-	return nil
+	return runCommand("grub2-mkconfig", "-o", openSUSEGrubConfigPath)
 }
 
 func (k *openSUSEKernelBackend) RebuildBootArtifacts() error { return rebuildOpenSUSEBootArtifacts() }
