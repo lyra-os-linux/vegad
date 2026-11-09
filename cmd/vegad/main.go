@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -62,7 +64,7 @@ func main() {
 		return
 	}
 
-	if len(os.Args) >= 2 && os.Args[1] == "check-updates" {
+	if len(os.Args) == 2 && os.Args[1] == "check-updates" {
 		if activeProfile != profile.Desktop {
 			log.Printf("vegad: verificação periódica ignorada no perfil %s", activeProfile)
 			return
@@ -88,7 +90,7 @@ func main() {
 		return
 	}
 
-	if len(os.Args) >= 2 && os.Args[1] == "first-update" {
+	if len(os.Args) == 2 && os.Args[1] == "first-update" {
 		if activeProfile != profile.Desktop {
 			log.Printf("vegad: preparação dos repositórios ignorada no perfil %s", activeProfile)
 			return
@@ -108,7 +110,7 @@ func main() {
 		return
 	}
 
-	if len(os.Args) >= 4 && os.Args[1] == "backup" && os.Args[2] == "run" {
+	if len(os.Args) == 4 && os.Args[1] == "backup" && os.Args[2] == "run" {
 		configID := os.Args[3]
 		log.Printf("vegad backup job %s starting", configID)
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -121,6 +123,13 @@ func main() {
 		}
 		log.Printf("vegad backup job %s finished", configID)
 		return
+	}
+
+	// Every job above matched its exact arguments and returned. Anything
+	// left is a typo or a stale unit: never fall through to a second daemon.
+	if len(os.Args) > 1 {
+		usage(os.Stderr, os.Args[1:])
+		os.Exit(2)
 	}
 
 	log.Printf("vegad %s starting", version.Version)
@@ -138,4 +147,20 @@ func main() {
 	log.Printf("vegad: exported %s at %s", dbusserver.BusName, dbusserver.ObjectPath)
 	srv.Run()
 	log.Printf("vegad: shutting down")
+}
+
+// usage explains the accepted invocations; vegad without arguments is the
+// bus-activated daemon.
+func usage(w io.Writer, args []string) {
+	fmt.Fprintf(w, "vegad: argumentos desconhecidos: %q\n", args)
+	fmt.Fprint(w, `uso:
+  vegad                                   daemon D-Bus (ativado pelo barramento)
+  vegad query                             consulta sem privilégios (systemd-run)
+  vegad check-updates                     verificação periódica de atualizações
+  vegad check-health                      verificação periódica de saúde
+  vegad sync-trusted-keys                 manutenção das chaves aprovadas
+  vegad first-update                      preparação dos repositórios no primeiro boot
+  vegad backup prepare-target <caminho>   prepara o destino de um backup
+  vegad backup run <id>                   executa um backup agendado
+`)
 }
