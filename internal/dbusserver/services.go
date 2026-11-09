@@ -68,6 +68,9 @@ func (s *ServicesService) ListAllServicesLocalized(locale string) ([]ManagedServ
 
 func (s *ServicesService) SetServiceEnabled(sender dbus.Sender, name string, enabled bool) *dbus.Error {
 	s.activity.Touch()
+	if !validUnitName(name) {
+		return invalidUnitName(name)
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
 		return err
 	}
@@ -79,6 +82,9 @@ func (s *ServicesService) SetServiceEnabled(sender dbus.Sender, name string, ena
 
 func (s *ServicesService) SetServiceRunning(sender dbus.Sender, name string, running bool) *dbus.Error {
 	s.activity.Touch()
+	if !validUnitName(name) {
+		return invalidUnitName(name)
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
 		return err
 	}
@@ -90,6 +96,9 @@ func (s *ServicesService) SetServiceRunning(sender dbus.Sender, name string, run
 
 func (s *ServicesService) RestartService(sender dbus.Sender, name string) *dbus.Error {
 	s.activity.Touch()
+	if !validUnitName(name) {
+		return invalidUnitName(name)
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.services.configure"); err != nil {
 		return err
 	}
@@ -378,9 +387,9 @@ func setServiceEnabled(name string, enabled bool) error {
 
 	args := []string{}
 	if enabled {
-		args = append(args, "enable", "--now", name)
+		args = append(args, "enable", "--now", "--", name)
 	} else {
-		args = append(args, "disable", "--now", name)
+		args = append(args, "disable", "--now", "--", name)
 	}
 	if out, err := runCommandOutput("systemctl", args...); err != nil {
 		return fmt.Errorf("systemctl %s: %w — %s", strings.Join(args, " "), err, out)
@@ -397,7 +406,7 @@ func setServiceRunning(name string, running bool) error {
 	if running {
 		action = "start"
 	}
-	if out, err := runCommandOutput("systemctl", action, name); err != nil {
+	if out, err := runCommandOutput("systemctl", action, "--", name); err != nil {
 		return fmt.Errorf("systemctl %s %s: %w — %s", action, name, err, out)
 	}
 	return nil
@@ -407,7 +416,7 @@ func restartService(name string) error {
 	if !commandAvailable("systemctl") {
 		return fmt.Errorf("systemctl não está disponível")
 	}
-	if out, err := runCommandOutput("systemctl", "restart", name); err != nil {
+	if out, err := runCommandOutput("systemctl", "restart", "--", name); err != nil {
 		return fmt.Errorf("systemctl restart %s: %w — %s", name, err, out)
 	}
 	return nil
