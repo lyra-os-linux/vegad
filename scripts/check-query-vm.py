@@ -152,7 +152,7 @@ id -u > /var/lib/lyra-query-vm-fixture/scriptlet-uid
     put('/etc/systemd/journald.conf', '[Journal]\nStorage=volatile\n')
     put('/etc/systemd/system/dbus.socket', '[Unit]\nDefaultDependencies=no\n[Socket]\nListenStream=/run/dbus/system_bus_socket\n')
     put('/etc/systemd/system/dbus.service', '[Unit]\nDefaultDependencies=no\nRequires=dbus.socket\nAfter=dbus.socket\n[Service]\nType=notify\nExecStart=/usr/bin/dbus-daemon --config-file=/etc/dbus-1/system.conf --address=systemd: --nofork --nopidfile --systemd-activation\n')
-    put('/etc/os-release', 'ID=opensuse-leap\nPRETTY_NAME="Lyra disposable backup test VM"\n')
+    put('/etc/os-release', 'ID=lyra-os\nID_LIKE="opensuse suse"\nPRETTY_NAME="Lyra disposable backup test VM"\n')
     for target in ['sysinit', 'basic', 'multi-user', 'paths', 'timers', 'sockets', 'shutdown']:
         put(f'/usr/lib/systemd/system/{target}.target', f'[Unit]\nDescription=Test {target}\nDefaultDependencies=no\n')
     put('/etc/systemd/system/backup-test.target', '[Unit]\nDescription=Disposable backup qualification\nDefaultDependencies=no\nWants=basic.target sysinit.target backup-test.service\n')

@@ -55,7 +55,7 @@ def build():
     put('/etc/passwd', 'root:x:0:0:root:/root:/bin/bash\nalice:x:1001:1001:alice:/home/alice:/bin/bash\npolkitd:x:999:999:polkit:/var/lib/polkit:/bin/false\nvegad-query:x:997:997:query:/var/empty:/bin/false\n')
     put('/etc/group', 'root:x:0:\nalice:x:1001:\npolkitd:x:999:\nvegad-query:x:997:\n')
     put('/etc/nsswitch.conf', 'passwd: files\ngroup: files\nshadow: files\n')
-    put('/etc/os-release', 'ID=opensuse-leap\nPRETTY_NAME="Lyra disposable preparation VM"\n')
+    put('/etc/os-release', 'ID=lyra-os\nID_LIKE="opensuse suse"\nPRETTY_NAME="Lyra disposable preparation VM"\n')
     put('/usr/lib/lyra-os/release', 'test-vm\n')
     put('/usr/share/polkit-1/actions/org.lyraos.vega.policy', (REPO / 'packaging/org.lyraos.vega.policy').read_text())
     put('/etc/dbus-1/system.conf', '<busconfig><type>system</type><listen>unix:path=/run/dbus/system_bus_socket</listen><auth>EXTERNAL</auth><policy context="default"><allow user="*"/><allow own="*"/><allow send_destination="*"/><allow receive_sender="*"/></policy></busconfig>')
