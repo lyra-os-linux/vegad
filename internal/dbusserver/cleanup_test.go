@@ -3,6 +3,8 @@ package dbusserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,6 +67,34 @@ func TestCleanRunsCategoriesInOrderAndSumsFreedBytes(t *testing.T) {
 	}
 	if finished[1] != job || finished[2] != "ok" || finished[3] != uint64(210<<20) {
 		t.Fatalf("%v", finished)
+	}
+}
+
+// vegad#127: Progress goes 0% for the first category, then by category,
+// and 100% before Finished, always for the job and a requested category.
+func TestCleanEmitsProgressPerCategoryAndAtTheEnd(t *testing.T) {
+	s, recorder := newTestCleanup(t, func(string) (uint64, string, error) { return 0, cleanup.ResultSkipped, nil })
+	job, err := s.start([]string{"coredumps", "journal", "package-cache", "snapshots"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-recorder.done
+	var progress []string
+	for i, signal := range recorder.signals {
+		if signal[0] != "Progress" {
+			continue
+		}
+		if signal[1] != job {
+			t.Fatalf("Progress for job %v, want %v", signal[1], job)
+		}
+		progress = append(progress, fmt.Sprintf("%s:%d", signal[2], signal[3]))
+		if signal[3] == uint32(100) && recorder.signals[i+1][0] != "Finished" {
+			t.Fatalf("100%% is not the signal before Finished: %v", recorder.signals[i+1])
+		}
+	}
+	want := []string{"coredumps:0", "journal:25", "package-cache:50", "snapshots:75", "snapshots:100"}
+	if strings.Join(progress, " ") != strings.Join(want, " ") {
+		t.Fatalf("progress %v, want %v", progress, want)
 	}
 }
 
