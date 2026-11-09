@@ -126,6 +126,9 @@ func (s *SnapshotsService) Rollback(sender dbus.Sender, snapshotID uint32) *dbus
 
 func (s *SnapshotsService) DeleteSnapshot(sender dbus.Sender, snapshotID uint32) *dbus.Error {
 	s.activity.Touch()
+	if err := refuseCurrentSystem(snapshotID, snapperInstalled()); err != nil {
+		return err
+	}
 	if err := requirePolkit(sender, "org.lyraos.vega.snapshots.delete"); err != nil {
 		return err
 	}
@@ -225,4 +228,16 @@ func (s *SnapshotsService) SetRetentionPolicy(sender dbus.Sender, keepCount uint
 
 func (s *SnapshotsService) formatSnapshot(snapshot SnapshotInfo) string {
 	return fmt.Sprintf("%d %s %s", snapshot.Id, snapshot.Trigger, strings.TrimSpace(snapshot.Description))
+}
+
+// refuseCurrentSystem rejects Snapper's snapshot 0, which is the running
+// system and not a restore point. Snapper refuses it too; vegad does not
+// depend on that. Timeshift ids are name hashes, so the rule is Snapper's.
+func refuseCurrentSystem(snapshotID uint32, snapper bool) *dbus.Error {
+	if snapper && snapshotID == 0 {
+		return dbus.NewError("org.freedesktop.DBus.Error.InvalidArgs", []interface{}{
+			"o snapshot 0 é o sistema em uso e não pode ser apagado",
+		})
+	}
+	return nil
 }
