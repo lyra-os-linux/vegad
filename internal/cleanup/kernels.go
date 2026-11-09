@@ -188,8 +188,22 @@ func measureKernels(ctx context.Context, env *Env) (measurement, error) {
 		if err != nil || protected {
 			m.reason = "protected"
 		}
+		// With Snapper, the pre snapshot of the purge (and every older root
+		// snapshot) keeps the kernel files: the space comes back only when
+		// those snapshots are cleaned (vegad#124).
+		m.deferred = snapperConfigured(ctx, env)
 	}
 	return m, nil
+}
+
+// snapperConfigured reports whether Snapper manages the root file system
+// (the Desktop); the Server has no Snapper and frees the space at once.
+func snapperConfigured(ctx context.Context, env *Env) bool {
+	if missingTool(env, "snapper", "snapper") != "" {
+		return false
+	}
+	_, code, err := env.Run(ctx, "", "snapper", "--machine-readable", "csv", "get-config")
+	return err == nil && code == 0
 }
 
 // cleanKernels runs purge-kernels inside a snapshot pair. The space comes

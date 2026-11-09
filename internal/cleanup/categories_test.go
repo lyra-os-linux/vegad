@@ -254,6 +254,28 @@ func TestKernelsCleanAnOldKernelInsideASnapshot(t *testing.T) {
 	}
 }
 
+// vegad#124: with Snapper (the Desktop) the purge's snapshots keep the
+// kernel files, so Scan says "deferred" and Clean reports 0 freed bytes.
+func TestKernelsWithSnapperAreDeferredAndFreeNothingYet(t *testing.T) {
+	old := strings.Replace(fixture(t, "purge-kernels-remove.txt"),
+		"kernel-default-6.12.0-160100.8.1 kernel-default-extra kernel-default-optional", "kernel-default-6.12.0-160100.5.1", 1)
+	h := kernelHost(t, old)
+	h.tools["snapper"] = true
+	h.replies["snapper --machine-readable csv get-config"] = reply{out: fixture(t, "snapper-config.csv")}
+	m, err := measureKernels(context.Background(), h.env)
+	if err != nil || !m.deferred || !m.cleanable() {
+		t.Fatalf("%+v %v", m, err)
+	}
+	if detail := m.category("old-kernels").Detail; !strings.Contains(detail, "deferred") {
+		t.Fatalf("detail %q", detail)
+	}
+	h.replies["zypper -n --no-refresh purge-kernels"] = reply{}
+	freed, result, err := Clean(context.Background(), h.env, "old-kernels")
+	if err != nil || result != ResultOK || freed != 0 || !h.ran("zypper -n --no-refresh purge-kernels") {
+		t.Fatalf("freed=%d result=%s err=%v", freed, result, err)
+	}
+}
+
 func TestKernelsReportBusyWhenZypperIsLocked(t *testing.T) {
 	h := kernelHost(t, "")
 	h.replies["zypper -n --no-refresh purge-kernels --dry-run"] = reply{code: 7}
