@@ -56,6 +56,9 @@ type measurement struct {
 	items       []string
 	sizeUnknown bool
 	minimum     bool
+	// deferred: the bytes go back to the disk only when the snapshots still
+	// holding the files are cleaned, so cleaning reports 0 freed.
+	deferred bool
 	// reason blocks cleaning (busy, missing-tool:<pkg>, not-configured,
 	// protected); empty when the category can be cleaned or is just empty.
 	reason string
@@ -77,6 +80,9 @@ func (m measurement) category(id string) Category {
 	}
 	if m.minimum {
 		tokens = append(tokens, "minimum")
+	}
+	if m.deferred {
+		tokens = append(tokens, "deferred")
 	}
 	reason := m.reason
 	if reason == "" && !m.cleanable() {
@@ -159,6 +165,10 @@ func Clean(ctx context.Context, env *Env, id string) (freed uint64, result strin
 	}
 	if err := c.clean(ctx, env, before); err != nil {
 		return 0, ResultFailed, err
+	}
+	if before.deferred {
+		// Nothing comes back to the disk yet (contract token "deferred").
+		return 0, ResultOK, nil
 	}
 	after, err := c.measure(ctx, env)
 	if err == nil && after.bytes < before.bytes {
