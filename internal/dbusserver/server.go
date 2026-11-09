@@ -399,8 +399,15 @@ func (s *Server) Export() error {
 	if err != nil {
 		return err
 	}
-	if reply != dbus.RequestNameReplyPrimaryOwner {
-		log.Printf("vegad: bus name %s already owned elsewhere", BusName)
+	return requirePrimaryOwner(reply)
+}
+
+// requirePrimaryOwner refuses to keep running when another process owns
+// the bus name: objects exported here would be unreachable until the idle
+// timeout, so main exits with an error and systemd records the failure.
+func requirePrimaryOwner(reply dbus.RequestNameReply) error {
+	if reply != dbus.RequestNameReplyPrimaryOwner && reply != dbus.RequestNameReplyAlreadyOwner {
+		return fmt.Errorf("o nome %s já pertence a outro processo (resposta %d)", BusName, reply)
 	}
 	return nil
 }

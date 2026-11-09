@@ -20,6 +20,8 @@ type journalFile struct {
 	path   string
 	prefix string // "system", "user-1001"; files rotate per prefix
 	head   uint64 // realtime of the first entry, µs
+	seqID  string // seqnum id of the file; empty for renamed (~) files
+	seq    uint64 // seqnum of the first entry
 	size   uint64
 }
 
@@ -30,48 +32,81 @@ type journalFile struct {
 //	system@<head realtime>-<random>.journal~   (renamed after corruption)
 //
 // Active files (system.journal) have no "@" and are never candidates.
-func parseArchivedName(name string) (prefix string, head uint64, ok bool) {
+func parseArchivedName(name string) (file journalFile, ok bool) {
 	prefix, rest, found := strings.Cut(name, "@")
 	if !found || prefix == "" {
-		return "", 0, false
+		return journalFile{}, false
 	}
-	var fields []string
+	file.prefix = prefix
+	var realtime string
 	switch {
 	case strings.HasSuffix(rest, ".journal"):
-		fields = strings.Split(strings.TrimSuffix(rest, ".journal"), "-")
-		if len(fields) != 3 {
-			return "", 0, false
+		fields := strings.Split(strings.TrimSuffix(rest, ".journal"), "-")
+		if len(fields) != 3 || len(fields[0]) != 32 {
+			return journalFile{}, false
 		}
-		fields = fields[2:]
+		seq, err := strconv.ParseUint(fields[1], 16, 64)
+		if err != nil {
+			return journalFile{}, false
+		}
+		file.seqID, file.seq, realtime = strings.ToLower(fields[0]), seq, fields[2]
 	case strings.HasSuffix(rest, ".journal~"):
-		fields = strings.Split(strings.TrimSuffix(rest, ".journal~"), "-")
+		fields := strings.Split(strings.TrimSuffix(rest, ".journal~"), "-")
 		if len(fields) != 2 {
-			return "", 0, false
+			return journalFile{}, false
 		}
+		realtime = fields[0]
 	default:
-		return "", 0, false
+		return journalFile{}, false
 	}
-	head, err := strconv.ParseUint(fields[0], 16, 64)
+	head, err := strconv.ParseUint(realtime, 16, 64)
 	if err != nil || head == 0 {
-		return "", 0, false
+		return journalFile{}, false
 	}
-	return prefix, head, true
+	file.head = head
+	return file, true
+}
+
+// bootCutoff is the first entry of the boot the cleanup must keep: its
+// realtime and, when journalctl reports them, its seqnum and seqnum id.
+type bootCutoff struct {
+	realtime uint64
+	seqID    string
+	seq      uint64
 }
 
 // journalCandidates returns, oldest first, the archived files whose removal
 // brings the journal down to journalLimit without reaching the previous
 // boot: a file is eligible only when the next file of the same prefix starts
-// before cutoff, so every entry it holds is older than that boot.
-func journalCandidates(files []journalFile, total, cutoff uint64) []journalFile {
-	byPrefix := map[string][]journalFile{}
+// before the cutoff, so every entry it holds is older than that boot.
+//
+// Files in the boot's seqnum space are ordered and compared by seqnum, which
+// journald increments regardless of the clock (vegad#126): a boot that began
+// with the clock ahead cannot make its own files look older. Renamed (~)
+// files and older seqnum spaces only carry a time, so they keep the realtime
+// rule.
+func journalCandidates(files []journalFile, total uint64, cut bootCutoff) []journalFile {
+	bySeq, byTime := map[string][]journalFile{}, map[string][]journalFile{}
 	for _, file := range files {
-		byPrefix[file.prefix] = append(byPrefix[file.prefix], file)
+		if cut.seqID != "" && file.seqID == cut.seqID {
+			bySeq[file.prefix] = append(bySeq[file.prefix], file)
+		} else {
+			byTime[file.prefix] = append(byTime[file.prefix], file)
+		}
 	}
 	var eligible []journalFile
-	for _, list := range byPrefix {
+	for _, list := range bySeq {
+		sort.Slice(list, func(i, j int) bool { return list[i].seq < list[j].seq })
+		for i := 0; i+1 < len(list); i++ {
+			if list[i+1].seq <= cut.seq {
+				eligible = append(eligible, list[i])
+			}
+		}
+	}
+	for _, list := range byTime {
 		sort.Slice(list, func(i, j int) bool { return list[i].head < list[j].head })
 		for i := 0; i+1 < len(list); i++ {
-			if list[i+1].head <= cutoff {
+			if list[i+1].head <= cut.realtime {
 				eligible = append(eligible, list[i])
 			}
 		}
@@ -95,14 +130,14 @@ type bootEntry struct {
 
 // previousBootStart is the first entry of the previous boot, or of the
 // current one when there is no previous boot.
-func previousBootStart(ctx context.Context, env *Env) (uint64, error) {
+func previousBootStart(ctx context.Context, env *Env) (bootCutoff, error) {
 	out, err := runOK(ctx, env, "", "journalctl", "--list-boots", "-o", "json", "--no-pager")
 	if err != nil {
-		return 0, err
+		return bootCutoff{}, err
 	}
 	var boots []bootEntry
 	if err := json.Unmarshal(out, &boots); err != nil {
-		return 0, err
+		return bootCutoff{}, err
 	}
 	var current, previous uint64
 	for _, boot := range boots {
@@ -113,13 +148,38 @@ func previousBootStart(ctx context.Context, env *Env) (uint64, error) {
 			previous = boot.FirstEntry
 		}
 	}
-	if previous != 0 {
-		return previous, nil
+	switch {
+	case previous != 0:
+		return withBootSeqnum(ctx, env, "-1", previous), nil
+	case current != 0:
+		return withBootSeqnum(ctx, env, "0", current), nil
 	}
-	if current != 0 {
-		return current, nil
+	return bootCutoff{}, errors.New("journalctl não listou o boot atual")
+}
+
+// withBootSeqnum adds the seqnum of the boot's first entry (systemd ≥ 254).
+// Without it the cutoff keeps only the realtime.
+func withBootSeqnum(ctx context.Context, env *Env, boot string, realtime uint64) bootCutoff {
+	cut := bootCutoff{realtime: realtime}
+	out, err := runOK(ctx, env, "", "journalctl", "-b", boot, "-o", "json", "--no-pager",
+		"--lines=+1", "--output-fields=__SEQNUM,__SEQNUM_ID")
+	if err != nil {
+		return cut
 	}
-	return 0, errors.New("journalctl não listou o boot atual")
+	var first struct {
+		Seq   string `json:"__SEQNUM"`
+		SeqID string `json:"__SEQNUM_ID"`
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	if json.Unmarshal([]byte(line), &first) != nil || len(first.SeqID) != 32 {
+		return cut
+	}
+	seq, err := strconv.ParseUint(first.Seq, 10, 64)
+	if err != nil {
+		return cut
+	}
+	cut.seqID, cut.seq = strings.ToLower(first.SeqID), seq
+	return cut
 }
 
 func journalState(ctx context.Context, env *Env) ([]journalFile, uint64, error) {
@@ -155,9 +215,10 @@ func journalState(ctx context.Context, env *Env) ([]journalFile, uint64, error) 
 			}
 			size := allocated(info)
 			total += size
-			if prefix, head, ok := parseArchivedName(name); ok {
+			if file, ok := parseArchivedName(name); ok {
 				// The machine-id directory is part of the rotation chain.
-				files = append(files, journalFile{filepath.Join(base, name), dir.Name() + "/" + prefix, head, size})
+				file.path, file.prefix, file.size = filepath.Join(base, name), dir.Name()+"/"+file.prefix, size
+				files = append(files, file)
 			}
 		}
 	}
