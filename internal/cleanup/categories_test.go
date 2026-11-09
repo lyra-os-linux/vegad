@@ -163,6 +163,28 @@ func TestFlatpakUnusedComesFromFlatpakAndAnswersNo(t *testing.T) {
 	}
 }
 
+// vegad#127: Clean of flatpak-unused runs the non-interactive uninstall and
+// reports what the measurement found as freed.
+func TestFlatpakUnusedCleanUninstallsAndReportsFreedBytes(t *testing.T) {
+	h := newHost(t)
+	runtime := h.write(flatpakSystemDir+"/runtime/org.gtk.Gtk3theme.Adwaita-dark/x86_64/3.22/active/files/gtk.css", 12<<10)
+	h.replies["flatpak uninstall --unused --system"] = reply{out: fixture(t, "flatpak-unused.txt"), code: 1}
+	h.replies["flatpak uninstall --unused --system --noninteractive -y"] = reply{effect: func() {
+		_ = os.RemoveAll(h.env.path(flatpakSystemDir + "/runtime"))
+		h.replies["flatpak uninstall --unused --system"] = reply{out: fixture(t, "flatpak-unused-nothing.txt")}
+	}}
+	freed, result, err := Clean(context.Background(), h.env, "flatpak-unused")
+	if err != nil || result != ResultOK || freed < 12<<10 {
+		t.Fatalf("freed %d, result %s, err %v", freed, result, err)
+	}
+	if !h.ran("flatpak uninstall --unused --system --noninteractive -y") {
+		t.Fatal("the unused runtimes were not uninstalled")
+	}
+	if _, err := os.Stat(runtime); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("runtime still on disk: %v", err)
+	}
+}
+
 func TestPurgeKernelsDryRunParsesTheRealOutput(t *testing.T) {
 	plan, err := parsePurgeKernels([]byte(fixture(t, "purge-kernels-remove.txt")))
 	if err != nil {
@@ -229,6 +251,28 @@ func TestKernelsCleanAnOldKernelInsideASnapshot(t *testing.T) {
 	freed, result, err := Clean(context.Background(), h.env, "old-kernels")
 	if err != nil || result != ResultOK || freed != m.bytes || h.snaps != 1 {
 		t.Fatalf("freed=%d result=%s err=%v snaps=%d", freed, result, err, h.snaps)
+	}
+}
+
+// vegad#124: with Snapper (the Desktop) the purge's snapshots keep the
+// kernel files, so Scan says "deferred" and Clean reports 0 freed bytes.
+func TestKernelsWithSnapperAreDeferredAndFreeNothingYet(t *testing.T) {
+	old := strings.Replace(fixture(t, "purge-kernels-remove.txt"),
+		"kernel-default-6.12.0-160100.8.1 kernel-default-extra kernel-default-optional", "kernel-default-6.12.0-160100.5.1", 1)
+	h := kernelHost(t, old)
+	h.tools["snapper"] = true
+	h.replies["snapper --machine-readable csv get-config"] = reply{out: fixture(t, "snapper-config.csv")}
+	m, err := measureKernels(context.Background(), h.env)
+	if err != nil || !m.deferred || !m.cleanable() {
+		t.Fatalf("%+v %v", m, err)
+	}
+	if detail := m.category("old-kernels").Detail; !strings.Contains(detail, "deferred") {
+		t.Fatalf("detail %q", detail)
+	}
+	h.replies["zypper -n --no-refresh purge-kernels"] = reply{}
+	freed, result, err := Clean(context.Background(), h.env, "old-kernels")
+	if err != nil || result != ResultOK || freed != 0 || !h.ran("zypper -n --no-refresh purge-kernels") {
+		t.Fatalf("freed=%d result=%s err=%v", freed, result, err)
 	}
 }
 

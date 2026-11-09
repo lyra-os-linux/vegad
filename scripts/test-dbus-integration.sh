@@ -32,6 +32,13 @@ for command in busctl cargo dbus-daemon go pkcheck; do
   }
 done
 
+# vegad runs only on Lyra OS (vegad#132). The CI containers are Leap images,
+# so identify the disposable container as Lyra OS Server; never outside CI.
+if [ "${CI:-}" = true ] && [ "$EUID" = 0 ] && ! grep -q '^ID="\?lyra-os' /etc/os-release 2>/dev/null; then
+  rm -f /etc/os-release
+  printf '%s\n' 'NAME="Lyra OS Server"' 'ID=lyra-os-server' 'ID_LIKE="opensuse suse"' 'VERSION_ID="16.1"' > /etc/os-release
+fi
+
 # Container CI has no system manager. Exercise the wire contracts with the
 # daemon already unprivileged; the real root-to-worker boundary is tested in
 # scripts/check-query-vm.py against systemd and Polkit.

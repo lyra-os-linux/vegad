@@ -19,15 +19,10 @@ import (
 	"github.com/lyraos/vegad/internal/version"
 )
 
-// defaultSystemPATH covers where every CLI vegad shells out to (apt, df,
-// dpkg-query, journalctl, systemctl, snapper, firewall-cmd/ufw, ...)
-// normally lives. systemd's Type=dbus activation grants services its
-// own sane default PATH, but on SysVinit distros (e.g. MX Linux) the system
-// bus activates org.lyraos.Vega1 by having the classic dbus-daemon fork+exec
-// the binary directly (see packaging/vegad/org.lyraos.Vega1.service's
-// Exec=), inheriting dbus-daemon's own minimal boot-time environment —
-// which can have PATH unset entirely, breaking every exec.Command call in
-// this daemon at once.
+// defaultSystemPATH covers where every tool vegad runs lives (zypper, rpm,
+// journalctl, systemctl, snapper, firewall-cmd, ...). systemd's Type=dbus
+// activation already gives the service a sane PATH; this keeps the jobs and
+// manual runs working when PATH arrives empty or incomplete.
 const defaultSystemPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 func ensureSystemPATH() {

@@ -7,11 +7,13 @@ import (
 	"strings"
 )
 
-// ID identifies a supported Linux distribution family.
+// ID identifies the package backend of the running system.
 type ID int
 
 const (
 	Unknown ID = iota
+	// OpenSUSELeap is the backend of Lyra OS, which is built on openSUSE
+	// Leap: zypper, Snapper and the Leap kernel packages.
 	OpenSUSELeap
 )
 
@@ -28,28 +30,21 @@ func (d ID) String() string {
 // instead of the real /etc/os-release.
 var osReleasePath = "/etc/os-release"
 
-// Detect reads /etc/os-release's ID (falling back to ID_LIKE for
-// derivatives) to identify the running distro family. It returns an error
-// for anything other than openSUSE Leap, the only distro vegad currently
-// supports, rather than guessing — callers must fail startup clearly
-// instead of silently running the wrong package manager commands.
+// Detect reads /etc/os-release's ID. vegad is exclusive to Lyra OS (the
+// Desktop, ID=lyra-os, and the Server, ID=lyra-os-server); every other
+// system — openSUSE Leap, Tumbleweed, SLES or another derivative — is
+// refused (decided by the maintainer on 09/11/2026, vegad#132). ID_LIKE is
+// deliberately ignored: it would admit any SUSE-like system. Callers fail
+// startup clearly instead of running on a system vegad was not made for.
 func Detect() (ID, error) {
 	fields, err := parseOSRelease(osReleasePath)
 	if err != nil {
 		return Unknown, fmt.Errorf("distro: não foi possível ler %s: %w", osReleasePath, err)
 	}
-
 	if id, ok := idFromName(fields["ID"]); ok {
 		return id, nil
 	}
-
-	for _, like := range strings.Fields(fields["ID_LIKE"]) {
-		if id, ok := idFromName(like); ok {
-			return id, nil
-		}
-	}
-
-	return Unknown, fmt.Errorf("distro: distribuição não suportada (ID=%q ID_LIKE=%q)", fields["ID"], fields["ID_LIKE"])
+	return Unknown, fmt.Errorf("distro: o vegad é exclusivo do Lyra OS (ID=%q ID_LIKE=%q)", fields["ID"], fields["ID_LIKE"])
 }
 
 // PrettyName reports the running distro's human-readable name and version
@@ -69,7 +64,7 @@ func PrettyName() string {
 
 func idFromName(name string) (ID, bool) {
 	switch name {
-	case "opensuse-leap", "suse", "opensuse":
+	case "lyra-os", "lyra-os-server":
 		return OpenSUSELeap, true
 	default:
 		return Unknown, false
