@@ -750,11 +750,15 @@ func (s *DiagnosticsService) stage(ctx context.Context, job *runningDiagnostic, 
 	case !available:
 		result = diagnostics.StageResult{ID: id, Verdict: diagnostics.Unavailable, Summary: vegai18n.T(env.Locale, "diagnostics.summary.unavailable"), Findings: []diagnostics.Finding{}, Metrics: map[string]any{"reason": reason}}
 	default:
+		env.TakeTruncated() // a previous stage's cut output is not this one's
 		stageCtx, stop := context.WithTimeout(ctx, timeout)
 		result = run(stageCtx, func(percent uint32, message string) {
 			s.setProgress(job, id, percent, message)
 		})
 		stop()
+		if tools := env.TakeTruncated(); len(tools) > 0 {
+			result.Findings = append(result.Findings, env.TruncationFinding(tools))
+		}
 		if ctx.Err() != nil && result.Verdict != diagnostics.Cancelled {
 			result.Verdict = diagnostics.Cancelled
 		}

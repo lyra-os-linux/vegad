@@ -87,6 +87,9 @@ type Env struct {
 	NumCPU func() int
 	// WorkDir holds the disk benchmark file; removed after every run.
 	WorkDir string
+	// truncated collects the tools whose output passed outputLimit (only on
+	// the host environment; nil in tests that build their own Env).
+	truncated *truncatedTools
 	// Sample receives live telemetry during load tests (may be nil).
 	Sample         func(Sample)
 	SampleInterval time.Duration
