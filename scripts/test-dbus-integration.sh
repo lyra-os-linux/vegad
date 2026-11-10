@@ -96,21 +96,42 @@ fi
 # Every method and signal of the canonical contract must be visible through
 # Introspect(); the node is hand-written in server.go and can drift from the
 # XML. Bluetooth is intentionally absent from the server profile.
+contract_signatures='
+# Assinaturas do contrato: "membro tipo entrada saída", "-" quando vazio,
+# no formato das colunas do busctl introspect.
+/<(method|signal) name=/ {
+  match($0, /<(method|signal)/); kind = substr($0, RSTART + 1, RLENGTH - 1)
+  match($0, /name="[^"]*"/); name = substr($0, RSTART + 6, RLENGTH - 7)
+  ins = ""; outs = ""
+  if ($0 ~ /\/>[[:space:]]*$/) { print name, kind, "-", "-"; kind = "" }
+  next
+}
+kind != "" && /<arg / {
+  match($0, /type="[^"]*"/); type = substr($0, RSTART + 6, RLENGTH - 7)
+  if (kind == "method" && $0 ~ /direction="out"/) outs = outs type; else ins = ins type
+  next
+}
+kind != "" && /<\/(method|signal)>/ {
+  print name, kind, (ins == "" ? "-" : ins), (outs == "" ? "-" : outs); kind = ""
+}
+'
 contract_missing=0
 for xml in "$dbus_client_dir"/dbus/org.lyraos.Vega1.*.xml; do
   iface="$(sed -n 's/.*<interface name="\([^"]*\)".*/\1/p' "$xml")"
   [ "$iface" != org.lyraos.Vega1.Bluetooth ] || continue
   introspection="$(busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" introspect \
     org.lyraos.Vega1 /org/lyraos/Vega1 "$iface")"
-  for kind in method signal; do
-    while read -r member; do
-      [ -n "$member" ] || continue
-      if ! grep -Eq "^\.$member[[:space:]]+$kind[[:space:]]" <<<"$introspection"; then
-        echo "introspecção sem $kind $iface.$member do contrato" >&2
-        contract_missing=1
-      fi
-    done < <(sed -n "s/.*<$kind name=\"\([^\"]*\)\".*/\1/p" "$xml")
-  done
+  # Nome, tipo e assinatura completa (entrada e saída), não só o nome: uma
+  # mudança de tipo de argumento quebraria os frontends sem o CI ver
+  # (lyra-vega-dbus#21).
+  while read -r member kind in out; do
+    if ! awk -v m=".$member" -v k="$kind" -v i="$in" -v o="$out" \
+      '$1 == m && $2 == k && $3 == i && $4 == o { found = 1 } END { exit !found }' \
+      <<<"$introspection"; then
+      echo "introspecção diverge do contrato: $kind $iface.$member ($in -> $out)" >&2
+      contract_missing=1
+    fi
+  done < <(awk "$contract_signatures" "$xml")
 done
 [ "$contract_missing" = 0 ] || exit 1
 
