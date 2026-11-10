@@ -163,6 +163,39 @@ func TestFlatpakUnusedComesFromFlatpakAndAnswersNo(t *testing.T) {
 	}
 }
 
+// vega#242: what the runtime shares (by hard link) with runtimes that stay is
+// not freed, so it does not count; unrecognized output is not "nothing".
+func TestFlatpakUnusedCountsOnlyWhatIsNotShared(t *testing.T) {
+	h := newHost(t)
+	h.replies["flatpak uninstall --unused --system"] = reply{out: fixture(t, "flatpak-unused.txt"), code: 1}
+	own := h.write(flatpakSystemDir+"/repo/objects/own", 64<<10)
+	shared := h.write(flatpakSystemDir+"/repo/objects/shared", 256<<10)
+	gone := h.env.path(flatpakSystemDir + "/runtime/org.gtk.Gtk3theme.Adwaita-dark/x86_64/3.22/active/files")
+	stays := h.env.path(flatpakSystemDir + "/runtime/org.gnome.Platform/x86_64/49/active/files")
+	for _, dir := range []string{gone, stays} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, link := range [][2]string{{own, gone + "/own"}, {shared, gone + "/shared"}, {shared, stays + "/shared"}} {
+		if err := os.Link(link[0], link[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := measureFlatpak(context.Background(), h.env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.bytes < 64<<10 || m.bytes >= 256<<10 {
+		t.Fatalf("só o exclusivo deveria contar: %d", m.bytes)
+	}
+
+	h.replies["flatpak uninstall --unused --system"] = reply{out: "error: something new\n", code: 1}
+	if _, err := measureFlatpak(context.Background(), h.env); err == nil {
+		t.Fatal("saída não reconhecida não pode virar \"nada a limpar\"")
+	}
+}
+
 // vegad#127: Clean of flatpak-unused runs the non-interactive uninstall and
 // reports what the measurement found as freed.
 func TestFlatpakUnusedCleanUninstallsAndReportsFreedBytes(t *testing.T) {
