@@ -173,5 +173,17 @@ grep -q 'org.lyraos.vega.backup.read-admin' "$tmpdir/backup-read.log" || {
   cat "$tmpdir/backup-read.log" >&2
   exit 1
 }
+# Cleanup.Scan follows the same rule: denied here, authorized path covered by
+# TestCleanupScanPolkitVM in check-query-vm.py (lyra-vega-dbus#21).
+if busctl --address="$DBUS_SYSTEM_BUS_ADDRESS" call org.lyraos.Vega1 \
+  /org/lyraos/Vega1 org.lyraos.Vega1.Cleanup Scan >"$tmpdir/cleanup-scan.log" 2>&1; then
+  echo "Cleanup.Scan foi autorizado sem Polkit" >&2
+  exit 1
+fi
+grep -q 'org.lyraos.vega.storage.read-admin' "$tmpdir/cleanup-scan.log" || {
+  cat "$tmpdir/cleanup-scan.log" >&2
+  exit 1
+}
 cargo test --locked -- --ignored --test-threads=1 \
-  --skip backup::tests::real_daemon_exposes_the_read_only_backup_contract
+  --skip backup::tests::real_daemon_exposes_the_read_only_backup_contract \
+  --skip cleanup::tests::real_daemon_scans_without_deleting
