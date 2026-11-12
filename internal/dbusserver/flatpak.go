@@ -15,6 +15,24 @@ import (
 
 var flatpakAppIDPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+\.[A-Za-z_][A-Za-z0-9_-]*$`)
 
+// obsPluginPrefix marks the OBS Studio plugins published on Flathub. They are
+// runtime extensions of com.obsproject.Studio, not apps, so `--app` cannot
+// install them. Only this prefix is accepted as a runtime: any other runtime
+// (platforms, SDKs, GL drivers) keeps going through `--app` and is refused by
+// flatpak, so callers cannot use Install to pull arbitrary runtimes.
+const obsPluginPrefix = "com.obsproject.Studio.Plugin."
+
+func isObsPlugin(id string) bool {
+	return strings.HasPrefix(id, obsPluginPrefix) && len(id) > len(obsPluginPrefix)
+}
+
+func flatpakKind(id string) string {
+	if isObsPlugin(id) {
+		return "--runtime"
+	}
+	return "--app"
+}
+
 func validateFlatpakAppID(id string) error {
 	if len(id) > 255 || !flatpakAppIDPattern.MatchString(id) {
 		return fmt.Errorf("identificador de aplicativo Flatpak inválido: %q", id)
@@ -26,7 +44,7 @@ func flatpakAppCommand(operation, appID, scope string, u *desktopUser) (*exec.Cm
 	if err := validateFlatpakAppID(appID); err != nil {
 		return nil, err
 	}
-	args := []string{operation, "-y", "--noninteractive", "--app"}
+	args := []string{operation, "-y", "--noninteractive", flatpakKind(appID)}
 	switch scope {
 	case "user":
 		if u == nil || u.Uid == 0 || u.Username == "" {
@@ -134,22 +152,31 @@ func searchFlatpak(query string, u *desktopUser) ([]PackageRef, error) {
 // resolved — vegad runs as root, so without a resolved desktop user
 // `flatpak --user` would only ever see root's own installation, not the
 // caller's.
+//
+// OBS plugins (runtime extensions, see obsPluginPrefix) are listed too, so
+// they show as installed and can be removed and updated like apps.
 func flatpakInstalledApps(u *desktopUser) (map[string]flatpakApp, error) {
 	apps := map[string]flatpakApp{}
-	systemCmd := exec.Command("flatpak", "list", "--app", "--system", "--columns=application,name")
-	if err := collectFlatpakInstalled(systemCmd, "system", apps); err != nil {
-		return nil, err
-	}
-	if u != nil {
-		userCmd := flatpakUserCmd(u, "list", "--app", "--user", "--columns=application,name")
-		if err := collectFlatpakInstalled(userCmd, "user", apps); err != nil {
-			log.Printf("vegad: flatpak list --user (%s): %v", u.Username, err)
+	for _, kind := range []string{"--app", "--runtime"} {
+		keep := func(string) bool { return true }
+		if kind == "--runtime" {
+			keep = isObsPlugin
+		}
+		systemCmd := exec.Command("flatpak", "list", kind, "--system", "--columns=application,name")
+		if err := collectFlatpakInstalled(systemCmd, "system", keep, apps); err != nil {
+			return nil, err
+		}
+		if u != nil {
+			userCmd := flatpakUserCmd(u, "list", kind, "--user", "--columns=application,name")
+			if err := collectFlatpakInstalled(userCmd, "user", keep, apps); err != nil {
+				log.Printf("vegad: flatpak list %s --user (%s): %v", kind, u.Username, err)
+			}
 		}
 	}
 	return apps, nil
 }
 
-func collectFlatpakInstalled(cmd *exec.Cmd, scope string, apps map[string]flatpakApp) error {
+func collectFlatpakInstalled(cmd *exec.Cmd, scope string, keep func(string) bool, apps map[string]flatpakApp) error {
 	out, err := cmd.Output()
 	if err != nil {
 		return err
@@ -158,6 +185,9 @@ func collectFlatpakInstalled(cmd *exec.Cmd, scope string, apps map[string]flatpa
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), "\t")
 		if len(fields) < 2 {
+			continue
+		}
+		if !keep(fields[0]) {
 			continue
 		}
 		apps[fields[0]] = flatpakApp{Name: fields[1], Scope: scope}

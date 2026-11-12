@@ -208,3 +208,64 @@ func TestPlanListsAppIgnoresEmptyPlan(t *testing.T) {
 		t.Fatal("plano vazio não pode marcar pendências")
 	}
 }
+
+func TestFlatpakObsPluginsAreTheOnlyRuntimes(t *testing.T) {
+	for _, id := range []string{"com.obsproject.Studio.Plugin.DroidCam", "com.obsproject.Studio.Plugin.WaylandHotkeys"} {
+		for _, operation := range []string{"install", "uninstall", "update"} {
+			cmd, err := flatpakAppCommand(operation, id, "system", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.Args[4] != "--runtime" {
+				t.Fatalf("%s %s args = %#v", operation, id, cmd.Args)
+			}
+		}
+	}
+	// Outros runtimes e nomes parecidos continuam como app: o flatpak recusa
+	// e o Install não vira caminho para baixar runtimes arbitrários.
+	for _, id := range []string{"org.freedesktop.Platform", "org.freedesktop.Platform.GL.default", "com.obsproject.Studio", "com.obsproject.Studio.PluginX.Foo", "org.example.com.obsproject.Studio.Plugin.X"} {
+		cmd, err := flatpakAppCommand("install", id, "system", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd.Args[4] != "--app" {
+			t.Fatalf("%s args = %#v", id, cmd.Args)
+		}
+	}
+	if _, err := flatpakAppCommand("install", obsPluginPrefix, "system", nil); err == nil {
+		t.Fatal("bare plugin prefix accepted")
+	}
+}
+
+func TestFlatpakInstalledRuntimesKeepOnlyObsPlugins(t *testing.T) {
+	apps := map[string]flatpakApp{}
+	list := "org.freedesktop.Platform\tFreedesktop Platform\ncom.obsproject.Studio.Plugin.DroidCam\tDroidCam\n"
+	cmd := exec.Command("printf", "%s", list)
+	if err := collectFlatpakInstalled(cmd, "system", isObsPlugin, apps); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]flatpakApp{"com.obsproject.Studio.Plugin.DroidCam": {Name: "DroidCam", Scope: "system"}}
+	if !reflect.DeepEqual(apps, want) {
+		t.Fatalf("apps = %#v", apps)
+	}
+}
+
+func TestFlatpakObsPluginInstallRequiresPolkit(t *testing.T) {
+	withFlatpakInstalled(t)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	argsFile := filepath.Join(bin, "args")
+	t.Setenv("FLATPAK_TEST_POLKIT_ARGS", argsFile)
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FLATPAK_TEST_POLKIT_ARGS\"\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "pkcheck"), []byte(stub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &SoftwareService{activity: &Activity{}, profile: profile.Desktop}
+	if tx, err := s.Install(":1.43", "flathub", "com.obsproject.Studio.Plugin.DroidCam"); tx != 0 || err == nil || err.Name != BusName+".Error.AuthorizationFailed" {
+		t.Fatalf("unauthorized plugin install = %d %v", tx, err)
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil || !strings.Contains(string(args), "org.lyraos.vega.software.install\n--system-bus-name\n:1.43\n") {
+		t.Fatalf("authorization did not bind the action and caller: %q %v", args, err)
+	}
+}
