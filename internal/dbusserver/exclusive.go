@@ -9,8 +9,8 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// operationGate keeps an exclusive operation (a health diagnostic or a space
-// cleanup) and system transactions (Zypper, Flatpak, snapshots, backup,
+// operationGate keeps an exclusive operation (a health diagnostic, a space
+// cleanup or a system profile change) and system transactions (Zypper, Flatpak, snapshots, backup,
 // kernel) mutually exclusive in both directions: a stress test must not
 // compete with an update, an update must not change the system under a
 // package or filesystem check, and a cleanup must not remove a cache or a
@@ -46,6 +46,8 @@ func (g *operationGate) beginTransaction() (func(), *dbus.Error) {
 		return nil, busyError("um diagnóstico de saúde está em andamento")
 	case exclusiveCleanup:
 		return nil, busyError("uma limpeza de espaço está em andamento")
+	case exclusiveProfile:
+		return nil, busyError("um perfil do sistema está sendo aplicado")
 	}
 	g.transactions++
 	var once sync.Once
@@ -61,6 +63,7 @@ func (g *operationGate) beginTransaction() (func(), *dbus.Error) {
 const (
 	exclusiveDiagnostic = "diagnostic"
 	exclusiveCleanup    = "cleanup"
+	exclusiveProfile    = "profile"
 )
 
 // beginDiagnostic admits one diagnostic at a time, and only while no
@@ -74,6 +77,12 @@ func (g *operationGate) beginCleanup() (func(), *dbus.Error) {
 	return g.beginExclusive(exclusiveCleanup)
 }
 
+// beginProfile admits a system profile change under the same rules: it may
+// install packages and must not change the system under a transaction.
+func (g *operationGate) beginProfile() (func(), *dbus.Error) {
+	return g.beginExclusive(exclusiveProfile)
+}
+
 func (g *operationGate) beginExclusive(kind string) (func(), *dbus.Error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -82,6 +91,8 @@ func (g *operationGate) beginExclusive(kind string) (func(), *dbus.Error) {
 		return nil, busyError("um diagnóstico de saúde está em andamento")
 	case g.exclusive == exclusiveCleanup:
 		return nil, busyError("uma limpeza de espaço está em andamento")
+	case g.exclusive == exclusiveProfile:
+		return nil, busyError("um perfil do sistema está sendo aplicado")
 	case g.transactions > 0:
 		return nil, busyError("uma operação de software, snapshot ou backup está em andamento")
 	case g.zypperLocked != nil && g.zypperLocked():

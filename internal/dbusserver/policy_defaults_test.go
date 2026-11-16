@@ -33,6 +33,8 @@ func TestStoragePolicyDefaults(t *testing.T) {
 	want := map[string][3]string{
 		"org.lyraos.vega.storage.read-admin": {"no", "no", "yes"},
 		"org.lyraos.vega.storage.cleanup":    {"no", "no", "auth_admin_keep"},
+		// vegad#122/#123: every profile change asks the administrator.
+		"org.lyraos.vega.profiles.manage": {"no", "no", "auth_admin"},
 	}
 	for _, action := range policy.Actions {
 		expected, ok := want[action.ID]

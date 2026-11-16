@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/lyraos/vegad/internal/distro"
@@ -26,11 +28,115 @@ func isObsPlugin(id string) bool {
 	return strings.HasPrefix(id, obsPluginPrefix) && len(id) > len(obsPluginPrefix)
 }
 
+// linuxAudioPluginPrefix marks the LV2/LADSPA/VST plugin bundles of Flathub
+// (x42, ZAM, Calf...). Like the OBS plugins they are runtime extensions, but
+// each one has a branch per Freedesktop runtime (24.08, 25.08...) and only the
+// branch an installed app declares is useful to it (vega#217).
+const linuxAudioPluginPrefix = "org.freedesktop.LinuxAudio.Plugins."
+
+func isLinuxAudioPlugin(id string) bool {
+	return strings.HasPrefix(id, linuxAudioPluginPrefix) && len(id) > len(linuxAudioPluginPrefix)
+}
+
+// isPluginRuntime reports the runtime extensions Install accepts.
+func isPluginRuntime(id string) bool {
+	return isObsPlugin(id) || isLinuxAudioPlugin(id)
+}
+
 func flatpakKind(id string) string {
-	if isObsPlugin(id) {
+	if isPluginRuntime(id) {
 		return "--runtime"
 	}
 	return "--app"
+}
+
+// Flatpak installations scanned for LinuxAudio branches; replaced in tests.
+var (
+	flatpakSystemDir   = "/var/lib/flatpak"
+	flatpakUserSubdir  = ".local/share/flatpak"
+	flatpakRuntimeArch = "x86_64"
+)
+
+func flatpakDir(scope string, u *desktopUser) string {
+	if scope == "user" && u != nil {
+		return filepath.Join(u.HomeDir, flatpakUserSubdir)
+	}
+	return flatpakSystemDir
+}
+
+var flatpakBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// linuxAudioBranches lists the branches a LinuxAudio plugin operation targets:
+// for install, the versions of the org.freedesktop.LinuxAudio.Plugins
+// extension point declared by the installed apps of that scope; otherwise the
+// branches of the plugin already installed.
+func linuxAudioBranches(operation, appID, scope string, u *desktopUser) ([]string, error) {
+	dir := flatpakDir(scope, u)
+	seen := map[string]bool{}
+	var branches []string
+	add := func(branch string) {
+		if flatpakBranchPattern.MatchString(branch) && !seen[branch] {
+			seen[branch] = true
+			branches = append(branches, branch)
+		}
+	}
+	if operation == "install" {
+		metadata, _ := filepath.Glob(filepath.Join(dir, "app", "*", "current", "active", "metadata"))
+		for _, path := range metadata {
+			for _, version := range linuxAudioExtensionVersions(path) {
+				add(version)
+			}
+		}
+		if len(branches) == 0 {
+			return nil, fmt.Errorf("nenhum app Flatpak instalado usa plugins de áudio do Flathub; instale antes o app (LMMS, Hydrogen, Carla...)")
+		}
+	} else {
+		entries, _ := os.ReadDir(filepath.Join(dir, "runtime", appID, flatpakRuntimeArch))
+		for _, entry := range entries {
+			if entry.IsDir() {
+				add(entry.Name())
+			}
+		}
+		if len(branches) == 0 {
+			return nil, fmt.Errorf("plugin Flatpak não instalado: %s", appID)
+		}
+	}
+	sort.Strings(branches)
+	return branches, nil
+}
+
+// linuxAudioExtensionVersions reads the versions of the LinuxAudio extension
+// point from an app's metadata ("version" or the ";"-separated "versions").
+func linuxAudioExtensionVersions(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var versions []string
+	inGroup := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inGroup = line == "[Extension org.freedesktop.LinuxAudio.Plugins]"
+			continue
+		}
+		if !inGroup {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "version", "versions":
+			for _, version := range strings.Split(value, ";") {
+				if version = strings.TrimSpace(version); version != "" {
+					versions = append(versions, version)
+				}
+			}
+		}
+	}
+	return versions
 }
 
 func validateFlatpakAppID(id string) error {
@@ -45,18 +151,32 @@ func flatpakAppCommand(operation, appID, scope string, u *desktopUser) (*exec.Cm
 		return nil, err
 	}
 	args := []string{operation, "-y", "--noninteractive", flatpakKind(appID)}
+	if scope != "user" && scope != "system" {
+		return nil, fmt.Errorf("escopo Flatpak inválido: %q", scope)
+	}
+	if scope == "user" && (u == nil || u.Uid == 0 || u.Username == "") {
+		return nil, fmt.Errorf("operação Flatpak user exige identidade do chamador")
+	}
+	refs := []string{appID}
+	if isLinuxAudioPlugin(appID) {
+		branches, err := linuxAudioBranches(operation, appID, scope, u)
+		if err != nil {
+			return nil, err
+		}
+		refs = refs[:0]
+		for _, branch := range branches {
+			refs = append(refs, appID+"//"+branch)
+		}
+	}
 	switch scope {
 	case "user":
-		if u == nil || u.Uid == 0 || u.Username == "" {
-			return nil, fmt.Errorf("operação Flatpak user exige identidade do chamador")
-		}
-		return flatpakUserCmd(u, append(args, "--user", "--", appID)...), nil
+		return flatpakUserCmd(u, append(append(args, "--user", "--"), refs...)...), nil
 	case "system":
 		args = append(args, "--system", "--")
 		if operation == "install" {
 			args = append(args, "flathub")
 		}
-		return exec.Command("flatpak", append(args, appID)...), nil
+		return exec.Command("flatpak", append(args, refs...)...), nil
 	default:
 		return nil, fmt.Errorf("escopo Flatpak inválido: %q", scope)
 	}
@@ -153,14 +273,15 @@ func searchFlatpak(query string, u *desktopUser) ([]PackageRef, error) {
 // `flatpak --user` would only ever see root's own installation, not the
 // caller's.
 //
-// OBS plugins (runtime extensions, see obsPluginPrefix) are listed too, so
-// they show as installed and can be removed and updated like apps.
+// OBS and LinuxAudio plugins (runtime extensions, see isPluginRuntime) are
+// listed too, so they show as installed and can be removed and updated like
+// apps.
 func flatpakInstalledApps(u *desktopUser) (map[string]flatpakApp, error) {
 	apps := map[string]flatpakApp{}
 	for _, kind := range []string{"--app", "--runtime"} {
 		keep := func(string) bool { return true }
 		if kind == "--runtime" {
-			keep = isObsPlugin
+			keep = isPluginRuntime
 		}
 		systemCmd := exec.Command("flatpak", "list", kind, "--system", "--columns=application,name")
 		if err := collectFlatpakInstalled(systemCmd, "system", keep, apps); err != nil {
