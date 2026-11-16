@@ -259,6 +259,20 @@
     </defaults>
   </action>
 
+  <action id="org.lyraos.vega.profiles.manage">
+    <description>Change system profiles</description>
+    <description xml:lang="pt_BR">Alterar perfis do sistema</description>
+    <description xml:lang="es">Cambiar perfiles del sistema</description>
+    <message>Authentication is required to turn a system profile (kernel values, real-time audio, kernel boot parameters) on or off</message>
+    <message xml:lang="pt_BR">É necessário autenticar para ligar ou desligar um perfil do sistema (valores do kernel, áudio em tempo real, parâmetros de boot do kernel)</message>
+    <message xml:lang="es">Es necesario autenticarse para activar o desactivar un perfil del sistema (valores del kernel, audio en tiempo real, parámetros de arranque del kernel)</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.lyraos.vega.monitor.kill">
     <description>Encerrar processos</description>
     <message>Autenticação é necessária para encerrar processos do sistema</message>

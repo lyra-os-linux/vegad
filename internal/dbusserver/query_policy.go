@@ -50,6 +50,10 @@ var methodPolicies = map[string]methodPolicy{
 	"Cleanup.Scan":    {privilegedRead, "org.lyraos.vega.storage.read-admin"},
 	"Cleanup.Clean":   {administrative, ""},
 	"DateTime.Status": {queryPublic, ""},
+	// The list compares each profile with the caller's own session limits
+	// (/proc/<pid>/limits), so it runs in the broker without polkit.
+	"Profiles.ListSystemProfiles": {brokeredPublic, ""},
+	"Profiles.SetSystemProfile":   {administrative, ""},
 	// Diagnostics keeps the running job in the broker: the reads must see it.
 	"Diagnostics.ListTests": {brokeredPublic, ""},
 	"Diagnostics.Current":   {brokeredPublic, ""},

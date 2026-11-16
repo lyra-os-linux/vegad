@@ -240,6 +240,11 @@ func (s *Server) Export() error {
 		return err
 	}
 
+	profilesService := newProfilesService(s.activity, s.conn, kernel.provider.Kernel().GrubConfigPath)
+	if err := s.export(profilesService, BusName+".Profiles"); err != nil {
+		return err
+	}
+
 	// A crash or kill -9 during disk-bench must not leave gigabytes behind.
 	if err := diagnostics.CleanupWorkDir(diagnostics.WorkDir); err != nil {
 		log.Printf("vegad: limpar %s: %v", diagnostics.WorkDir, err)
@@ -357,6 +362,20 @@ func (s *Server) Export() error {
 					{Name: "jobId", Type: "u", Direction: "out"},
 					{Name: "result", Type: "s", Direction: "out"},
 					{Name: "freedBytes", Type: "t", Direction: "out"},
+				}},
+			}},
+			{Name: BusName + ".Profiles", Methods: introspect.Methods(profilesService), Signals: []introspect.Signal{
+				{Name: "ProfileProgress", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "id", Type: "s", Direction: "out"},
+					{Name: "percent", Type: "u", Direction: "out"},
+					{Name: "message", Type: "s", Direction: "out"},
+				}},
+				{Name: "ProfileFinished", Args: []introspect.Arg{
+					{Name: "jobId", Type: "u", Direction: "out"},
+					{Name: "id", Type: "s", Direction: "out"},
+					{Name: "result", Type: "s", Direction: "out"},
+					{Name: "detail", Type: "s", Direction: "out"},
 				}},
 			}},
 			{Name: BusName + ".Diagnostics", Methods: introspect.Methods(diagnosticsService), Signals: []introspect.Signal{
