@@ -269,3 +269,56 @@ func TestFlatpakObsPluginInstallRequiresPolkit(t *testing.T) {
 		t.Fatalf("authorization did not bind the action and caller: %q %v", args, err)
 	}
 }
+
+// vega#217: the LinuxAudio plugins install as runtimes, on the branches the
+// installed apps declare, and uninstall every installed branch.
+func TestLinuxAudioPluginTargetsDeclaredBranches(t *testing.T) {
+	dir := t.TempDir()
+	saved := flatpakSystemDir
+	flatpakSystemDir = dir
+	t.Cleanup(func() { flatpakSystemDir = saved })
+	id := "org.freedesktop.LinuxAudio.Plugins.x42"
+
+	if _, err := flatpakAppCommand("install", id, "system", nil); err == nil {
+		t.Fatal("plugin aceito sem nenhum app que o use")
+	}
+
+	write := func(app, metadata string) {
+		path := filepath.Join(dir, "app", app, "current", "active", "metadata")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(metadata), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("io.lmms.LMMS", "[Application]\nname=io.lmms.LMMS\n\n[Extension org.freedesktop.LinuxAudio.Plugins]\ndirectory=extensions/Plugins\nversion=24.08\nadd-ld-path=lib\n")
+	write("org.hydrogenmusic.Hydrogen", "[Extension org.freedesktop.LinuxAudio.Plugins]\nversions=25.08;24.08\n")
+	write("org.gnome.Calculator", "[Extension org.freedesktop.Platform.GL]\nversion=25.08\n")
+
+	cmd, err := flatpakAppCommand("install", id, "system", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"flatpak", "install", "-y", "--noninteractive", "--runtime", "--system", "--", "flathub", id + "//24.08", id + "//25.08"}
+	if !reflect.DeepEqual(cmd.Args, want) {
+		t.Fatalf("args = %#v", cmd.Args)
+	}
+
+	if _, err := flatpakAppCommand("uninstall", id, "system", nil); err == nil {
+		t.Fatal("remoção aceita sem o plugin instalado")
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "runtime", id, "x86_64", "24.08"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd, err = flatpakAppCommand("uninstall", id, "system", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cmd.Args[len(cmd.Args)-1]; got != id+"//24.08" || cmd.Args[4] != "--runtime" {
+		t.Fatalf("args = %#v", cmd.Args)
+	}
+	if !isPluginRuntime(id) || isPluginRuntime("org.freedesktop.LinuxAudio.Plugins.") || isPluginRuntime("org.freedesktop.LinuxAudio.BaseExtension") {
+		t.Fatal("prefixo LinuxAudio mal reconhecido")
+	}
+}
